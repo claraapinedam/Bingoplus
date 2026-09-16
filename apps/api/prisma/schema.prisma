@@ -1,0 +1,1874 @@
+// BINGO+ database schema.
+// Human-readable index of every table: docs/04-database-schema.md
+// Relationship diagrams: docs/03-database-erd.md
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// ───────────────────────────── Identity (Phase 1) ─────────────────────────────
+
+enum RoleName {
+  SUPER_ADMIN
+  ADMIN
+  BUSINESS_OWNER
+  BUSINESS_MANAGER
+  RIDER
+  CUSTOMER
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  phone           String?   @unique
+  passwordHash    String?
+  firstName       String
+  lastName        String
+  avatarUrl       String?
+  isEmailVerified Boolean   @default(false)
+  isPhoneVerified Boolean   @default(false)
+  isActive        Boolean   @default(true)
+  // Populated once Phase 8's reviews module lets a business/rider rate a customer after an
+  // order (ReviewTargetType.CUSTOMER below) — honestly 0 until then, never a fabricated number.
+  ratingAvg       Float     @default(0)
+  reviewCount     Int       @default(0)
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  roles                  UserRole[]
+  addresses              Address[]
+  pets                   Pet[]
+  refreshTokens          RefreshToken[]
+  passwordResetTokens    PasswordResetToken[]
+  otpCodes               OtpCode[]
+  ownedBusinesses        Business[]              @relation("BusinessOwner")
+  businessUsers          BusinessUser[]
+  rider                  Rider?
+  cart                   Cart?
+  paymentMethods         PaymentMethod[]
+  orders                 Order[]
+  bookings               Booking[]
+  reviews                Review[]
+  reviewReports          ReviewReport[]
+  favorites              Favorite[]
+  notifications          Notification[]
+  notificationPreference NotificationPreference?
+  auditLogs              AuditLog[]
+  analyticsEvents        AnalyticsEvent[]
+  documentsReviewed      BusinessDocument[]      @relation("DocumentReviewer")
+  couponRedemptions      CouponRedemption[]      @relation("CouponRedeemer")
+
+  @@index([email])
+  @@index([phone])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        RoleName @unique
+  description String?
+
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id       String @id @default(cuid())
+  resource String
+  action   String
+
+  roles RolePermission[]
+
+  @@unique([resource, action])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+enum OtpPurpose {
+  LOGIN
+  VERIFY_PHONE
+  VERIFY_EMAIL
+}
+
+model OtpCode {
+  id          String     @id @default(cuid())
+  userId      String?
+  destination String
+  purpose     OtpPurpose
+  codeHash    String
+  attempts    Int        @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([destination, purpose])
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  userId     String
+  label      String
+  line1      String
+  line2      String?
+  city       String
+  state      String?
+  country    String   @default("EC")
+  postalCode String?
+  latitude   Float?
+  longitude  Float?
+  // "Referencias / indicaciones para la entrega" — free text, not structured, since we have no
+  // real geocoding/map picker wired yet (that's Phase 4, GOOGLE_MAPS_API_KEY).
+  notes      String?
+  // Parroquia — free text for now (unlike city/state, which are picklists backed by the official
+  // INEC province/cantón list); the parish level is the most error-prone to keep as static data
+  // and isn't used for real delivery zoning yet.
+  parish     String?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([userId])
+}
+
+// ───────────────────────────── Pets (Phase 1) ─────────────────────────────
+
+// Admin-manageable lookup (docs/08 §Admin panel), not a hardcoded enum, so new species can be
+// added without a migration. Drives both a pet's own species and which species a product targets
+// — the join between those two is what BusinessRankingService matches on.
+model PetSpecies {
+  id   String  @id @default(cuid())
+  name String
+  slug String  @unique
+  icon String?
+
+  pets     Pet[]
+  products ProductSpecies[]
+  services ServiceSpecies[]
+}
+
+model Pet {
+  id              String    @id @default(cuid())
+  ownerId         String
+  name            String
+  speciesId       String
+  breed           String?
+  sex             String?
+  birthDate       DateTime?
+  weight          Float?
+  photoUrl        String?
+  allergies       String[]  @default([])
+  foodPreferences String[]  @default([])
+  medicalNotes    String?
+  veterinarian    String?
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  owner             User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  species           PetSpecies         @relation(fields: [speciesId], references: [id])
+  bookings          Booking[]
+  couponRedemptions CouponRedemption[]
+
+  @@index([ownerId])
+  @@index([speciesId])
+}
+
+// ───────────────────────────── Directory (Phase 1 onboarding, Phase 2 catalog) ─────────────────────────────
+
+enum BusinessStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+  ACTIVE
+}
+
+model BusinessCategory {
+  id   String  @id @default(cuid())
+  name String
+  slug String  @unique
+  icon String?
+
+  businesses Business[]
+}
+
+model Business {
+  id                      String                                 @id @default(cuid())
+  ownerId                 String
+  categoryId              String
+  tradeName               String
+  legalName               String
+  taxId                   String
+  email                   String
+  phone                   String
+  description             String?
+  logoUrl                 String?
+  coverImageUrl           String?
+  addressLine             String
+  city                    String
+  latitude                Float?
+  longitude               Float?
+  location                Unsupported("geography(Point, 4326)")?
+  openingHours            Json?
+  // FASE 9 §3 — IANA zone (e.g. "America/Guayaquil"), never inferred. Defaulted rather than
+  // nullable so every date computed against this business (availability, bookings, reminders,
+  // promotions) always has an unambiguous zone instead of silently falling back to server time.
+  timezone                String                                 @default("America/Guayaquil")
+  status                  BusinessStatus                         @default(PENDING)
+  ratingAvg               Float                                  @default(0)
+  reviewCount             Int                                    @default(0)
+  // Only meaningful when the DELIVERY capability is enabled — null otherwise. Set by the
+  // business owner (never fabricated by the UI), so a card can honestly show a real fee/time
+  // or omit the line entirely instead of a placeholder number.
+  deliveryFeeUsd          Decimal?                               @db.Decimal(6, 2)
+  deliveryEstimateMinutes Int?
+  deletedAt               DateTime?
+  createdAt               DateTime                               @default(now())
+  updatedAt               DateTime                               @updatedAt
+
+  // `ownerId` above is the denormalized legal/primary owner (kept for quick reads and the
+  // onboarding record); actual access control reads from `businessUsers` (BusinessUser), which
+  // is the real source of truth and also covers BUSINESS_MANAGER staff — see
+  // docs/08-roles-permissions.md and BusinessOwnershipGuard.
+  owner              User                 @relation("BusinessOwner", fields: [ownerId], references: [id])
+  category           BusinessCategory     @relation(fields: [categoryId], references: [id])
+  documents          BusinessDocument[]
+  products           Product[]
+  services           Service[]
+  commissions        Commission[]
+  carts              Cart[]
+  orders             Order[]
+  bookings           Booking[]
+  payouts            Payout[]
+  capabilities       BusinessCapability[]
+  businessUsers      BusinessUser[]
+  membership         BusinessMembership?
+  businessCoupons    BusinessCoupon[]
+  couponRedemptions  CouponRedemption[]
+  promotions         Promotion[]
+  availabilityBlocks AvailabilityBlock[]
+
+  @@index([ownerId])
+  @@index([categoryId])
+  @@index([status])
+}
+
+// Which capabilities a business has, independent of its category (RULE 2/3 — see
+// docs/... marketplace-vs-directory design). Marketplace eligibility = SELLS_PRODUCTS;
+// Directory eligibility = DIRECTORY_LISTING (+ membership visibility rules).
+enum BusinessCapabilityType {
+  SELLS_PRODUCTS
+  DIRECTORY_LISTING
+  SERVICES
+  BOOKINGS
+  PICKUP
+  DELIVERY
+  COUPONS
+}
+
+model BusinessCapability {
+  id         String                 @id @default(cuid())
+  businessId String
+  capability BusinessCapabilityType
+  enabled    Boolean                @default(true)
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, capability])
+  @@index([businessId])
+  @@index([capability])
+  @@index([enabled])
+}
+
+enum BusinessUserRole {
+  OWNER
+  MANAGER
+}
+
+// The real access-control edge between a User and a Business — see the Business.ownerId comment above.
+model BusinessUser {
+  id         String           @id @default(cuid())
+  businessId String
+  userId     String
+  role       BusinessUserRole
+  createdAt  DateTime         @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([businessId])
+  @@index([userId])
+}
+
+enum BusinessDocumentType {
+  RUC
+  ID
+  BANK_ACCOUNT
+  LICENSE
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model BusinessDocument {
+  id         String               @id @default(cuid())
+  businessId String
+  type       BusinessDocumentType
+  fileUrl    String
+  status     DocumentStatus       @default(PENDING)
+  reviewedBy String?
+  reviewedAt DateTime?
+  createdAt  DateTime             @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  reviewer User?    @relation("DocumentReviewer", fields: [reviewedBy], references: [id])
+
+  @@index([businessId])
+}
+
+// ───────────────────────────── Catalog (Phase 2) ─────────────────────────────
+
+model ProductCategory {
+  id   String  @id @default(cuid())
+  name String
+  slug String  @unique
+  icon String?
+
+  products Product[]
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// Ecuador SRI VAT classification: STANDARD is taxed at the current general rate
+// (PricingConfiguration.defaultTaxPercent — 15% today, but has changed before by presidential
+// decree, so it's a config value, never hardcoded); ZERO covers products the law exempts (e.g.
+// many food staples, medicines). The rate itself lives on PricingConfiguration precisely so a
+// rate change never requires reclassifying the catalog — only the category per product does.
+enum ProductTaxCategory {
+  STANDARD
+  ZERO
+}
+
+model Product {
+  id          String             @id @default(cuid())
+  businessId  String
+  categoryId  String
+  name        String
+  description String?
+  price       Decimal            @db.Decimal(12, 2)
+  salePrice   Decimal?           @db.Decimal(12, 2)
+  sku         String?
+  stock       Int                @default(0)
+  weight      Float?
+  images      String[]           @default([])
+  status      ProductStatus      @default(ACTIVE)
+  taxCategory ProductTaxCategory @default(STANDARD)
+  // Phase 8: derived exclusively from Review aggregation (ReviewsService.recomputeAggregate),
+  // same discipline as Business/Rider/User — never written to directly.
+  ratingAvg   Float              @default(0)
+  reviewCount Int                @default(0)
+  deletedAt   DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  business   Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category   ProductCategory     @relation(fields: [categoryId], references: [id])
+  variants   ProductVariant[]
+  movements  InventoryMovement[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  species    ProductSpecies[]
+
+  @@index([businessId])
+  @@index([categoryId])
+  @@index([status])
+}
+
+// Which pet species a product is recommended for (a product can target several) — the signal
+// BusinessRankingService reads to compute how relevant a business is to a customer's pets.
+model ProductSpecies {
+  productId String
+  speciesId String
+
+  product Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  species PetSpecies @relation(fields: [speciesId], references: [id], onDelete: Cascade)
+
+  @@id([productId, speciesId])
+  @@index([speciesId])
+}
+
+model ProductVariant {
+  id         String  @id @default(cuid())
+  productId  String
+  name       String
+  sku        String  @unique
+  priceDelta Decimal @default(0) @db.Decimal(12, 2)
+  stock      Int     @default(0)
+
+  product    Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  movements  InventoryMovement[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([productId])
+}
+
+enum InventoryReason {
+  RESTOCK
+  SALE
+  ADJUSTMENT
+  RETURN
+}
+
+model InventoryMovement {
+  id             String          @id @default(cuid())
+  productId      String
+  variantId      String?
+  quantityChange Int
+  reason         InventoryReason
+  note           String?
+  createdAt      DateTime        @default(now())
+
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([productId])
+}
+
+// ───────────────────────────── Commerce (Phase 2 cart, Phase 3 checkout) ─────────────────────────────
+
+model Cart {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  businessId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business   @relation(fields: [businessId], references: [id])
+  items    CartItem[]
+
+  @@index([businessId])
+}
+
+model CartItem {
+  id                String  @id @default(cuid())
+  cartId            String
+  productId         String
+  variantId         String?
+  quantity          Int
+  unitPriceSnapshot Decimal @db.Decimal(12, 2)
+
+  cart    Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([cartId])
+}
+
+enum FulfillmentType {
+  PICKUP
+  DELIVERY
+}
+
+// §16/§67 (Phase 4): Order state and Delivery state are deliberately separate domains — the
+// granular logistics states (searching a rider, picked up, in transit, delivered...) live on
+// Delivery.status, not here. A DELIVERY order sits at READY_FOR_PICKUP for the entire delivery
+// lifecycle and only moves to COMPLETED once DeliverySyncService observes Delivery.status =
+// DELIVERED. This enum used to also carry SEARCHING_RIDER/RIDER_ASSIGNED/PICKED_UP/IN_TRANSIT/
+// DELIVERED as placeholders from the Phase 2 schema design, but nothing ever transitioned into
+// them (see git history) — removed rather than left as confusing dead states.
+enum OrderStatus {
+  CREATED
+  PAYMENT_PENDING
+  PAID
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  COMPLETED
+  CANCELLED
+}
+
+model Order {
+  id                      String          @id @default(cuid())
+  orderNumber             String          @unique
+  userId                  String
+  businessId              String
+  addressId               String?
+  fulfillmentType         FulfillmentType
+  status                  OrderStatus     @default(CREATED)
+  subtotal                Decimal         @db.Decimal(12, 2)
+  discount                Decimal         @default(0) @db.Decimal(12, 2)
+  // Customer-facing fee lines (§9/24) — distinct from Business.commissions, which is what
+  // BINGO+ takes from the business, not what the customer is charged.
+  platformFee             Decimal         @default(0) @db.Decimal(12, 2)
+  serviceFee              Decimal         @default(0) @db.Decimal(12, 2)
+  deliveryFee             Decimal         @default(0) @db.Decimal(12, 2)
+  // "subtotalIva" / "subtotalIva0" in Ecuador SRI/Kushki terms — the split of `subtotal` (net of
+  // discount) between items taxed at the general rate and items at 0%. Kept alongside `tax` so a
+  // real Kushki integration can send them as-is instead of re-deriving them from order items.
+  taxableSubtotal         Decimal         @default(0) @db.Decimal(12, 2)
+  zeroTaxSubtotal         Decimal         @default(0) @db.Decimal(12, 2)
+  tax                     Decimal         @default(0) @db.Decimal(12, 2)
+  total                   Decimal         @db.Decimal(12, 2)
+  currency                String          @default("USD")
+  // Snapshot of the selected Address at order time (§12) — never re-reads the live Address, so
+  // a later address edit never rewrites order history.
+  deliveryAddressSnapshot Json?
+  notes                   String?
+  cancelReason            String?
+  cancelledAt             DateTime?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  user     User        @relation(fields: [userId], references: [id])
+  business Business    @relation(fields: [businessId], references: [id])
+  // SetNull, never Restrict: the live Address can be deleted freely — deliveryAddressSnapshot
+  // above is what order history actually relies on, this FK is only a convenience link.
+  address  Address?    @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  items    OrderItem[]
+  payment  Payment?
+  refunds  Refund[]
+  delivery Delivery?
+  disputes Dispute[]
+  reviews  Review[]
+
+  @@index([userId])
+  @@index([businessId])
+  @@index([status])
+}
+
+model OrderItem {
+  id           String             @id @default(cuid())
+  orderId      String
+  productId    String
+  variantId    String?
+  nameSnapshot String
+  // SKU at time of purchase (§25) — Product.sku is optional/mutable, so this is the only
+  // reliable record of what was actually sold once the live Product changes.
+  skuSnapshot  String?
+  quantity     Int
+  unitPrice    Decimal            @db.Decimal(12, 2)
+  subtotal     Decimal            @db.Decimal(12, 2)
+  // Snapshot of Product.taxCategory at purchase time (same rationale as nameSnapshot/skuSnapshot)
+  // plus the actual tax this line charged (subtotal × the rate for its category).
+  taxCategory  ProductTaxCategory @default(STANDARD)
+  taxAmount    Decimal            @default(0) @db.Decimal(12, 2)
+
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+}
+
+// ───────────────────────────── Payments (Phase 3) ─────────────────────────────
+
+enum PaymentMethodType {
+  CARD
+  WALLET
+  CASH
+}
+
+model PaymentMethod {
+  id              String            @id @default(cuid())
+  userId          String
+  provider        String
+  type            PaymentMethodType
+  brand           String?
+  last4           String?
+  expirationMonth Int?
+  expirationYear  Int?
+  // Opaque provider reference (e.g. a Stripe PaymentMethod id) — never a raw card number/CVV/PIN.
+  providerToken   String
+  isDefault       Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum PaymentStatus {
+  PENDING
+  REQUIRES_ACTION
+  AUTHORIZED
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+// FASE 9 §1 — exactly one of orderId/bookingId is set, never both, never neither. Both stay
+// optional at the Prisma level (a single FK can't conditionally point at two tables) with a
+// raw-SQL CHECK constraint added by the migration as the real DB-level guard — see
+// migration.sql for `payment_exactly_one_target`.
+model Payment {
+  id                String        @id @default(cuid())
+  orderId           String?       @unique
+  bookingId         String?       @unique
+  provider          String
+  providerPaymentId String?
+  // Client-supplied idempotency key (§21) — a retried "create payment" request with the same
+  // key returns the existing Payment instead of creating a second one.
+  idempotencyKey    String?       @unique
+  amount            Decimal       @db.Decimal(12, 2)
+  currency          String        @default("USD")
+  status            PaymentStatus @default(PENDING)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  order        Order?        @relation(fields: [orderId], references: [id])
+  booking      Booking?      @relation(fields: [bookingId], references: [id])
+  transactions Transaction[]
+  refunds      Refund[]
+}
+
+enum TransactionType {
+  CHARGE
+  REFUND
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  paymentId   String
+  type        TransactionType
+  amount      Decimal         @db.Decimal(12, 2)
+  status      String
+  providerRef String?
+  rawResponse Json?
+  createdAt   DateTime        @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+}
+
+enum RefundStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+// A Refund is a customer-facing request/record (§36) — distinct from Transaction, which is the
+// provider-level ledger entry a completed Refund produces.
+model Refund {
+  id          String       @id @default(cuid())
+  paymentId   String
+  orderId     String
+  amount      Decimal      @db.Decimal(12, 2)
+  reason      String?
+  status      RefundStatus @default(PENDING)
+  requestedBy String?
+  providerRef String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+  order   Order   @relation(fields: [orderId], references: [id])
+
+  @@index([paymentId])
+  @@index([orderId])
+}
+
+// Idempotency + audit trail for provider webhooks (§22) — a provider that redelivers the same
+// event (at-least-once delivery is the norm) must never re-apply it twice.
+model WebhookEvent {
+  id              String    @id @default(cuid())
+  provider        String
+  externalEventId String
+  eventType       String
+  processed       Boolean   @default(false)
+  processedAt     DateTime?
+  payloadHash     String
+  createdAt       DateTime  @default(now())
+
+  @@unique([provider, externalEventId])
+}
+
+// Single-row, admin-editable fee configuration (§9/37) — never hardcoded. Append-only history
+// like MarketplaceRankingConfig: the latest row wins, so a fee change is auditable over time.
+model PricingConfiguration {
+  id                 String   @id @default(cuid())
+  platformFeePercent Decimal  @default(0) @db.Decimal(5, 4)
+  serviceFeePercent  Decimal  @default(0) @db.Decimal(5, 4)
+  serviceFeeFixed    Decimal  @default(0) @db.Decimal(12, 2)
+  defaultTaxPercent  Decimal  @default(0) @db.Decimal(5, 4)
+  defaultDeliveryFee Decimal  @default(0) @db.Decimal(12, 2)
+  updatedBy          String?
+  createdAt          DateTime @default(now())
+}
+
+// ───────────────────────────── Riders & delivery (Phase 4) ─────────────────────────────
+
+// §7: deliberately separate from RiderAvailabilityStatus — a Rider can be ACTIVE+OFFLINE,
+// ACTIVE+AVAILABLE or ACTIVE+BUSY, none of which are expressible with a single combined enum
+// (the Phase 2 placeholder `RiderStatus` mixed both and is replaced by this pair).
+enum RiderAccountStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+  REJECTED
+  INACTIVE
+}
+
+enum RiderAvailabilityStatus {
+  OFFLINE
+  AVAILABLE
+  BUSY
+}
+
+model Rider {
+  id                  String                                 @id @default(cuid())
+  userId              String                                 @unique
+  accountStatus       RiderAccountStatus                     @default(PENDING_APPROVAL)
+  availabilityStatus  RiderAvailabilityStatus                @default(OFFLINE)
+  // Simple zone signal for eligibility filtering (§18) — not a geofence/polygon system, that's a
+  // later refinement; proximity itself is computed from currentLocation, not from this string.
+  city                String?
+  currentLatitude     Float?
+  currentLongitude    Float?
+  currentLocation     Unsupported("geography(Point, 4326)")?
+  lastLocationAt      DateTime?
+  ratingAvg           Float                                  @default(0)
+  reviewCount         Int                                    @default(0)
+  deliveriesCompleted Int                                    @default(0)
+  createdAt           DateTime                               @default(now())
+  updatedAt           DateTime                               @updatedAt
+
+  user              User                        @relation(fields: [userId], references: [id])
+  vehicles          Vehicle[]
+  documents         RiderDocument[]
+  deliveries        Delivery[]
+  earnings          RiderEarning[]
+  payouts           Payout[]
+  locations         RiderLocation[]
+  assignmentHistory DeliveryAssignmentHistory[]
+
+  @@index([accountStatus])
+  @@index([availabilityStatus])
+}
+
+enum VehicleStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VehicleType {
+  WALK
+  BIKE
+  MOTORCYCLE
+  CAR
+  OTHER
+}
+
+model Vehicle {
+  id      String        @id @default(cuid())
+  riderId String
+  type    VehicleType
+  status  VehicleStatus @default(ACTIVE)
+  plate   String?
+  brand   String?
+  model   String?
+  color   String?
+  year    Int?
+
+  rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([riderId])
+}
+
+enum RiderDocumentType {
+  ID
+  LICENSE
+  INSURANCE
+  VEHICLE_REGISTRATION
+}
+
+// Own status enum rather than reusing the shared `DocumentStatus` (BusinessDocument) — riders
+// need EXPIRED, which doesn't apply to business documents.
+enum RiderDocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+model RiderDocument {
+  id             String              @id @default(cuid())
+  riderId        String
+  type           RiderDocumentType
+  documentNumber String?
+  fileUrl        String
+  status         RiderDocumentStatus @default(PENDING)
+  expirationDate DateTime?
+  // "verifiedBy"/"verifiedAt" in spec terms — named reviewedBy/reviewedAt to match the identical
+  // pattern already used on BusinessDocument.
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  createdAt      DateTime            @default(now())
+
+  rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([riderId])
+}
+
+// §15/16: the logistics lifecycle — entirely separate from OrderStatus. See the OrderStatus
+// comment above for how the two are synchronized.
+enum DeliveryStatus {
+  PENDING
+  SEARCHING_RIDER
+  RIDER_ASSIGNED
+  RIDER_ACCEPTED
+  GOING_TO_PICKUP
+  ARRIVED_AT_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  ARRIVED_AT_CUSTOMER
+  DELIVERED
+  CANCELLED
+  FAILED
+}
+
+enum DeliveryAssignmentSource {
+  AUTO
+  ADMIN
+  MANUAL
+}
+
+model Delivery {
+  id      String         @id @default(cuid())
+  orderId String         @unique
+  riderId String?
+  status  DeliveryStatus @default(PENDING)
+
+  // §12: snapshots, never reconstructed from the live Business/Address — a Delivery must stay
+  // historically accurate even if the business moves or the customer edits/deletes the address.
+  pickupAddressSnapshot   Json
+  deliveryAddressSnapshot Json
+
+  estimatedDistanceKm      Float?
+  estimatedDurationMinutes Int?
+  actualDistanceKm         Float?
+  actualDurationMinutes    Int?
+  route                    Json?
+
+  // §47: copied from Order.deliveryFee at creation time — Phase 4 never recomputes/changes the
+  // order total; dynamic pricing is an explicit future phase.
+  deliveryFee Decimal @db.Decimal(12, 2)
+
+  assignmentSource DeliveryAssignmentSource?
+  assignedAt       DateTime?
+  acceptedAt       DateTime?
+  pickedUpAt       DateTime?
+  deliveredAt      DateTime?
+  cancelledAt      DateTime?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  order             Order                       @relation(fields: [orderId], references: [id])
+  rider             Rider?                      @relation(fields: [riderId], references: [id])
+  assignmentHistory DeliveryAssignmentHistory[]
+  locations         RiderLocation[]
+  proof             DeliveryProof?
+  incidents         DeliveryIncident[]
+  earnings          RiderEarning[]
+
+  @@index([riderId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum DeliveryAssignmentAction {
+  ASSIGNED
+  ACCEPTED
+  REJECTED
+  TIMED_OUT
+  REASSIGNED
+  CANCELLED
+}
+
+// §23: full audit trail of who got offered a delivery and what happened — how reassignment after
+// a rejection/timeout stays explainable instead of just overwriting Delivery.riderId silently.
+model DeliveryAssignmentHistory {
+  id         String                   @id @default(cuid())
+  deliveryId String
+  riderId    String?
+  action     DeliveryAssignmentAction
+  reason     String?
+  source     DeliveryAssignmentSource
+  createdAt  DateTime                 @default(now())
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  rider    Rider?   @relation(fields: [riderId], references: [id])
+
+  @@index([deliveryId])
+  @@index([riderId])
+  @@index([createdAt])
+}
+
+// §35/36: only ever written while `deliveryId` points at an active Delivery — there is no
+// route to create a row for a rider who isn't currently on a delivery, which is the retention
+// policy: no active delivery, no stored location history. Rider.currentLatitude/Longitude above
+// is the single "where is this rider right now" value used outside of an active delivery.
+model RiderLocation {
+  id         String   @id @default(cuid())
+  riderId    String
+  deliveryId String
+  latitude   Float
+  longitude  Float
+  heading    Float?
+  speed      Float?
+  accuracy   Float?
+  createdAt  DateTime @default(now())
+
+  rider    Rider    @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([riderId])
+  @@index([deliveryId])
+  @@index([createdAt])
+}
+
+enum DeliveryProofType {
+  OTP
+  PHOTO
+  SIGNATURE
+  CUSTOMER_CONFIRMATION
+}
+
+// §30/31: MVP implements OTP — the other types are modeled so photo/signature proof can be added
+// later without a schema change.
+model DeliveryProof {
+  id         String            @id @default(cuid())
+  deliveryId String            @unique
+  type       DeliveryProofType
+  // Deliberately NOT hashed, unlike passwords/refresh tokens elsewhere: the customer needs to
+  // read this code from Tracking throughout the delivery (§31), not just once at generation, so
+  // it must stay recoverable. Mitigations are a short expiresAt, rate-limited verify attempts,
+  // and ownership-scoped read access (only the order's own customer can fetch it).
+  code       String?
+  photoUrl   String?
+  attempts   Int               @default(0)
+  expiresAt  DateTime?
+  verifiedAt DateTime?
+  createdAt  DateTime          @default(now())
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+}
+
+enum DeliveryIncidentType {
+  RIDER_NO_SHOW
+  CUSTOMER_UNAVAILABLE
+  BUSINESS_DELAY
+  VEHICLE_ISSUE
+  WRONG_ADDRESS
+  DAMAGED_ORDER
+  OTHER
+}
+
+enum DeliveryIncidentStatus {
+  OPEN
+  RESOLVED
+}
+
+model DeliveryIncident {
+  id          String                 @id @default(cuid())
+  deliveryId  String
+  reportedBy  String
+  type        DeliveryIncidentType
+  description String?
+  status      DeliveryIncidentStatus @default(OPEN)
+  createdAt   DateTime               @default(now())
+  resolvedAt  DateTime?
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId])
+  @@index([status])
+}
+
+enum RiderEarningType {
+  DELIVERY_FEE
+  TIP
+  BONUS
+}
+
+enum RiderEarningStatus {
+  PENDING
+  CONFIRMED
+  PAID
+}
+
+model RiderEarning {
+  id          String             @id @default(cuid())
+  riderId     String
+  deliveryId  String?
+  grossAmount Decimal            @db.Decimal(12, 2)
+  adjustments Decimal            @default(0) @db.Decimal(12, 2)
+  netAmount   Decimal            @db.Decimal(12, 2)
+  currency    String             @default("USD")
+  type        RiderEarningType
+  status      RiderEarningStatus @default(PENDING)
+  createdAt   DateTime           @default(now())
+
+  rider    Rider     @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  delivery Delivery? @relation(fields: [deliveryId], references: [id])
+
+  @@index([riderId])
+  @@index([deliveryId])
+  @@index([status])
+}
+
+// §19: dispatch weighting/timeout, admin-configurable — append-only history like
+// PricingConfiguration, so a weighting change stays auditable and dispatch never hardcodes them.
+model RiderDispatchConfig {
+  id                       String   @id @default(cuid())
+  distanceWeight           Decimal  @default(0.5) @db.Decimal(5, 4)
+  ratingWeight             Decimal  @default(0.3) @db.Decimal(5, 4)
+  availabilityWeight       Decimal  @default(0.2) @db.Decimal(5, 4)
+  maxSearchRadiusKm        Decimal  @default(10) @db.Decimal(6, 2)
+  assignmentTimeoutSeconds Int      @default(60)
+  updatedBy                String?
+  createdAt                DateTime @default(now())
+}
+
+// ───────────────────────────── Services & bookings (Phase 7) ─────────────────────────────
+
+enum ServiceType {
+  VETERINARY
+  DAYCARE
+  BOARDING
+  GROOMING
+  DOG_WALKING
+}
+
+model Service {
+  id              String      @id @default(cuid())
+  businessId      String
+  type            ServiceType
+  name            String
+  description     String?
+  price           Decimal     @db.Decimal(12, 2)
+  durationMinutes Int
+  // Max simultaneous bookings for the same time slot — null defaults to 1 (single-provider
+  // service, e.g. a vet consultation) in BookingsService, never silently unlimited.
+  capacity        Int?
+  imageUrl        String?
+  // Free-text ("trae la cartilla de vacunas", "mascota debe estar bañada", etc.) — a single
+  // field rather than a new table, same reasoning as Business.description.
+  requirements    String?
+  minAgeMonths    Int?
+  maxAgeMonths    Int?
+  // Phase 8: derived exclusively from Review aggregation (ReviewsService.recomputeAggregate).
+  ratingAvg       Float       @default(0)
+  reviewCount     Int         @default(0)
+  active          Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  business           Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bookings           Booking[]
+  species            ServiceSpecies[]
+  availabilityBlocks AvailabilityBlock[]
+
+  @@index([businessId])
+}
+
+// Mirrors ProductSpecies exactly (same join-table shape) — kept as its own table rather than
+// reusing ProductSpecies because a Service is a different owning entity, not because the concept
+// is different.
+model ServiceSpecies {
+  serviceId String
+  speciesId String
+
+  service Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  species PetSpecies @relation(fields: [speciesId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, speciesId])
+  @@index([speciesId])
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Booking {
+  id             String        @id @default(cuid())
+  userId         String
+  petId          String?
+  businessId     String
+  serviceId      String
+  date           DateTime
+  startTime      DateTime
+  endTime        DateTime
+  status         BookingStatus @default(PENDING)
+  price          Decimal       @db.Decimal(12, 2)
+  notes          String?
+  // Client-supplied idempotency key (same pattern as Payment.idempotencyKey) — a retried
+  // "create booking" request (double-tap) with the same key returns the original booking instead
+  // of creating a second one.
+  idempotencyKey String?       @unique
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id])
+  pet      Pet?      @relation(fields: [petId], references: [id])
+  business Business  @relation(fields: [businessId], references: [id])
+  service  Service   @relation(fields: [serviceId], references: [id])
+  reviews  Review[]
+  disputes Dispute[]
+  payment  Payment?
+
+  @@index([userId])
+  @@index([businessId])
+  @@index([status])
+}
+
+// FASE 9 §2 — a Weekly Business Schedule (Business.openingHours) alone can't represent
+// exceptions (vacations, holidays, maintenance). A block can target the whole business
+// (serviceId null) or just one service; availability calculation must always subtract these
+// before returning a slot/range as open.
+enum AvailabilityBlockStatus {
+  ACTIVE
+  CANCELLED
+}
+
+model AvailabilityBlock {
+  id            String                  @id @default(cuid())
+  businessId    String
+  serviceId     String?
+  startDateTime DateTime
+  endDateTime   DateTime
+  reason        String?
+  status        AvailabilityBlockStatus @default(ACTIVE)
+  createdBy     String?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service  Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([serviceId])
+  @@index([startDateTime, endDateTime])
+}
+
+// ───────────────────────────── Pet-friendly directory (Phase 1 schema, Phase 7 API) ─────────────────────────────
+
+model PetFriendlyCategory {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+
+  places PetFriendlyPlace[]
+}
+
+model PetFriendlyPlace {
+  id           String                                 @id @default(cuid())
+  name         String
+  description  String?
+  categoryId   String
+  address      String
+  latitude     Float
+  longitude    Float
+  location     Unsupported("geography(Point, 4326)")?
+  phone        String?
+  website      String?
+  photos       String[]                               @default([])
+  ratingAvg    Float                                  @default(0)
+  petRules     String?
+  amenities    String[]                               @default([])
+  verified     Boolean                                @default(false)
+  openingHours Json?
+  createdAt    DateTime                               @default(now())
+  updatedAt    DateTime                               @updatedAt
+
+  category PetFriendlyCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+}
+
+// ───────────────────────────── Reputation & growth (Phase 8) ─────────────────────────────
+
+enum ReviewTargetType {
+  BUSINESS
+  RIDER
+  SERVICE
+  PRODUCT
+  // A business/rider rating a customer after an order — the source of User.ratingAvg once the
+  // Phase 8 reviews module builds the endpoint to create these.
+  CUSTOMER
+}
+
+enum ReviewStatus {
+  PUBLISHED
+  HIDDEN
+  FLAGGED
+}
+
+model Review {
+  id                String           @id @default(cuid())
+  authorId          String
+  targetType        ReviewTargetType
+  targetId          String
+  orderId           String?
+  bookingId         String?
+  rating            Int
+  comment           String?
+  status            ReviewStatus     @default(PUBLISHED)
+  // §3.5: the Business being reviewed can reply once, publicly — never edit/delete the review
+  // itself, only add its own response alongside it.
+  businessReply     String?
+  businessRepliedAt DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  author  User           @relation(fields: [authorId], references: [id])
+  order   Order?         @relation(fields: [orderId], references: [id])
+  booking Booking?       @relation(fields: [bookingId], references: [id])
+  reports ReviewReport[]
+
+  // One rating per author/target/order — the DB-level guard against a double-tap or two
+  // concurrent submits both creating a duplicate review (same discipline as the guarded
+  // transitions elsewhere: let the constraint be the source of truth, not a read-then-write check).
+  // A second, separate constraint covers booking-based (Service) reviews: orderId is always NULL
+  // there, and Postgres treats each NULL as distinct, so the constraint above alone would never
+  // actually block a duplicate submission for the same booking — this one closes that gap without
+  // touching the order-based guard (each constraint is a no-op on rows the other one governs,
+  // since exactly one of orderId/bookingId is non-null per row).
+  @@unique([authorId, targetType, targetId, orderId])
+  @@unique([authorId, targetType, targetId, bookingId])
+  @@index([targetType, targetId])
+}
+
+enum ReviewReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+model ReviewReport {
+  id         String             @id @default(cuid())
+  reviewId   String
+  reportedBy String
+  reason     String
+  status     ReviewReportStatus @default(OPEN)
+  resolution String?
+  resolvedBy String?
+  resolvedAt DateTime?
+  createdAt  DateTime           @default(now())
+
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  reporter User   @relation(fields: [reportedBy], references: [id])
+
+  @@index([reviewId])
+  @@index([status])
+}
+
+enum FavoriteTargetType {
+  BUSINESS
+  PRODUCT
+  SERVICE
+  PET_FRIENDLY_PLACE
+}
+
+// Polymorphic by design (targetType + targetId): a favorite can point at a Business, Product,
+// Service or PetFriendlyPlace. Prisma has no native polymorphic relation, so the target is
+// resolved in the service layer by targetType rather than as a declared FK — this mirrors how
+// Review.targetType/targetId already works for the same reason.
+model Favorite {
+  id         String             @id @default(cuid())
+  userId     String
+  targetType FavoriteTargetType
+  targetId   String
+  createdAt  DateTime           @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType, targetId])
+}
+
+// ───────────────────────────── Business coupons (presential redemption) ─────────────────────────
+//
+// Replaces the earlier placeholder Promotion/Coupon models (schema-only, never wired to an API —
+// no data or endpoint depended on them, so replacing rather than extending them is safe). This is
+// a deliberately different model: a BusinessCoupon is never auto-applied at Marketplace checkout
+// (RULE 14/15) — the customer shows a QR in person, the business scans it, and the discount is
+// settled directly between customer and business; BINGO+ never processes that payment.
+
+enum CouponDiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum BusinessCouponStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  EXPIRED
+  CANCELLED
+}
+
+model BusinessCoupon {
+  id                 String               @id @default(cuid())
+  businessId         String
+  code               String
+  title              String
+  description        String?
+  discountType       CouponDiscountType
+  discountValue      Decimal              @db.Decimal(12, 2)
+  minimumPurchase    Decimal?             @db.Decimal(12, 2)
+  maximumDiscount    Decimal?             @db.Decimal(12, 2)
+  startDate          DateTime
+  expirationDate     DateTime
+  usageLimit         Int?
+  usagePerCustomer   Int?
+  termsAndConditions String?
+  status             BusinessCouponStatus @default(DRAFT)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  business    Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  redemptions CouponRedemption[]
+
+  @@unique([businessId, code])
+  @@index([businessId])
+  @@index([status])
+  @@index([expirationDate])
+}
+
+// Redemption status lives here, per-customer, precisely because a single coupon is redeemed by
+// many different customers — it is never a status on BusinessCoupon itself.
+model CouponRedemption {
+  id             String   @id @default(cuid())
+  couponId       String
+  businessId     String
+  customerId     String
+  petId          String?
+  redeemedAt     DateTime @default(now())
+  discountAmount Decimal  @db.Decimal(12, 2)
+  purchaseAmount Decimal? @db.Decimal(12, 2)
+  currency       String   @default("USD")
+  metadata       Json?
+
+  coupon   BusinessCoupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  business Business       @relation(fields: [businessId], references: [id])
+  customer User           @relation("CouponRedeemer", fields: [customerId], references: [id])
+  pet      Pet?           @relation(fields: [petId], references: [id])
+
+  @@index([couponId])
+  @@index([customerId])
+  @@index([businessId])
+}
+
+// ───────────────────────────── Promotions (Phase 8) ─────────────────────────────
+//
+// Deliberately separate from BusinessCoupon/AdminCoupon (RULE 3/4/14/15 — FASE 8 rules 2/3/4):
+// a Promotion never requires a code and can auto-apply at Marketplace checkout, which
+// BusinessCoupon/AdminCoupon are explicitly forbidden from doing. DiscountService.calculate() —
+// previously a stub returning zero — is the one integration point where this plugs into pricing.
+
+enum PromotionType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum PromotionStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  EXPIRED
+  CANCELLED
+}
+
+// Polymorphic by design (targetType + targetId), same pattern as Review/Favorite — a promotion
+// can point at one or more Products, ProductCategories, Services or the whole Business.
+enum PromotionTargetType {
+  PRODUCT
+  PRODUCT_CATEGORY
+  SERVICE
+  BUSINESS
+}
+
+model Promotion {
+  id              String          @id @default(cuid())
+  businessId      String
+  name            String
+  description     String?
+  type            PromotionType
+  // Percentage as 0-100 (not 0-1, to match how BusinessCoupon.discountValue is already entered)
+  // for PERCENTAGE; a currency amount for FIXED_AMOUNT.
+  value           Decimal         @db.Decimal(12, 2)
+  minimumPurchase Decimal?        @db.Decimal(12, 2)
+  maximumDiscount Decimal?        @db.Decimal(12, 2)
+  startDate       DateTime
+  endDate         DateTime
+  status          PromotionStatus @default(DRAFT)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  business Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  targets  PromotionTarget[]
+
+  @@index([businessId])
+  @@index([status])
+  @@index([startDate, endDate])
+}
+
+model PromotionTarget {
+  id          String              @id @default(cuid())
+  promotionId String
+  targetType  PromotionTargetType
+  targetId    String
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@index([promotionId])
+  @@index([targetType, targetId])
+}
+
+// ───────────────────────────── Admin coupons (membership billing) ───────────────────────────────
+//
+// Deliberately separate from BusinessCoupon (RULE 16/17): an AdminCoupon discounts what a
+// *business* owes BINGO+ for its Directory membership — it never touches a customer-facing
+// Marketplace order. Mixing the two would make Marketplace GMV and membership revenue
+// impossible to report on independently.
+
+enum AdminCouponType {
+  PERCENTAGE_DISCOUNT
+  FIXED_AMOUNT_DISCOUNT
+  FREE_MONTHS
+  FREE_TRIAL_EXTENSION
+}
+
+enum AdminCouponStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  EXPIRED
+  CANCELLED
+}
+
+model AdminCoupon {
+  id                 String            @id @default(cuid())
+  code               String            @unique
+  name               String
+  description        String?
+  discountType       AdminCouponType
+  discountValue      Decimal?          @db.Decimal(12, 2)
+  freeMonths         Int?
+  startDate          DateTime
+  expirationDate     DateTime
+  usageLimit         Int?
+  usagePerBusiness   Int?
+  applicablePlans    String[]          @default([])
+  status             AdminCouponStatus @default(DRAFT)
+  termsAndConditions String?
+  createdBy          String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  redemptions AdminCouponRedemption[]
+
+  @@index([status])
+  @@index([expirationDate])
+}
+
+model AdminCouponRedemption {
+  id           String   @id @default(cuid())
+  couponId     String
+  membershipId String
+  redeemedAt   DateTime @default(now())
+  // Immutable receipt of exactly what was granted (discount amount, free months, ...) — a later
+  // change to the coupon definition must never retroactively change what was already applied.
+  appliedValue Json
+  metadata     Json?
+
+  coupon     AdminCoupon        @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  membership BusinessMembership @relation(fields: [membershipId], references: [id])
+
+  @@index([couponId])
+  @@index([membershipId])
+}
+
+// ───────────────────────────── Business membership (Directory billing) ──────────────────────────
+//
+// A financial domain separate from Marketplace orders (RULE 17): Membership → Subscription →
+// Invoice is how a business pays BINGO+ for Directory presence; it is never an Order.
+
+enum BillingFrequency {
+  MONTHLY
+  YEARLY
+}
+
+enum MembershipPlanStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model MembershipPlan {
+  id                   String               @id @default(cuid())
+  name                 String
+  description          String?
+  price                Decimal              @db.Decimal(12, 2)
+  currency             String               @default("USD")
+  billingFrequency     BillingFrequency
+  // Configurable, never hardcoded (RULE 13-style requirement extended to membership terms).
+  trialDays            Int                  @default(0)
+  benefits             Json?
+  applicableCategories String[]             @default([])
+  // The plan a new BusinessMembership is created on at business-approval time when none is
+  // specified — exactly one plan should have this set; enforced in MembershipsService, not the DB.
+  isDefault            Boolean              @default(false)
+  status               MembershipPlanStatus @default(ACTIVE)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  memberships BusinessMembership[]
+}
+
+enum BusinessMembershipStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELLED
+  EXPIRED
+}
+
+model BusinessMembership {
+  id                 String                   @id @default(cuid())
+  businessId         String                   @unique
+  planId             String
+  status             BusinessMembershipStatus @default(TRIAL)
+  trialEndsAt        DateTime?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  business               Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan                   MembershipPlan          @relation(fields: [planId], references: [id])
+  subscriptions          Subscription[]
+  adminCouponRedemptions AdminCouponRedemption[]
+
+  @@index([status])
+  @@index([planId])
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+model Subscription {
+  id           String             @id @default(cuid())
+  membershipId String
+  periodStart  DateTime
+  periodEnd    DateTime
+  amount       Decimal            @db.Decimal(12, 2)
+  currency     String             @default("USD")
+  status       SubscriptionStatus @default(ACTIVE)
+  createdAt    DateTime           @default(now())
+
+  membership BusinessMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  invoices   Invoice[]
+
+  @@index([membershipId])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  PAID
+  VOID
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  subscriptionId String
+  amount         Decimal       @db.Decimal(12, 2)
+  currency       String        @default("USD")
+  status         InvoiceStatus @default(PENDING)
+  dueDate        DateTime?
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([status])
+}
+
+enum NotificationChannel {
+  IN_APP
+  PUSH
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum NotificationCategory {
+  TRANSACTIONAL
+  MARKETING
+}
+
+model Notification {
+  id             String               @id @default(cuid())
+  userId         String
+  channel        NotificationChannel  @default(IN_APP)
+  category       NotificationCategory @default(TRANSACTIONAL)
+  event          String
+  title          String
+  body           String
+  entityType     String?
+  entityId       String?
+  data           Json?
+  read           Boolean              @default(false)
+  readAt         DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime             @default(now())
+  // Deterministic per (recipient, event, entity) — set by NotificationService so the exact same
+  // domain event processed twice (retry, duplicate webhook, etc.) collapses into one row instead
+  // of paging the recipient N times for the same thing (§2.7/18).
+  idempotencyKey String?              @unique
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+}
+
+// §10: only MARKETING/PROMOTIONS are ever gated by preference — TRANSACTIONAL notifications
+// (orders, deliveries, bookings, system) always fire regardless of these flags, enforced in
+// NotificationsService, never left to the frontend to filter.
+model NotificationPreference {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  promotions Boolean  @default(true)
+  marketing  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────────── Marketplace economics (Phase 1 settings, Phase 3+ usage) ─────────────────────────────
+
+model PlatformSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+}
+
+// Configurable weights BusinessRankingService combines into a business's relevanceScore in the
+// Marketplace listing — never hardcoded (RULE 13). Append-only history (same pattern as
+// Commission below): the latest row by createdAt is the active config, so a weight change is
+// itself auditable without a separate AuditLog entry.
+model MarketplaceRankingConfig {
+  id                 String   @id @default(cuid())
+  speciesMatchWeight Float
+  distanceWeight     Float
+  availabilityWeight Float
+  ratingWeight       Float
+  deliveryWeight     Float
+  updatedBy          String?
+  createdAt          DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model Commission {
+  id            String   @id @default(cuid())
+  businessId    String
+  rate          Decimal  @db.Decimal(5, 4)
+  effectiveFrom DateTime @default(now())
+  createdBy     String?
+  createdAt     DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+enum PayeeType {
+  BUSINESS
+  RIDER
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+model Payout {
+  id          String       @id @default(cuid())
+  payeeType   PayeeType
+  businessId  String?
+  riderId     String?
+  amount      Decimal      @db.Decimal(12, 2)
+  status      PayoutStatus @default(PENDING)
+  periodStart DateTime
+  periodEnd   DateTime
+  paidAt      DateTime?
+  createdAt   DateTime     @default(now())
+
+  business Business? @relation(fields: [businessId], references: [id])
+  rider    Rider?    @relation(fields: [riderId], references: [id])
+}
+
+// ───────────────────────────── Governance ─────────────────────────────
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+model Dispute {
+  id             String        @id @default(cuid())
+  orderId        String?
+  bookingId      String?
+  raisedByUserId String
+  type           String
+  description    String
+  status         DisputeStatus @default(OPEN)
+  resolution     String?
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  createdAt      DateTime      @default(now())
+
+  order   Order?   @relation(fields: [orderId], references: [id])
+  booking Booking? @relation(fields: [bookingId], references: [id])
+}
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  actorUserId   String?
+  action        String
+  entityType    String
+  entityId      String
+  previousValue Json?
+  newValue      Json?
+  metadata      Json?
+  ipAddress     String?
+  createdAt     DateTime @default(now())
+
+  actor User? @relation(fields: [actorUserId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+}
+
+// ───────────────────────────── Analytics events (Phase 8) ─────────────────────────────
+//
+// Lightweight, append-only view/interaction tracking — the only realistic source for "profile
+// views"/"coupon views"/"service views" style metrics, which had no tracking at all before this.
+// Historical views before this table existed are honestly absent, never backfilled or guessed.
+
+enum AnalyticsEventName {
+  BUSINESS_VIEWED
+  PRODUCT_VIEWED
+  SERVICE_VIEWED
+  COUPON_VIEWED
+  PROMOTION_VIEWED
+}
+
+model AnalyticsEvent {
+  id         String             @id @default(cuid())
+  eventName  AnalyticsEventName
+  actorId    String?
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime           @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([eventName, entityId, createdAt])
+  @@index([entityType, entityId])
+}

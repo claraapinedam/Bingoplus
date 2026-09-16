@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: bingoplus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bingoplus
+      POSTGRES_PASSWORD: bingoplus_dev
+      POSTGRES_DB: bingoplus
+    ports:
+      - "55432:5432"
+    volumes:
+      - bingoplus_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bingoplus"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: bingoplus-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  bingoplus_pg_data:

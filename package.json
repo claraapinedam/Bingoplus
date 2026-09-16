@@ -1,0 +1,29 @@
+{
+  "name": "bingoplus",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.13.0",
+  "description": "BINGO+ — pet ecosystem marketplace (monorepo)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "postinstall": "npm run build --workspace=packages/utils && npm run build --workspace=packages/types",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "db:migrate": "npm run prisma:migrate --workspace=apps/api",
+    "db:seed": "npm run prisma:seed --workspace=apps/api",
+    "db:studio": "npm run prisma:studio --workspace=apps/api"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.3",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

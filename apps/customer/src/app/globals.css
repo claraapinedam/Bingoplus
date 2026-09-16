@@ -1,0 +1,362 @@
+:root {
+  --bingo-teal: #16a085;
+  --bingo-navy: #172b4d;
+  --bingo-coral: #ff6b5e;
+  --bingo-cream: #fff8f2;
+  --bingo-soft-gray: #f7f9fb;
+  --bingo-success: #22a06b;
+  --bingo-warning: #f5a524;
+  --bingo-error: #d64545;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --shadow-sm: 0 1px 2px rgba(23, 43, 77, 0.06), 0 1px 3px rgba(23, 43, 77, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  background: var(--bingo-soft-gray);
+  color: var(--bingo-navy);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+img {
+  max-width: 100%;
+}
+
+.bingo-app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--bingo-soft-gray);
+  position: relative;
+  padding-bottom: 76px;
+}
+
+.bingo-header {
+  padding: 16px;
+  background: var(--bingo-navy);
+  color: white;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.bingo-logo {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.bingo-logo .plus {
+  color: var(--bingo-teal);
+}
+
+.bingo-header-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  margin-top: 4px;
+}
+
+.bingo-search {
+  margin-top: 14px;
+  display: flex;
+}
+
+.bingo-search input {
+  width: 100%;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 16px;
+  font-size: 14px;
+  outline: none;
+}
+
+.bingo-content {
+  padding: 16px;
+}
+
+.bingo-section-title {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 20px 0 10px;
+}
+
+.bingo-chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.bingo-h-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  margin: 0 -16px;
+  padding: 0 16px;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge */
+}
+
+.bingo-h-scroll::-webkit-scrollbar {
+  display: none; /* Chrome/Safari — dots below are the pagination UI instead */
+}
+
+.bingo-scroll-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.bingo-scroll-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #d8dee6;
+  transition: background 0.15s, width 0.15s;
+}
+
+.bingo-scroll-dot.active {
+  background: var(--bingo-teal);
+  width: 16px;
+}
+
+.bingo-chip {
+  flex: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: white;
+  border: 1px solid #e0e4ea;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bingo-navy);
+  white-space: nowrap;
+}
+
+.bingo-chip.active {
+  background: var(--bingo-teal);
+  color: white;
+  border-color: var(--bingo-teal);
+}
+
+.bingo-card {
+  background: white;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+}
+
+.bingo-product-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.bingo-product-card {
+  background: white;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.bingo-product-thumb {
+  height: 96px;
+  background: linear-gradient(135deg, #e6f7f1, #fff3ea);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--bingo-teal);
+  font-weight: 800;
+}
+
+.bingo-product-body {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bingo-product-name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  min-height: 34px;
+}
+
+.bingo-product-business {
+  font-size: 11px;
+  color: #7f8ea3;
+}
+
+.bingo-product-price {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--bingo-navy);
+}
+
+.bingo-price-strike {
+  text-decoration: line-through;
+  color: #9aa5b1;
+  font-weight: 500;
+  font-size: 12px;
+  margin-right: 4px;
+}
+
+.bingo-button {
+  border: none;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  background: var(--bingo-teal);
+  color: white;
+  width: 100%;
+  text-align: center;
+}
+
+.bingo-button.secondary {
+  background: white;
+  color: var(--bingo-navy);
+  border: 1px solid #e0e4ea;
+}
+
+.bingo-button.small {
+  width: auto;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.bingo-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bingo-input {
+  border: 1px solid #e0e4ea;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 14px;
+  width: 100%;
+}
+
+.bingo-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  background: white;
+  border-top: 1px solid #eef1f5;
+  display: flex;
+  justify-content: space-around;
+  padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+  z-index: 10;
+}
+
+.bingo-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9aa5b1;
+  position: relative;
+  padding: 4px 10px;
+}
+
+.bingo-nav-item.active {
+  color: var(--bingo-teal);
+}
+
+.bingo-nav-badge {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  background: var(--bingo-coral);
+  color: white;
+  border-radius: 999px;
+  font-size: 10px;
+  padding: 1px 5px;
+  font-weight: 800;
+}
+
+.bingo-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: #7f8ea3;
+}
+
+.bingo-empty-title {
+  font-weight: 700;
+  color: var(--bingo-navy);
+  margin-bottom: 4px;
+}
+
+.bingo-error-banner {
+  background: #fdecec;
+  color: var(--bingo-error);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.bingo-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.badge-sale {
+  background: #fdecec;
+  color: var(--bingo-coral);
+}
+
+/* ── Delivery tracking additions (FASE 4B) ─────────────────────────────── */
+
+.rider-map-placeholder {
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #e6f7f1, #eef3fb);
+  padding: 20px;
+  text-align: center;
+  color: var(--bingo-navy);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rider-timeline-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px 0;
+}
+
+.rider-timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}

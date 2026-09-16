@@ -1,0 +1,7 @@
+-- AlterEnum
+ALTER TYPE "ReviewTargetType" ADD VALUE 'CUSTOMER';
+
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "ratingAvg" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "reviewCount" INTEGER NOT NULL DEFAULT 0;
+

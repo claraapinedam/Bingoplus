@@ -1,0 +1,363 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import CustomerShell from '@/components/CustomerShell';
+import EmptyState from '@/components/EmptyState';
+import RatingStars from '@/components/RatingStars';
+import { apiFetch, ApiError } from '@/lib/api';
+import {
+  API_ERROR_MESSAGES,
+  CUSTOMER_CANCELLABLE_STATUSES,
+  ORDER_STATUS_COLORS,
+  ORDER_STATUS_LABELS,
+  PICKUP_PROGRESS_STEPS,
+} from '@/lib/orderStatus';
+
+const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
+
+interface OrderItem {
+  id: string;
+  nameSnapshot: string;
+  quantity: number;
+  unitPrice: string | number;
+  subtotal: string | number;
+}
+
+interface OrderDetail {
+  id: string;
+  orderNumber: string;
+  status: string;
+  fulfillmentType: 'PICKUP' | 'DELIVERY';
+  subtotal: string | number;
+  discount: string | number;
+  tax: string | number;
+  platformFee: string | number;
+  serviceFee: string | number;
+  deliveryFee: string | number;
+  total: string | number;
+  currency: string;
+  notes: string | null;
+  cancelReason: string | null;
+  createdAt: string;
+  items: OrderItem[];
+  business: { id: string; tradeName: string; addressLine: string; city: string };
+  payment: { status: string } | null;
+  deliveryAddressSnapshot: { label: string; line1: string; line2: string | null; city: string } | null;
+}
+
+interface ReviewSummary {
+  targetType: 'RIDER' | 'BUSINESS';
+  rating: number;
+  comment: string | null;
+}
+
+interface ReviewContext {
+  eligible: boolean;
+  rider: { id: string; firstName: string } | null;
+  reviews: ReviewSummary[];
+}
+
+export default function OrderDetailPage() {
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const [order, setOrder] = useState<OrderDetail | null | undefined>(undefined);
+  const [notFound, setNotFound] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reviewContext, setReviewContext] = useState<ReviewContext | null>(null);
+  const [businessRating, setBusinessRating] = useState(0);
+  const [businessComment, setBusinessComment] = useState('');
+  const [riderRating, setRiderRating] = useState(0);
+  const [riderComment, setRiderComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    apiFetch<OrderDetail>(`/orders/${params.id}`)
+      .then(setOrder)
+      .catch(() => setNotFound(true));
+  }, [params.id]);
+
+  const loadReviewContext = useCallback(() => {
+    apiFetch<ReviewContext>(`/orders/${params.id}/reviews`)
+      .then(setReviewContext)
+      .catch(() => undefined);
+  }, [params.id]);
+
+  useEffect(() => {
+    load();
+    loadReviewContext();
+  }, [load, loadReviewContext]);
+
+  async function submitReview() {
+    if (businessRating === 0 && riderRating === 0) return;
+    setSubmittingReview(true);
+    setReviewError(null);
+    try {
+      const context = await apiFetch<ReviewContext>(`/orders/${params.id}/reviews`, {
+        method: 'POST',
+        body: JSON.stringify({
+          business: businessRating > 0 ? { rating: businessRating, comment: businessComment || undefined } : undefined,
+          rider: riderRating > 0 ? { rating: riderRating, comment: riderComment || undefined } : undefined,
+        }),
+      });
+      setReviewContext(context);
+    } catch (err) {
+      setReviewError(err instanceof ApiError ? (API_ERROR_MESSAGES[err.code] ?? err.message) : 'No se pudo enviar la calificación.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  }
+
+  async function cancelOrder() {
+    if (!order) return;
+    setCancelling(true);
+    setError(null);
+    try {
+      await apiFetch(`/orders/${order.id}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Cancelado por el cliente' }),
+      });
+      load();
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? (API_ERROR_MESSAGES[err.code] ?? err.message) : 'No se pudo cancelar el pedido.',
+      );
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  if (notFound) {
+    return (
+      <CustomerShell>
+        <div className="bingo-content">
+          <EmptyState title="Pedido no disponible" subtitle="No encontramos este pedido." />
+        </div>
+      </CustomerShell>
+    );
+  }
+
+  if (order === undefined) {
+    return (
+      <CustomerShell>
+        <div className="bingo-content">
+          <p style={{ color: '#7f8ea3', fontSize: 13 }}>Cargando…</p>
+        </div>
+      </CustomerShell>
+    );
+  }
+  if (!order) return null;
+
+  const currentStepIndex = PICKUP_PROGRESS_STEPS.indexOf(order.status);
+  const canCancel = CUSTOMER_CANCELLABLE_STATUSES.includes(order.status);
+
+  return (
+    <CustomerShell>
+      <header className="bingo-header">
+        <button
+          className="bingo-button secondary small"
+          style={{ marginBottom: 10 }}
+          onClick={() => router.push('/orders')}
+        >
+          ← Mis pedidos
+        </button>
+        <div className="bingo-logo" style={{ fontSize: 18 }}>
+          {order.orderNumber}
+        </div>
+        <div className="bingo-header-sub">{order.business.tradeName}</div>
+      </header>
+
+      <div className="bingo-content">
+        <span
+          className="bingo-badge"
+          style={{ background: '#f2f4f7', color: ORDER_STATUS_COLORS[order.status] ?? '#54617a', fontSize: 13 }}
+        >
+          {ORDER_STATUS_LABELS[order.status] ?? order.status}
+        </span>
+
+        {order.status === 'CANCELLED' ? (
+          <div className="bingo-error-banner" style={{ marginTop: 10 }}>
+            Este pedido fue cancelado{order.cancelReason ? `: ${order.cancelReason}` : '.'}
+          </div>
+        ) : currentStepIndex >= 0 ? (
+          <div className="bingo-card" style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between' }}>
+            {PICKUP_PROGRESS_STEPS.map((step, i) => (
+              <div key={step} style={{ textAlign: 'center', flex: 1 }}>
+                <div
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    margin: '0 auto 4px',
+                    background: i <= currentStepIndex ? 'var(--bingo-teal)' : '#e0e4ea',
+                  }}
+                />
+                <div style={{ fontSize: 9, color: i <= currentStepIndex ? 'var(--bingo-navy)' : '#9aa5b1' }}>
+                  {ORDER_STATUS_LABELS[step]}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <h2 className="bingo-section-title">Productos</h2>
+        <div className="bingo-card">
+          {order.items.map((item) => (
+            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+              <span>
+                {item.quantity}× {item.nameSnapshot}
+              </span>
+              <span>{currencyFormatter.format(Number(item.subtotal))}</span>
+            </div>
+          ))}
+        </div>
+
+        <h2 className="bingo-section-title">
+          {order.fulfillmentType === 'PICKUP' ? 'Retiro en tienda' : 'Dirección de entrega'}
+        </h2>
+        <div className="bingo-card" style={{ fontSize: 13 }}>
+          {order.fulfillmentType === 'PICKUP' ? (
+            <>
+              {order.business.addressLine}, {order.business.city}
+            </>
+          ) : order.deliveryAddressSnapshot ? (
+            <>
+              {order.deliveryAddressSnapshot.label} — {order.deliveryAddressSnapshot.line1}
+              {order.deliveryAddressSnapshot.line2 ? `, ${order.deliveryAddressSnapshot.line2}` : ''},{' '}
+              {order.deliveryAddressSnapshot.city}
+            </>
+          ) : (
+            'Sin dirección registrada'
+          )}
+        </div>
+
+        {order.fulfillmentType === 'DELIVERY' && (
+          <a
+            href={`/orders/${order.id}/tracking`}
+            className="bingo-card"
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}
+          >
+            <span style={{ fontWeight: 700, fontSize: 14 }}>🛵 Seguir mi pedido en vivo</span>
+            <span style={{ color: '#9aa5b1' }}>→</span>
+          </a>
+        )}
+
+        <h2 className="bingo-section-title">Resumen</h2>
+        <div className="bingo-card">
+          {[
+            ['Subtotal', Number(order.subtotal)],
+            ['Descuento', -Number(order.discount)],
+            ['Impuestos', Number(order.tax)],
+            // platformFee/serviceFee son dos cargos configurables por separado en el backend —
+            // al cliente se le muestran combinados, el desglose real queda en la orden.
+            ['Tarifa de servicio', Number(order.platformFee) + Number(order.serviceFee)],
+            ['Envío', Number(order.deliveryFee)],
+          ].map(([label, value]) => (
+            <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a' }}>
+              <span>{label}</span>
+              <span>{currencyFormatter.format(value as number)}</span>
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 800, marginTop: 8 }}>
+            <span>Total</span>
+            <span>{currencyFormatter.format(Number(order.total))}</span>
+          </div>
+          {order.payment && (
+            <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 8 }}>
+              Pago: {order.payment.status === 'PAID' ? 'Pagado' : order.payment.status}
+            </div>
+          )}
+        </div>
+
+        {order.status === 'COMPLETED' && reviewContext?.eligible && (() => {
+          const businessReview = reviewContext.reviews.find((r) => r.targetType === 'BUSINESS');
+          const riderReview = reviewContext.reviews.find((r) => r.targetType === 'RIDER');
+          const showRider = !!reviewContext.rider;
+          const allDone = !!businessReview && (!showRider || !!riderReview);
+
+          return (
+            <>
+              <h2 className="bingo-section-title">Califica tu pedido</h2>
+              <div className="bingo-card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{order.business.tradeName}</div>
+                  {businessReview ? (
+                    <RatingStars value={businessReview.rating} readOnly />
+                  ) : (
+                    <RatingStars value={businessRating} onChange={setBusinessRating} />
+                  )}
+                  {!businessReview && businessRating > 0 && (
+                    <input
+                      className="bingo-input"
+                      style={{ marginTop: 8 }}
+                      placeholder="Comentario (opcional)"
+                      maxLength={500}
+                      value={businessComment}
+                      onChange={(e) => setBusinessComment(e.target.value)}
+                    />
+                  )}
+                  {businessReview?.comment && (
+                    <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 6 }}>{businessReview.comment}</div>
+                  )}
+                </div>
+
+                {showRider && (
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Repartidor: {reviewContext.rider!.firstName}</div>
+                    {riderReview ? (
+                      <RatingStars value={riderReview.rating} readOnly />
+                    ) : (
+                      <RatingStars value={riderRating} onChange={setRiderRating} />
+                    )}
+                    {!riderReview && riderRating > 0 && (
+                      <input
+                        className="bingo-input"
+                        style={{ marginTop: 8 }}
+                        placeholder="Comentario (opcional)"
+                        maxLength={500}
+                        value={riderComment}
+                        onChange={(e) => setRiderComment(e.target.value)}
+                      />
+                    )}
+                    {riderReview?.comment && <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 6 }}>{riderReview.comment}</div>}
+                  </div>
+                )}
+
+                {allDone && <div style={{ fontSize: 12, color: 'var(--bingo-success)' }}>¡Gracias por tu calificación!</div>}
+                {reviewError && <div className="bingo-error-banner">{reviewError}</div>}
+
+                {!allDone && (
+                  <button
+                    className="bingo-button"
+                    disabled={
+                      submittingReview ||
+                      ((!!businessReview || businessRating === 0) && (!!riderReview || !showRider || riderRating === 0))
+                    }
+                    onClick={submitReview}
+                  >
+                    {submittingReview ? 'Enviando…' : 'Enviar calificación'}
+                  </button>
+                )}
+              </div>
+            </>
+          );
+        })()}
+
+        {error && <div className="bingo-error-banner" style={{ marginTop: 12 }}>{error}</div>}
+
+        {canCancel && (
+          <button
+            className="bingo-button secondary"
+            style={{ marginTop: 16, color: 'var(--bingo-error)' }}
+            disabled={cancelling}
+            onClick={cancelOrder}
+          >
+            {cancelling ? 'Cancelando…' : 'Cancelar pedido'}
+          </button>
+        )}
+      </div>
+    </CustomerShell>
+  );
+}

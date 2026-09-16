@@ -1,0 +1,261 @@
+:root {
+  --bingo-teal: #16a085;
+  --bingo-navy: #172b4d;
+  --bingo-coral: #ff6b5e;
+  --bingo-cream: #fff8f2;
+  --bingo-soft-gray: #f7f9fb;
+  --bingo-success: #22a06b;
+  --bingo-warning: #f5a524;
+  --bingo-error: #d64545;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --shadow-sm: 0 1px 2px rgba(23, 43, 77, 0.06), 0 1px 3px rgba(23, 43, 77, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  background: var(--bingo-soft-gray);
+  color: var(--bingo-navy);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+.bingo-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.bingo-sidebar {
+  width: 240px;
+  background: var(--bingo-navy);
+  color: white;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bingo-logo {
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 32px;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.bingo-logo .plus {
+  color: var(--bingo-teal);
+}
+
+.bingo-nav-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.bingo-nav-chevron {
+  font-size: 11px;
+  transition: transform 0.15s ease;
+  opacity: 0.6;
+}
+
+.bingo-nav-chevron.open {
+  transform: rotate(180deg);
+}
+
+.bingo-nav-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 14px;
+  margin-bottom: 4px;
+}
+
+.bingo-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 14px;
+}
+
+.bingo-nav-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 0 14px;
+  margin-bottom: 4px;
+}
+
+.bingo-nav-link {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.bingo-nav-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.bingo-nav-link.active {
+  background: var(--bingo-teal);
+  color: white;
+}
+
+.bingo-main {
+  flex: 1;
+  padding: 32px 40px;
+  max-width: 1200px;
+}
+
+.bingo-card {
+  background: white;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 20px 24px;
+}
+
+.bingo-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.bingo-table th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7f8ea3;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef1f5;
+}
+
+.bingo-table td {
+  padding: 12px;
+  border-bottom: 1px solid #f2f4f7;
+  font-size: 14px;
+}
+
+.bingo-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.badge-pending { background: #fff3e0; color: var(--bingo-warning); }
+.badge-under_review { background: #fff3e0; color: var(--bingo-warning); }
+.badge-approved { background: #e6f7f1; color: var(--bingo-teal); }
+.badge-verified { background: #e6f7f1; color: var(--bingo-teal); }
+.badge-active { background: #e3f8ec; color: var(--bingo-success); }
+.badge-published { background: #e3f8ec; color: var(--bingo-success); }
+.badge-flagged { background: #fff3e0; color: var(--bingo-warning); }
+.badge-hidden { background: #eef1f5; color: #7f8ea3; }
+.badge-rejected { background: #fdecec; color: var(--bingo-error); }
+.badge-suspended { background: #fdecec; color: var(--bingo-error); }
+.badge-pending_approval { background: #fff3e0; color: var(--bingo-warning); }
+.badge-available { background: #e3f8ec; color: var(--bingo-success); }
+.badge-busy { background: #fff3e0; color: var(--bingo-warning); }
+.badge-offline { background: #eef1f5; color: #7f8ea3; }
+.badge-inactive { background: #eef1f5; color: #7f8ea3; }
+.badge-draft { background: #eef1f5; color: #7f8ea3; }
+.badge-trial { background: #fff3e0; color: var(--bingo-warning); }
+.badge-past_due { background: #fdecec; color: var(--bingo-error); }
+.badge-paused { background: #fff3e0; color: var(--bingo-warning); }
+.badge-cancelled { background: #fdecec; color: var(--bingo-error); }
+.badge-expired { background: #eef1f5; color: #7f8ea3; }
+
+/* Order/Delivery/Payment/BusinessCoupon statuses */
+.badge-created { background: #eef1f5; color: #7f8ea3; }
+.badge-payment_pending { background: #fff3e0; color: var(--bingo-warning); }
+.badge-paid { background: #e6f7f1; color: var(--bingo-teal); }
+.badge-confirmed { background: #e6f7f1; color: var(--bingo-teal); }
+.badge-no_show { background: #fdecec; color: var(--bingo-error); }
+.badge-preparing { background: #fff3e0; color: var(--bingo-warning); }
+.badge-ready_for_pickup { background: #e3f8ec; color: var(--bingo-success); }
+.badge-completed { background: #e3f8ec; color: var(--bingo-success); }
+.badge-searching_rider { background: #fff3e0; color: var(--bingo-warning); }
+.badge-rider_assigned { background: #fff3e0; color: var(--bingo-warning); }
+.badge-rider_accepted { background: #e6f7f1; color: var(--bingo-teal); }
+.badge-going_to_pickup { background: #fff3e0; color: var(--bingo-warning); }
+.badge-arrived_at_pickup { background: #fff3e0; color: var(--bingo-warning); }
+.badge-picked_up { background: #e6f7f1; color: var(--bingo-teal); }
+.badge-in_transit { background: #fff3e0; color: var(--bingo-warning); }
+.badge-arrived_at_customer { background: #fff3e0; color: var(--bingo-warning); }
+.badge-delivered { background: #e3f8ec; color: var(--bingo-success); }
+.badge-failed { background: #fdecec; color: var(--bingo-error); }
+.badge-requires_action { background: #fff3e0; color: var(--bingo-warning); }
+.badge-authorized { background: #e6f7f1; color: var(--bingo-teal); }
+.badge-refunded { background: #eef1f5; color: #7f8ea3; }
+.badge-partially_refunded { background: #fff3e0; color: var(--bingo-warning); }
+
+.bingo-button {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  background: var(--bingo-teal);
+  color: white;
+}
+
+.bingo-button.secondary {
+  background: white;
+  color: var(--bingo-navy);
+  border: 1px solid #e0e4ea;
+}
+
+.bingo-button.danger {
+  background: var(--bingo-error);
+}
+
+.bingo-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bingo-input {
+  border: 1px solid #e0e4ea;
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 14px;
+  width: 100%;
+}
+
+.bingo-page-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 4px;
+}
+
+.bingo-page-subtitle {
+  color: #7f8ea3;
+  font-size: 14px;
+  margin: 0 0 24px;
+}
