@@ -19,6 +19,7 @@ import { BusinessCapabilitiesService } from '../business-capabilities/business-c
 import { MembershipsService } from '../memberships/memberships.service';
 import { getActiveOffersMap } from '../coupons/active-offers.util';
 import { CouponsService } from '../coupons/coupons.service';
+import { ContractsService } from '../contracts/contracts.service';
 
 const DEFAULT_COMMISSION_SETTING_KEY = 'default_commission_rate';
 
@@ -48,6 +49,7 @@ export class BusinessesService {
     private readonly capabilities: BusinessCapabilitiesService,
     private readonly memberships: MembershipsService,
     private readonly coupons: CouponsService,
+    private readonly contracts: ContractsService,
   ) {}
 
   listCategories() {
@@ -237,6 +239,12 @@ export class BusinessesService {
       throw new BadRequestException(`Unknown business category "${dto.categorySlug}"`);
     }
 
+    // RUC signs through a named legal representative (a company can't literally hold a pen);
+    // CEDULA IS the person, legalName already carries their name, no separate field needed.
+    if (dto.idType === 'RUC' && !dto.representativeName?.trim()) {
+      throw new BadRequestException('representativeName is required when idType is RUC');
+    }
+
     // Directory presence is what's monetized via membership — independent of SELLS_PRODUCTS.
     // Selling products alone is monetized via marketplace commission (product sales + rider
     // delivery fee) and does NOT put a business in the Directory at all — it only shows up in
@@ -266,7 +274,9 @@ export class BusinessesService {
         ownerId,
         categoryId: category.id,
         tradeName: dto.tradeName,
+        idType: dto.idType,
         legalName: dto.legalName,
+        representativeName: dto.idType === 'RUC' ? dto.representativeName : null,
         taxId: dto.taxId,
         email: dto.email,
         phone: dto.phone,
@@ -521,6 +531,12 @@ export class BusinessesService {
     if (business.capabilities.DIRECTORY_LISTING) {
       await this.memberships.startTrialIfMissing(businessId);
     }
+
+    // Approval alone never makes a business ACTIVE (visible in Marketplace/Directory) anymore —
+    // it now waits on this contract actually being signed (ContractsService.sign() is what calls
+    // activate() going forward). The commission row above must exist first: the contract's fee
+    // clause quotes it verbatim rather than inventing a number.
+    await this.contracts.createForApprovedBusiness(businessId);
 
     return updated;
   }

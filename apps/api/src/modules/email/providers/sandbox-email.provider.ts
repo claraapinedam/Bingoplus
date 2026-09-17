@@ -14,8 +14,11 @@ export class SandboxEmailProvider extends EmailProvider {
   private readonly logger = new Logger('SandboxEmailProvider');
 
   async send(input: SendEmailInput): Promise<SendEmailResult> {
+    const attachmentNote = input.attachments?.length
+      ? ` | Attachments: ${input.attachments.map((a) => a.filename).join(', ')}`
+      : '';
     this.logger.warn(
-      `[SANDBOX EMAIL — not actually sent] To: ${input.to} | Subject: ${input.subject}\n${input.text}`,
+      `[SANDBOX EMAIL — not actually sent] To: ${input.to} | Subject: ${input.subject}${attachmentNote}\n${input.text}`,
     );
     return { success: true, providerMessageId: null };
   }

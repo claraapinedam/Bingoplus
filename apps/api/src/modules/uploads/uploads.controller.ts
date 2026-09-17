@@ -31,6 +31,9 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.webp': 'image/webp',
+  // Server-generated signed contracts (ContractsService) land in this same directory — never
+  // uploaded via this controller's multipart route, but served back through the same endpoint.
+  '.pdf': 'application/pdf',
 };
 
 /**

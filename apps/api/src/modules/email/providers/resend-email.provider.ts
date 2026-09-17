@@ -26,6 +26,7 @@ export class ResendEmailProvider extends EmailProvider {
       subject: input.subject,
       html: input.html,
       text: input.text,
+      attachments: input.attachments?.map((a) => ({ filename: a.filename, content: a.content })),
     });
     if (result.error) {
       // Never marked as sent when it wasn't — the caller decides what "delivery failed" means

@@ -129,6 +129,17 @@ class EnvironmentVariables {
   @IsOptional()
   EMAIL_FROM_NAME: string = 'BINGO+';
 
+  // BINGO+'s own counterpart signature block, stamped automatically on every business contract —
+  // fictitious placeholder values until the real legal representative/RUC are provided (same
+  // "sandbox until configured" shape as everything else in this file).
+  @IsString()
+  @IsOptional()
+  BINGOPLUS_LEGAL_REPRESENTATIVE_NAME: string = 'Representante Legal BINGO+ (dato de prueba)';
+
+  @IsString()
+  @IsOptional()
+  BINGOPLUS_LEGAL_RUC: string = '9999999999001';
+
   @IsString()
   @IsOptional()
   SMS_API_KEY?: string;

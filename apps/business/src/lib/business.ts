@@ -35,3 +35,26 @@ export interface BusinessProfile {
 export function getBusinessProfile(businessId: string) {
   return apiFetch<BusinessProfile>(`/me/business/${businessId}`);
 }
+
+export interface BusinessContract {
+  id: string;
+  status: 'PENDING_SIGNATURE' | 'SIGNED';
+  idType: 'RUC' | 'CEDULA';
+  legalName: string;
+  representativeName: string | null;
+  taxId: string;
+  contractText: string;
+  pdfUrl: string | null;
+  signedAt: string | null;
+}
+
+export function getBusinessContract(businessId: string) {
+  return apiFetch<BusinessContract | null>(`/me/business/${businessId}/contract`);
+}
+
+export function signBusinessContract(businessId: string, signatureDataUrl: string) {
+  return apiFetch<BusinessContract>(`/me/business/${businessId}/contract/sign`, {
+    method: 'POST',
+    body: JSON.stringify({ signatureDataUrl }),
+  });
+}

@@ -9,9 +9,10 @@ import { RankingModule } from '../ranking/ranking.module';
 import { BusinessCapabilitiesModule } from '../business-capabilities/business-capabilities.module';
 import { MembershipsModule } from '../memberships/memberships.module';
 import { CouponsModule } from '../coupons/coupons.module';
+import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
-  imports: [RankingModule, BusinessCapabilitiesModule, MembershipsModule, CouponsModule],
+  imports: [RankingModule, BusinessCapabilitiesModule, MembershipsModule, CouponsModule, ContractsModule],
   controllers: [BusinessesController, BusinessCategoriesController, MarketplaceBusinessesController],
   providers: [BusinessesService],
   exports: [BusinessesService, BusinessCapabilitiesModule],

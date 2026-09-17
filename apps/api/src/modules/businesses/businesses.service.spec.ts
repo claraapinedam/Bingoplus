@@ -8,10 +8,12 @@ describe('BusinessesService', () => {
   let prisma: any;
   let capabilities: any;
   let memberships: any;
+  let contracts: any;
 
   const baseApplyDto = {
-    tradeName: 'T', legalName: 'T SA', taxId: '1', email: 'e@e.com', phone: '099',
-    categorySlug: 'tiendas', addressLine: 'Av 1', city: 'Quito', speciesSlugs: ['perro'],
+    tradeName: 'T', idType: 'RUC', legalName: 'T SA', representativeName: 'Rep Name', taxId: '1',
+    email: 'e@e.com', phone: '099', categorySlug: 'tiendas', addressLine: 'Av 1', city: 'Quito',
+    speciesSlugs: ['perro'],
   };
 
   beforeEach(() => {
@@ -30,12 +32,14 @@ describe('BusinessesService', () => {
     };
     capabilities = { getMap: jest.fn().mockResolvedValue({}), grantOnboardingDefaults: jest.fn() };
     memberships = { startTrialIfMissing: jest.fn(), redeemAdminCoupon: jest.fn() };
+    contracts = { createForApprovedBusiness: jest.fn().mockResolvedValue({ id: 'contract1' }) };
     service = new BusinessesService(
       prisma as unknown as PrismaService,
       {} as any,
       capabilities,
       memberships,
       { getCouponSummary: jest.fn().mockResolvedValue({ hasActiveCoupons: false, count: 0 }) } as any,
+      contracts,
     );
   });
 
@@ -182,6 +186,53 @@ describe('BusinessesService', () => {
     });
   });
 
+  describe('apply — RUC vs CEDULA', () => {
+    it('rejects RUC without a representativeName', async () => {
+      await expect(
+        service.apply('u1', {
+          ...baseApplyDto,
+          idType: 'RUC',
+          representativeName: '   ',
+          sellsProducts: true,
+          directoryListing: false,
+        } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.business.create).not.toHaveBeenCalled();
+    });
+
+    it('persists representativeName for RUC', async () => {
+      prisma.business.create.mockResolvedValue({ id: 'b1' });
+
+      await service.apply('u1', {
+        ...baseApplyDto,
+        idType: 'RUC',
+        representativeName: 'Ana Pérez',
+        sellsProducts: true,
+        directoryListing: false,
+      } as any);
+
+      expect(prisma.business.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idType: 'RUC', representativeName: 'Ana Pérez' }) }),
+      );
+    });
+
+    it('never persists a representativeName for CEDULA, even if one was sent', async () => {
+      prisma.business.create.mockResolvedValue({ id: 'b1' });
+
+      await service.apply('u1', {
+        ...baseApplyDto,
+        idType: 'CEDULA',
+        representativeName: 'Should be ignored',
+        sellsProducts: true,
+        directoryListing: false,
+      } as any);
+
+      expect(prisma.business.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idType: 'CEDULA', representativeName: null }) }),
+      );
+    });
+  });
+
   it('refuses to approve a business that is already ACTIVE', async () => {
     prisma.business.findUnique.mockResolvedValue({ id: 'b1', status: BusinessStatus.ACTIVE });
 
@@ -198,6 +249,16 @@ describe('BusinessesService', () => {
     expect(prisma.commission.create).toHaveBeenCalledWith({
       data: { businessId: 'b1', rate: 0.2, createdBy: 'admin-1' },
     });
+  });
+
+  it('generates a pending-signature contract as part of approving a business', async () => {
+    prisma.business.findUnique.mockResolvedValue({ id: 'b1', status: BusinessStatus.PENDING });
+    prisma.platformSetting.findUnique.mockResolvedValue({ value: 0.2 });
+    prisma.business.update.mockResolvedValue({ id: 'b1', status: BusinessStatus.APPROVED });
+
+    await service.approve('b1', 'admin-1');
+
+    expect(contracts.createForApprovedBusiness).toHaveBeenCalledWith('b1');
   });
 
   it('a business only becomes sellable once activated, never on approve alone', async () => {

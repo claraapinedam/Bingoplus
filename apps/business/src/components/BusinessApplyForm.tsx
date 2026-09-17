@@ -22,7 +22,9 @@ const SPECIES_ICONS: Record<string, string> = {
 
 export interface BusinessApplyValues {
   tradeName: string;
+  idType: 'RUC' | 'CEDULA';
   legalName: string;
+  representativeName: string | undefined;
   taxId: string;
   email: string;
   phone: string;
@@ -101,6 +103,7 @@ export default function BusinessApplyForm({
   const [meName, setMeName] = useState('');
   const [tradeName, setTradeName] = useState('');
   const [legalName, setLegalName] = useState('');
+  const [representativeName, setRepresentativeName] = useState('');
   const [taxId, setTaxId] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -144,6 +147,7 @@ export default function BusinessApplyForm({
     idType !== null &&
     tradeName.trim() !== '' &&
     legalName.trim() !== '' &&
+    (idType !== 'RUC' || representativeName.trim() !== '') &&
     taxId.trim() !== '' &&
     isValidEmail(email) &&
     phone.trim() !== '' &&
@@ -214,6 +218,9 @@ export default function BusinessApplyForm({
     if (type === 'CEDULA' && legalName.trim() === '' && meName) {
       setLegalName(meName);
     }
+    if (type === 'RUC' && representativeName.trim() === '' && meName) {
+      setRepresentativeName(meName);
+    }
   }
 
   function toggleSpecies(slug: string) {
@@ -243,10 +250,12 @@ export default function BusinessApplyForm({
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!isValid || !goal) return;
+    if (!isValid || !goal || !idType) return;
     onSubmit({
       tradeName,
+      idType,
       legalName,
+      representativeName: idType === 'RUC' ? representativeName : undefined,
       taxId,
       email,
       phone,
@@ -309,6 +318,22 @@ export default function BusinessApplyForm({
             </label>
             <input className="bingo-input" required value={taxId} onChange={(e) => setTaxId(e.target.value)} />
           </div>
+          {idType === 'RUC' && (
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>
+                Nombre del representante legal *
+              </label>
+              <input
+                className="bingo-input"
+                required
+                value={representativeName}
+                onChange={(e) => setRepresentativeName(e.target.value)}
+              />
+              <p style={{ fontSize: 11, color: '#7f8ea3', margin: '4px 0 0' }}>
+                Es quien firmará el contrato de afiliación en nombre del Negocio.
+              </p>
+            </div>
+          )}
         </div>
       )}
 

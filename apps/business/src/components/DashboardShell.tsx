@@ -74,6 +74,15 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessId, pathname]);
 
+  // Approved-but-not-yet-signed businesses never reach the dashboard itself — same redirect
+  // pattern as RiderShell→/apply and CustomerShell→/verify-email, just gated on Business.status
+  // instead of a role or a verification flag.
+  useEffect(() => {
+    if (business?.status === 'APPROVED' && pathname !== '/contract') {
+      router.replace('/contract');
+    }
+  }, [business, pathname, router]);
+
   function logout() {
     clearTokens();
     router.push('/login');
@@ -99,6 +108,9 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         </div>
       </div>
     );
+  }
+  if (business.status === 'APPROVED' && pathname !== '/contract') {
+    return null;
   }
 
   return (

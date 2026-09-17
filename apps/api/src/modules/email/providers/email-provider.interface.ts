@@ -3,6 +3,7 @@ export interface SendEmailInput {
   subject: string;
   html: string;
   text: string;
+  attachments?: { filename: string; content: Buffer }[];
 }
 
 export interface SendEmailResult {

@@ -8,6 +8,7 @@ import OrdersTab from '@/components/business-tabs/OrdersTab';
 import CouponsTab from '@/components/business-tabs/CouponsTab';
 import PaymentsTab from '@/components/business-tabs/PaymentsTab';
 import CommissionsTab from '@/components/business-tabs/CommissionsTab';
+import ContractTab from '@/components/business-tabs/ContractTab';
 import { apiFetch, ApiError } from '@/lib/api';
 
 type CapabilityType =
@@ -77,6 +78,7 @@ const TABS = [
   { value: 'coupons', label: 'Cupones' },
   { value: 'payments', label: 'Pagos' },
   { value: 'commissions', label: 'Comisiones' },
+  { value: 'contract', label: 'Contrato' },
 ];
 
 export default function BusinessDetailPage() {
@@ -144,16 +146,14 @@ export default function BusinessDetailPage() {
     }
   }
 
-  // "Aprobar" from the admin's point of view is one action, even though it chains two backend
-  // steps (approve sets the commission rate, activate makes it live in Marketplace/Directory) —
-  // see admin-businesses.controller.ts. Keeping both endpoints separate on the backend (a
-  // business could in principle be approved-but-not-yet-live) while presenting one button here.
-  async function approveAndActivate() {
+  // Approving generates a contract (ContractsService, via BusinessesService.approve) instead of
+  // activating right away — the business goes ACTIVE on its own once that contract gets signed
+  // from the Business app, or via the manual "Activar" override below for edge cases.
+  async function approve() {
     setActingOnStatus(true);
     setError(null);
     try {
       await apiFetch(`/admin/businesses/${params.id}/approve`, { method: 'PATCH', body: JSON.stringify({}) });
-      await apiFetch(`/admin/businesses/${params.id}/activate`, { method: 'PATCH', body: JSON.stringify({}) });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'La acción falló.');
@@ -232,12 +232,13 @@ export default function BusinessDetailPage() {
           <div className="bingo-card">
             <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>Solicitud / Estado</h2>
             <p style={{ fontSize: 12, color: '#7f8ea3', margin: '0 0 14px' }}>
-              Aprobar fija la tasa de comisión vigente y activa el negocio en Marketplace/Directorio.
+              Aprobar fija la tasa de comisión vigente y genera el contrato que el negocio debe firmar; se activa
+              en Marketplace/Directorio automáticamente al firmarlo (o con "Activar" como override manual).
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {(business.status === 'PENDING' || business.status === 'UNDER_REVIEW') && (
                 <>
-                  <button className="bingo-button" disabled={actingOnStatus} onClick={approveAndActivate}>
+                  <button className="bingo-button" disabled={actingOnStatus} onClick={approve}>
                     Aprobar
                   </button>
                   <button className="bingo-button danger" disabled={actingOnStatus} onClick={() => runStatusAction('reject')}>
@@ -364,6 +365,7 @@ export default function BusinessDetailPage() {
       {tab === 'coupons' && <CouponsTab businessId={business.id} />}
       {tab === 'payments' && <PaymentsTab businessId={business.id} />}
       {tab === 'commissions' && <CommissionsTab businessId={business.id} />}
+      {tab === 'contract' && <ContractTab businessId={business.id} />}
     </AdminShell>
   );
 }

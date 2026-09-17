@@ -6,6 +6,7 @@ import { Audit } from '../../common/decorators/audit.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { BusinessesService } from '../businesses/businesses.service';
+import { ContractsService } from '../contracts/contracts.service';
 import { ListBusinessesQueryDto } from './dto/list-query.dto';
 import {
   ApproveBusinessDto,
@@ -19,7 +20,10 @@ import { SetCapabilityDto } from '../business-capabilities/dto/set-capability.dt
 @UseGuards(RolesGuard)
 @Controller('admin/businesses')
 export class AdminBusinessesController {
-  constructor(private readonly businessesService: BusinessesService) {}
+  constructor(
+    private readonly businessesService: BusinessesService,
+    private readonly contractsService: ContractsService,
+  ) {}
 
   @Get()
   list(@Query() query: ListBusinessesQueryDto) {
@@ -68,6 +72,11 @@ export class AdminBusinessesController {
   @Patch(':id/capabilities')
   setCapability(@Param('id') id: string, @Body() dto: SetCapabilityDto) {
     return this.businessesService.setCapabilityAsAdmin(id, dto.capability, dto.enabled);
+  }
+
+  @Get(':id/contract')
+  getContract(@Param('id') id: string) {
+    return this.contractsService.getLatestForBusiness(id);
   }
 
   @Get(':id/commissions')

@@ -265,12 +265,22 @@ model BusinessCategory {
   businesses Business[]
 }
 
+enum BusinessIdType {
+  RUC
+  CEDULA
+}
+
 model Business {
   id                      String                                 @id @default(cuid())
   ownerId                 String
   categoryId              String
   tradeName               String
+  // RUC: legalName is the "Razón Social". CEDULA: legalName is just the person's own name —
+  // representativeName is only meaningful (and collected) for RUC, where a company signs through
+  // a named legal representative rather than being the natural person itself.
+  idType                  BusinessIdType                         @default(RUC)
   legalName               String
+  representativeName      String?
   taxId                   String
   email                   String
   phone                   String
@@ -306,6 +316,7 @@ model Business {
   owner              User                 @relation("BusinessOwner", fields: [ownerId], references: [id])
   category           BusinessCategory     @relation(fields: [categoryId], references: [id])
   documents          BusinessDocument[]
+  contracts          BusinessContract[]
   // Declared at onboarding ("¿A qué mascotas aplica tu negocio?") — the species-match signal for
   // BusinessRankingService that doesn't depend on the business having any products/services yet,
   // which matters most for Directory-only businesses (groomers, vets, hotels) that may have none.
@@ -339,6 +350,38 @@ model BusinessSpecies {
 
   @@id([businessId, speciesId])
   @@index([speciesId])
+}
+
+enum ContractStatus {
+  PENDING_SIGNATURE
+  SIGNED
+}
+
+// Created automatically the moment Admin approves a business (BusinessesService.approve) —
+// nothing goes ACTIVE (visible in Marketplace/Directory) until this is signed. Snapshots the
+// signer identity at creation time rather than reading live off Business, so a later profile
+// edit never silently rewrites what was actually agreed to and signed.
+model BusinessContract {
+  id                 String         @id @default(cuid())
+  businessId         String
+  status             ContractStatus @default(PENDING_SIGNATURE)
+  idType             BusinessIdType
+  legalName          String
+  representativeName String?
+  taxId              String
+  contractText       String
+  // Raw base64 PNG from the signature canvas — kept alongside the rendered PDF as the primary
+  // audit artifact of what was actually drawn.
+  signatureDataUrl   String?
+  signedAt           DateTime?
+  signedIp           String?
+  pdfUrl             String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
 }
 
 // Which capabilities a business has, independent of its category (RULE 2/3 — see
@@ -396,6 +439,7 @@ enum BusinessDocumentType {
   ID
   BANK_ACCOUNT
   LICENSE
+  CONTRACT
   OTHER
 }
 

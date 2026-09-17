@@ -38,4 +38,19 @@ export class EmailService {
       text: `¡Gracias por registrarte en BINGO+!\n\nTu código de verificación es: ${code}\n\nEste código vence en 15 minutos.`,
     });
   }
+
+  /** Sent to the Business.email on file (the contact email from the onboarding form — never the
+   * signer's own account login email) the moment BusinessContract flips to SIGNED. */
+  async sendSignedContractEmail(to: string, businessName: string, pdfBuffer: Buffer) {
+    return this.provider.send({
+      to,
+      subject: `Contrato firmado — ${businessName} en BINGO+`,
+      html: `
+        <p>¡Listo! El contrato de afiliación de <strong>${businessName}</strong> con BINGO+ quedó firmado.</p>
+        <p>Adjuntamos una copia en PDF para tus registros.</p>
+      `,
+      text: `¡Listo! El contrato de afiliación de ${businessName} con BINGO+ quedó firmado.\n\nAdjuntamos una copia en PDF para tus registros.`,
+      attachments: [{ filename: 'contrato-bingoplus.pdf', content: pdfBuffer }],
+    });
+  }
 }

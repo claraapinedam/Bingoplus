@@ -59,13 +59,13 @@ export default function BusinessRequestsPage() {
     load();
   }, [load]);
 
-  // "Aprobar" chains approve (sets commission rate) then activate (goes live) — see
-  // businesses/[id]/page.tsx for the same combined action and why the backend keeps them separate.
-  async function approveAndActivate(id: string) {
+  // Approving no longer activates the business — it generates a contract that has to be signed
+  // first (ContractsService, wired into BusinessesService.approve). The business goes ACTIVE on
+  // its own once that signature lands (or via the manual "Activar" override below, for edge cases).
+  async function approve(id: string) {
     setActingOn(id);
     try {
       await apiFetch(`/admin/businesses/${id}/approve`, { method: 'PATCH', body: JSON.stringify({}) });
-      await apiFetch(`/admin/businesses/${id}/activate`, { method: 'PATCH', body: JSON.stringify({}) });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'La acción falló.');
@@ -90,7 +90,8 @@ export default function BusinessRequestsPage() {
     <AdminShell>
       <h1 className="bingo-page-title">Solicitudes de Negocios</h1>
       <p className="bingo-page-subtitle">
-        {total} solicitud(es). Al aprobar, el negocio deja de aparecer aquí y pasa a Negocios como negocio activo.
+        {total} solicitud(es). Al aprobar, se genera un contrato que el negocio debe firmar desde su app — se
+        activa automáticamente al firmarlo.
       </p>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -156,7 +157,7 @@ export default function BusinessRequestsPage() {
                         <button
                           className="bingo-button"
                           disabled={actingOn === b.id}
-                          onClick={() => approveAndActivate(b.id)}
+                          onClick={() => approve(b.id)}
                         >
                           Aprobar
                         </button>

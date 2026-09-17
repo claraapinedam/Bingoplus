@@ -1,14 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArrayMinSize, IsArray, IsBoolean, IsLatitude, IsLongitude, IsOptional, IsString } from 'class-validator';
+import { BusinessIdType } from '@prisma/client';
+import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsLatitude, IsLongitude, IsOptional, IsString } from 'class-validator';
 
 export class ApplyBusinessDto {
   @ApiProperty()
   @IsString()
   tradeName!: string;
 
-  @ApiProperty()
+  @ApiProperty({
+    enum: BusinessIdType,
+    description: 'RUC: legalName is the Razón Social and representativeName is required. CEDULA: legalName is just the person\'s own name.',
+  })
+  @IsEnum(BusinessIdType)
+  idType!: BusinessIdType;
+
+  @ApiProperty({ description: 'Razón Social (RUC) or Nombre y Apellido (CEDULA)' })
   @IsString()
   legalName!: string;
+
+  @ApiPropertyOptional({ description: 'Legal representative full name — required when idType is RUC' })
+  @IsOptional()
+  @IsString()
+  representativeName?: string;
 
   @ApiProperty()
   @IsString()
