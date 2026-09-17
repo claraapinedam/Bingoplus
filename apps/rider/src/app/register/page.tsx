@@ -3,6 +3,7 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiError, register } from '@/lib/api';
+import PasswordField, { passwordMeetsPolicy } from '@/components/PasswordField';
 
 /**
  * Step 1 of becoming a rider: create the account. Registering here always creates a plain
@@ -17,11 +18,15 @@ export default function RegisterPage() {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const canSubmit = passwordMeetsPolicy(password) && password === confirmPassword;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!canSubmit) return;
     setError(null);
     setLoading(true);
     try {
@@ -60,22 +65,17 @@ export default function RegisterPage() {
           <input className="bingo-input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} style={{ marginTop: 4 }} />
         </label>
 
-        <label style={{ fontSize: 13, fontWeight: 600 }}>
-          Contraseña (mínimo 8 caracteres)
-          <input
-            className="bingo-input"
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ marginTop: 4 }}
-          />
-        </label>
+        <PasswordField
+          label="Contraseña"
+          password={password}
+          onPasswordChange={setPassword}
+          confirmPassword={confirmPassword}
+          onConfirmPasswordChange={setConfirmPassword}
+        />
 
         {error && <div className="bingo-error-banner">{error}</div>}
 
-        <button className="bingo-button" type="submit" disabled={loading}>
+        <button className="bingo-button" type="submit" disabled={loading || !canSubmit}>
           {loading ? 'Creando cuenta…' : 'Crear cuenta y continuar'}
         </button>
 

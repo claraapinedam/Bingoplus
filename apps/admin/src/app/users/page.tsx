@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
+import PasswordField, { passwordMeetsPolicy } from '@/components/PasswordField';
 import { apiFetch, decodeRoles, getAccessToken, ApiError } from '@/lib/api';
 
 interface StaffUser {
@@ -32,11 +33,14 @@ export default function UsersPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newConfirmPassword, setNewConfirmPassword] = useState('');
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
   const [newRole, setNewRole] = useState('USER');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const canSubmitCreate = passwordMeetsPolicy(newPassword) && newPassword === newConfirmPassword;
 
   useEffect(() => {
     const token = getAccessToken();
@@ -78,6 +82,7 @@ export default function UsersPage() {
 
   async function createUser(e: FormEvent) {
     e.preventDefault();
+    if (!canSubmitCreate) return;
     setCreating(true);
     setCreateError(null);
     try {
@@ -87,6 +92,7 @@ export default function UsersPage() {
       });
       setNewEmail('');
       setNewPassword('');
+      setNewConfirmPassword('');
       setNewFirstName('');
       setNewLastName('');
       setNewRole('USER');
@@ -140,10 +146,13 @@ export default function UsersPage() {
             <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Correo</label>
             <input className="bingo-input" type="email" required value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
           </div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Contraseña (mínimo 8 caracteres)</label>
-            <input className="bingo-input" type="password" required minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-          </div>
+          <PasswordField
+            label="Contraseña"
+            password={newPassword}
+            onPasswordChange={setNewPassword}
+            confirmPassword={newConfirmPassword}
+            onConfirmPasswordChange={setNewConfirmPassword}
+          />
           <div>
             <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Rol</label>
             <select className="bingo-input" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
@@ -154,7 +163,7 @@ export default function UsersPage() {
               ))}
             </select>
           </div>
-          <button className="bingo-button" type="submit" disabled={creating} style={{ width: 'auto', alignSelf: 'flex-start' }}>
+          <button className="bingo-button" type="submit" disabled={creating || !canSubmitCreate} style={{ width: 'auto', alignSelf: 'flex-start' }}>
             {creating ? 'Creando…' : 'Crear usuario'}
           </button>
         </form>
