@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsLatitude, IsLongitude, IsOptional, IsString } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsLatitude, IsLongitude, IsOptional, IsString } from 'class-validator';
 
 export class ApplyBusinessDto {
   @ApiProperty()
@@ -25,6 +25,18 @@ export class ApplyBusinessDto {
   @ApiProperty({ description: 'BusinessCategory slug, e.g. "tiendas", "veterinarios"' })
   @IsString()
   categorySlug!: string;
+
+  @ApiProperty({
+    type: [String],
+    description:
+      'PetSpecies slugs this business caters to (e.g. ["perro","gato"]) — the species-match ' +
+      'signal BusinessRankingService uses to recommend it to customers by their pets, independent ' +
+      'of whatever products/services it lists later.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  speciesSlugs!: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

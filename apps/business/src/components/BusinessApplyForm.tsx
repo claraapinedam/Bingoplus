@@ -14,6 +14,7 @@ export interface BusinessApplyValues {
   email: string;
   phone: string;
   categorySlug: string;
+  speciesSlugs: string[];
   description: string;
   addressLine: string;
   city: string;
@@ -31,6 +32,13 @@ interface Category {
   id: string;
   name: string;
   slug: string;
+}
+
+interface PetSpeciesOption {
+  id: string;
+  name: string;
+  slug: string;
+  icon: string | null;
 }
 
 interface MembershipPlan {
@@ -73,12 +81,14 @@ export default function BusinessApplyForm({
   onSubmit: (values: BusinessApplyValues) => void;
 }) {
   const [categories, setCategories] = useState<Category[]>([]);
+  const [speciesOptions, setSpeciesOptions] = useState<PetSpeciesOption[]>([]);
   const [tradeName, setTradeName] = useState('');
   const [legalName, setLegalName] = useState('');
   const [taxId, setTaxId] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [categorySlug, setCategorySlug] = useState('');
+  const [speciesSlugs, setSpeciesSlugs] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [addressLine, setAddressLine] = useState('');
   const [city, setCity] = useState('');
@@ -113,6 +123,7 @@ export default function BusinessApplyForm({
     city.trim() !== '' &&
     goal !== null &&
     categorySlug !== '' &&
+    speciesSlugs.length > 0 &&
     (!wantsDirectory || membershipPlanId !== '') &&
     acceptedTerms &&
     acceptedPrivacy;
@@ -141,7 +152,12 @@ export default function BusinessApplyForm({
 
   useEffect(() => {
     apiFetch<Category[]>('/public/business-categories').then(setCategories).catch(() => setCategories([]));
+    apiFetch<PetSpeciesOption[]>('/public/pet-species').then(setSpeciesOptions).catch(() => setSpeciesOptions([]));
   }, []);
+
+  function toggleSpecies(slug: string) {
+    setSpeciesSlugs((prev) => (prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]));
+  }
 
   // The set of valid categories changes with the goal — clear a selection that's no longer offered
   // instead of silently submitting a category that doesn't match what was chosen.
@@ -174,6 +190,7 @@ export default function BusinessApplyForm({
       email,
       phone,
       categorySlug,
+      speciesSlugs,
       description,
       addressLine,
       city,
@@ -255,6 +272,26 @@ export default function BusinessApplyForm({
       <div>
         <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Descripción (opcional)</label>
         <textarea className="bingo-input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </div>
+
+      <div>
+        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>¿A qué mascotas aplica tu negocio? *</label>
+        <p style={{ fontSize: 11, color: '#7f8ea3', margin: '0 0 8px' }}>
+          Así podemos recomendarte a los clientes según las mascotas que tengan registradas.
+        </p>
+        <div className="bingo-chip-row">
+          {speciesOptions.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className={`bingo-chip${speciesSlugs.includes(s.slug) ? ' active' : ''}`}
+              onClick={() => toggleSpecies(s.slug)}
+            >
+              {s.icon ? `${s.icon} ` : ''}
+              {s.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div>

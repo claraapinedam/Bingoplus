@@ -11,13 +11,14 @@ describe('BusinessesService', () => {
 
   const baseApplyDto = {
     tradeName: 'T', legalName: 'T SA', taxId: '1', email: 'e@e.com', phone: '099',
-    categorySlug: 'tiendas', addressLine: 'Av 1', city: 'Quito',
+    categorySlug: 'tiendas', addressLine: 'Av 1', city: 'Quito', speciesSlugs: ['perro'],
   };
 
   beforeEach(() => {
     prisma = {
       business: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
       businessCategory: { findUnique: jest.fn().mockResolvedValue({ id: 'cat1', slug: 'tiendas' }) },
+      petSpecies: { findMany: jest.fn().mockResolvedValue([{ id: 's1', slug: 'perro' }]) },
       membershipPlan: { findUnique: jest.fn() },
       businessMembership: { create: jest.fn() },
       role: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -147,6 +148,37 @@ describe('BusinessesService', () => {
 
       expect(memberships.redeemAdminCoupon).toHaveBeenCalledWith('b1', 'GOOD10');
       expect(result.couponError).toBeUndefined();
+    });
+  });
+
+  describe('apply — species', () => {
+    it('rejects an unknown pet species slug before creating anything', async () => {
+      prisma.petSpecies.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.apply('u1', { ...baseApplyDto, sellsProducts: true, directoryListing: false, speciesSlugs: ['dinosaurio'] } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.business.create).not.toHaveBeenCalled();
+    });
+
+    it('creates the business with its resolved BusinessSpecies rows', async () => {
+      prisma.petSpecies.findMany.mockResolvedValue([{ id: 's1', slug: 'perro' }, { id: 's2', slug: 'gato' }]);
+      prisma.business.create.mockResolvedValue({ id: 'b1' });
+
+      await service.apply('u1', {
+        ...baseApplyDto,
+        sellsProducts: true,
+        directoryListing: false,
+        speciesSlugs: ['perro', 'gato'],
+      } as any);
+
+      expect(prisma.business.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            species: { create: [{ speciesId: 's1' }, { speciesId: 's2' }] },
+          }),
+        }),
+      );
     });
   });
 

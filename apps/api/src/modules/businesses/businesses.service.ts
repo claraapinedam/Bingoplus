@@ -90,13 +90,18 @@ export class BusinessesService {
         ...(query.search ? { tradeName: { contains: query.search, mode: 'insensitive' } } : {}),
         ...(speciesFilter
           ? {
-              products: {
-                some: {
-                  status: ProductStatus.ACTIVE,
-                  deletedAt: null,
-                  species: { some: { speciesId: speciesFilter.id } },
+              OR: [
+                { species: { some: { speciesId: speciesFilter.id } } },
+                {
+                  products: {
+                    some: {
+                      status: ProductStatus.ACTIVE,
+                      deletedAt: null,
+                      species: { some: { speciesId: speciesFilter.id } },
+                    },
+                  },
                 },
-              },
+              ],
             }
           : {}),
         ...(productCategoryFilter
@@ -113,6 +118,7 @@ export class BusinessesService {
       },
       include: {
         category: true,
+        species: { select: { speciesId: true } },
         products: {
           where: { status: ProductStatus.ACTIVE, deletedAt: null },
           select: { species: { select: { speciesId: true } } },
@@ -138,7 +144,15 @@ export class BusinessesService {
       deliveryEnabled: capabilityMaps.get(b.id)![BusinessCapabilityType.DELIVERY],
       pickupEnabled: capabilityMaps.get(b.id)![BusinessCapabilityType.PICKUP],
       openingHours: b.openingHours,
-      speciesIds: [...new Set(b.products.flatMap((p) => p.species.map((s) => s.speciesId)))],
+      // Union of what the business declared at onboarding and what its active products are
+      // actually tagged with — either signal alone can be incomplete (a business may have
+      // declared species before listing any matching product, or vice versa for older records).
+      speciesIds: [
+        ...new Set([
+          ...b.species.map((s) => s.speciesId),
+          ...b.products.flatMap((p) => p.species.map((s) => s.speciesId)),
+        ]),
+      ],
     }));
 
     const ranked = await this.ranking.rankBusinesses(rankable, {
@@ -195,6 +209,18 @@ export class BusinessesService {
     return { ...business, capabilities: capabilityMap, couponSummary };
   }
 
+  /** Resolves PetSpecies slugs to ids, rejecting anything unknown — mirrors CatalogService's own
+   * resolveSpeciesIds, but required here since a business without any declared species would be
+   * unrecommendable by pet type from day one (see BusinessSpecies comment in schema.prisma). */
+  private async resolveSpeciesIds(slugs: string[]): Promise<string[]> {
+    const species = await this.prisma.petSpecies.findMany({ where: { slug: { in: slugs } } });
+    const unknown = slugs.filter((slug) => !species.some((s) => s.slug === slug));
+    if (unknown.length > 0) {
+      throw new BadRequestException(`Unknown pet species: ${unknown.join(', ')}`);
+    }
+    return species.map((s) => s.id);
+  }
+
   private async getUserPetSpeciesIds(userId: string): Promise<string[]> {
     const pets = await this.prisma.pet.findMany({
       where: { ownerId: userId, deletedAt: null },
@@ -233,6 +259,8 @@ export class BusinessesService {
       plan = found;
     }
 
+    const speciesIds = await this.resolveSpeciesIds(dto.speciesSlugs);
+
     const business = await this.prisma.business.create({
       data: {
         ownerId,
@@ -249,6 +277,7 @@ export class BusinessesService {
         longitude: dto.longitude,
         status: BusinessStatus.PENDING,
         businessUsers: { create: { userId: ownerId, role: BusinessUserRole.OWNER } },
+        species: { create: speciesIds.map((speciesId) => ({ speciesId })) },
       },
     });
 

@@ -54,30 +54,30 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  roles                  UserRole[]
-  addresses              Address[]
-  pets                   Pet[]
-  refreshTokens          RefreshToken[]
-  passwordResetTokens    PasswordResetToken[]
-  otpCodes               OtpCode[]
-  ownedBusinesses        Business[]              @relation("BusinessOwner")
-  businessUsers          BusinessUser[]
-  rider                  Rider?
-  cart                   Cart?
-  paymentMethods         PaymentMethod[]
-  orders                 Order[]
-  bookings               Booking[]
-  reviews                Review[]
-  reviewReports          ReviewReport[]
-  favorites              Favorite[]
-  notifications          Notification[]
-  notificationPreference NotificationPreference?
-  auditLogs              AuditLog[]
-  analyticsEvents        AnalyticsEvent[]
-  documentsReviewed      BusinessDocument[]      @relation("DocumentReviewer")
-  couponRedemptions      CouponRedemption[]      @relation("CouponRedeemer")
-  submittedPetFriendlyPlaces PetFriendlyPlace[]  @relation("PetFriendlyPlaceSubmitter")
-  reviewedPetFriendlyPlaces  PetFriendlyPlace[]  @relation("PetFriendlyPlaceReviewer")
+  roles                      UserRole[]
+  addresses                  Address[]
+  pets                       Pet[]
+  refreshTokens              RefreshToken[]
+  passwordResetTokens        PasswordResetToken[]
+  otpCodes                   OtpCode[]
+  ownedBusinesses            Business[]              @relation("BusinessOwner")
+  businessUsers              BusinessUser[]
+  rider                      Rider?
+  cart                       Cart?
+  paymentMethods             PaymentMethod[]
+  orders                     Order[]
+  bookings                   Booking[]
+  reviews                    Review[]
+  reviewReports              ReviewReport[]
+  favorites                  Favorite[]
+  notifications              Notification[]
+  notificationPreference     NotificationPreference?
+  auditLogs                  AuditLog[]
+  analyticsEvents            AnalyticsEvent[]
+  documentsReviewed          BusinessDocument[]      @relation("DocumentReviewer")
+  couponRedemptions          CouponRedemption[]      @relation("CouponRedeemer")
+  submittedPetFriendlyPlaces PetFriendlyPlace[]      @relation("PetFriendlyPlaceSubmitter")
+  reviewedPetFriendlyPlaces  PetFriendlyPlace[]      @relation("PetFriendlyPlaceReviewer")
 
   @@index([email])
   @@index([phone])
@@ -212,9 +212,10 @@ model PetSpecies {
   slug String  @unique
   icon String?
 
-  pets     Pet[]
-  products ProductSpecies[]
-  services ServiceSpecies[]
+  pets       Pet[]
+  products   ProductSpecies[]
+  services   ServiceSpecies[]
+  businesses BusinessSpecies[]
 }
 
 model Pet {
@@ -305,6 +306,10 @@ model Business {
   owner              User                 @relation("BusinessOwner", fields: [ownerId], references: [id])
   category           BusinessCategory     @relation(fields: [categoryId], references: [id])
   documents          BusinessDocument[]
+  // Declared at onboarding ("¿A qué mascotas aplica tu negocio?") — the species-match signal for
+  // BusinessRankingService that doesn't depend on the business having any products/services yet,
+  // which matters most for Directory-only businesses (groomers, vets, hotels) that may have none.
+  species            BusinessSpecies[]
   products           Product[]
   services           Service[]
   commissions        Commission[]
@@ -323,6 +328,17 @@ model Business {
   @@index([ownerId])
   @@index([categoryId])
   @@index([status])
+}
+
+model BusinessSpecies {
+  businessId String
+  speciesId  String
+
+  business Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  species  PetSpecies @relation(fields: [speciesId], references: [id], onDelete: Cascade)
+
+  @@id([businessId, speciesId])
+  @@index([speciesId])
 }
 
 // Which capabilities a business has, independent of its category (RULE 2/3 — see
@@ -802,30 +818,30 @@ enum RiderAvailabilityStatus {
 }
 
 model Rider {
-  id                  String                                 @id @default(cuid())
-  userId              String                                 @unique
-  accountStatus       RiderAccountStatus                     @default(PENDING_APPROVAL)
-  availabilityStatus  RiderAvailabilityStatus                @default(OFFLINE)
+  id                    String                                 @id @default(cuid())
+  userId                String                                 @unique
+  accountStatus         RiderAccountStatus                     @default(PENDING_APPROVAL)
+  availabilityStatus    RiderAvailabilityStatus                @default(OFFLINE)
   // Simple zone signal for eligibility filtering (§18) — not a geofence/polygon system, that's a
   // later refinement; proximity itself is computed from currentLocation, not from this string.
-  city                String?
+  city                  String?
   // Application basics — collected once, at apply time (see RiderProfileService.applyAsRider).
-  birthDate           DateTime?
-  nationalIdNumber    String?
-  address             String?
+  birthDate             DateTime?
+  nationalIdNumber      String?
+  address               String?
   // Set only once both checkboxes are actually ticked in the same submission — never defaulted,
   // never backfilled silently, so their presence is real proof of consent, not just a boolean flag.
   termsAcceptedAt       DateTime?
   dataConsentAcceptedAt DateTime?
-  currentLatitude     Float?
-  currentLongitude    Float?
-  currentLocation     Unsupported("geography(Point, 4326)")?
-  lastLocationAt      DateTime?
-  ratingAvg           Float                                  @default(0)
-  reviewCount         Int                                    @default(0)
-  deliveriesCompleted Int                                    @default(0)
-  createdAt           DateTime                               @default(now())
-  updatedAt           DateTime                               @updatedAt
+  currentLatitude       Float?
+  currentLongitude      Float?
+  currentLocation       Unsupported("geography(Point, 4326)")?
+  lastLocationAt        DateTime?
+  ratingAvg             Float                                  @default(0)
+  reviewCount           Int                                    @default(0)
+  deliveriesCompleted   Int                                    @default(0)
+  createdAt             DateTime                               @default(now())
+  updatedAt             DateTime                               @updatedAt
 
   user              User                        @relation(fields: [userId], references: [id])
   vehicles          Vehicle[]
@@ -932,18 +948,18 @@ enum RiderBankAccountType {
 // docs/status for the corresponding technical-debt note about encrypting at rest before this
 // goes to production with real payouts.
 model RiderPayoutMethod {
-  id                    String                @id @default(cuid())
-  riderId               String                @unique
-  method                RiderPayoutMethodType
-  bankName              String?
-  accountType           RiderBankAccountType?
-  accountNumber         String?
-  walletProvider        String?
-  walletNumber          String?
-  accountHolderName     String
-  holderDocumentNumber  String
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
+  id                   String                @id @default(cuid())
+  riderId              String                @unique
+  method               RiderPayoutMethodType
+  bankName             String?
+  accountType          RiderBankAccountType?
+  accountNumber        String?
+  walletProvider       String?
+  walletNumber         String?
+  accountHolderName    String
+  holderDocumentNumber String
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
 }
@@ -1322,14 +1338,14 @@ model PetFriendlyPlace {
   location        Unsupported("geography(Point, 4326)")?
   photoUrl        String?
   status          PetFriendlyPlaceStatus                 @default(PENDING)
-  ratingAvg       Float                                   @default(0)
-  reviewCount     Int                                     @default(0)
+  ratingAvg       Float                                  @default(0)
+  reviewCount     Int                                    @default(0)
   submittedById   String
   reviewedById    String?
   reviewedAt      DateTime?
   rejectionReason String?
-  createdAt       DateTime                                @default(now())
-  updatedAt       DateTime                                @updatedAt
+  createdAt       DateTime                               @default(now())
+  updatedAt       DateTime                               @updatedAt
 
   submittedBy User  @relation("PetFriendlyPlaceSubmitter", fields: [submittedById], references: [id])
   reviewedBy  User? @relation("PetFriendlyPlaceReviewer", fields: [reviewedById], references: [id])
