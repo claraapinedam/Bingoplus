@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ApiError, login } from '@/lib/api';
 import EmailField, { isValidEmail } from '@/components/EmailField';
 import PasswordInput from '@/components/PasswordInput';
+import GoogleLoginButton from '@/components/GoogleLoginButton';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -53,6 +54,8 @@ export default function LoginPage() {
         <button className="bingo-button" type="submit" disabled={loading || !isValidEmail(email)}>
           {loading ? 'Ingresando…' : 'Ingresar'}
         </button>
+
+        <GoogleLoginButton app="customer" />
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#7f8ea3', margin: 0 }}>
           ¿No tienes cuenta? <a href="/register" style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>Regístrate</a>

@@ -72,6 +72,25 @@ class EnvironmentVariables {
   @IsOptional()
   GOOGLE_OAUTH_CALLBACK_URL?: string;
 
+  // Where GET /auth/google/callback sends the browser back to, per originating app — see the
+  // `state` param threaded through GoogleAuthGuard. Each defaults to that app's local dev port so
+  // this works out of the box without any of these being set.
+  @IsString()
+  @IsOptional()
+  CUSTOMER_APP_URL: string = 'http://localhost:3002';
+
+  @IsString()
+  @IsOptional()
+  RIDER_APP_URL: string = 'http://localhost:3003';
+
+  @IsString()
+  @IsOptional()
+  BUSINESS_APP_URL: string = 'http://localhost:3005';
+
+  @IsString()
+  @IsOptional()
+  ADMIN_APP_URL: string = 'http://localhost:3004';
+
   @IsString()
   @IsOptional()
   PAYMENT_PROVIDER?: string;

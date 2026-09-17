@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ApiError, login } from '@/lib/api';
 import EmailField, { isValidEmail } from '@/components/EmailField';
 import PasswordInput from '@/components/PasswordInput';
+import GoogleLoginButton from '@/components/GoogleLoginButton';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -54,6 +55,8 @@ export default function LoginPage() {
         <button className="bingo-button" type="submit" disabled={loading || !isValidEmail(email)}>
           {loading ? 'Ingresando…' : 'Ingresar'}
         </button>
+
+        <GoogleLoginButton app="business" />
 
         <p style={{ textAlign: 'center', fontSize: 12, color: '#7f8ea3', margin: 0 }}>
           Inicia sesión con tu usuario y contraseña de BINGO+.

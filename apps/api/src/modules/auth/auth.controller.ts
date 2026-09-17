@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
@@ -8,14 +9,17 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { GoogleAuthGuard } from './guards/google-auth.guard';
+import { GoogleAuthGuard, GoogleAppParam } from './guards/google-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { toUserDto } from '../users/dto/user.dto';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Public()
   @Post('register')
@@ -77,9 +81,18 @@ export class AuthController {
   @UseGuards(GoogleAuthGuard)
   async googleCallback(@Req() req: Request, @Res() res: Response) {
     const { tokens } = await this.authService.loginOrRegisterSocial(req.user as any);
+    // `state` is the same `app` value GoogleAuthGuard.getAuthenticateOptions sent to Google —
+    // it round-trips unmodified, which is how one shared GOOGLE_OAUTH_CALLBACK_URL still sends
+    // the browser back to whichever of the 4 apps actually started the flow.
+    const state = req.query.state as GoogleAppParam | undefined;
+    const appUrl =
+      {
+        customer: this.config.get<string>('CUSTOMER_APP_URL'),
+        rider: this.config.get<string>('RIDER_APP_URL'),
+        business: this.config.get<string>('BUSINESS_APP_URL'),
+        admin: this.config.get<string>('ADMIN_APP_URL'),
+      }[state ?? 'customer'] ?? this.config.get<string>('CUSTOMER_APP_URL');
     // Frontend completes the session by reading these from the redirect query string.
-    res.redirect(
-      `${process.env.CORS_ORIGIN?.split(',')[0] ?? '/'}/auth/callback?accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`,
-    );
+    res.redirect(`${appUrl}/auth/callback?accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`);
   }
 }

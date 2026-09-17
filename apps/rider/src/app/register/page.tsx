@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ApiError, register } from '@/lib/api';
 import PasswordField, { passwordMeetsPolicy } from '@/components/PasswordField';
 import EmailField, { isValidEmail } from '@/components/EmailField';
+import GoogleLoginButton from '@/components/GoogleLoginButton';
 
 /**
  * Step 1 of becoming a rider: create the account. Registering here always creates a plain
@@ -76,6 +77,8 @@ export default function RegisterPage() {
         <button className="bingo-button" type="submit" disabled={loading || !canSubmit}>
           {loading ? 'Creando cuenta…' : 'Crear cuenta y continuar'}
         </button>
+
+        <GoogleLoginButton app="rider" />
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#7f8ea3', margin: 0 }}>
           ¿Ya tienes cuenta? <a href="/login" style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>Inicia sesión</a>
