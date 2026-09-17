@@ -103,13 +103,8 @@ img {
   border-color: var(--bingo-teal);
 }
 
-.bingo-chip-row.compact {
-  gap: 6px;
-}
-
-.bingo-chip.compact {
-  padding: 5px 9px;
-  font-size: 11px;
+.bingo-chip-row.centered {
+  justify-content: center;
 }
 
 .bingo-card {
