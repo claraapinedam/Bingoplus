@@ -6,7 +6,6 @@ import { apiFetch } from '@/lib/api';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 import TermsModal, { BUSINESS_TERMS_SECTIONS, PRIVACY_TERMS_SECTIONS } from './TermsModal';
 import EmailField, { isValidEmail } from './EmailField';
-import HorizontalScroller from './HorizontalScroller';
 
 // Mirrors apps/customer's SpeciesChips.tsx — PetSpecies.icon is a lucide-icon keyword (e.g.
 // "dog"), never meant to be rendered as literal text; this maps it to a real emoji instead.
@@ -130,6 +129,13 @@ export default function BusinessApplyForm({
   // Directory. Choosing the Directory, alone or together with selling products, always needs a plan.
   const wantsDirectory = goal === 'DIRECTORY' || goal === 'BOTH';
   const availableCategories = categoriesForGoal(goal, categories);
+  // The backend orders PetSpecies alphabetically by (Spanish) name, which drops "Otro" in the
+  // middle of the row — it reads better as the catch-all option at the very end.
+  const orderedSpeciesOptions = [...speciesOptions].sort((a, b) => {
+    if (a.slug === 'other') return 1;
+    if (b.slug === 'other') return -1;
+    return 0;
+  });
 
   // Every field is required except Descripción and Código de descuento — and a field that isn't
   // even visible yet (Categoría before a goal is picked, Plan when not going into the Directory)
@@ -384,8 +390,8 @@ export default function BusinessApplyForm({
         <p style={{ fontSize: 11, color: '#7f8ea3', margin: '0 0 8px' }}>
           Así podemos recomendarte a los clientes según las mascotas que tengan registradas.
         </p>
-        <HorizontalScroller itemCount={speciesOptions.length}>
-          {speciesOptions.map((s) => (
+        <div className="bingo-chip-row">
+          {orderedSpeciesOptions.map((s) => (
             <button
               key={s.id}
               type="button"
@@ -395,7 +401,7 @@ export default function BusinessApplyForm({
               {SPECIES_ICONS[s.slug] ?? '🐾'} {s.name}
             </button>
           ))}
-        </HorizontalScroller>
+        </div>
       </div>
 
       <div>

@@ -81,43 +81,8 @@ img {
 
 .bingo-chip-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-}
-
-.bingo-h-scroll {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  padding-bottom: 4px;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* old Edge */
-}
-
-.bingo-h-scroll::-webkit-scrollbar {
-  display: none; /* Chrome/Safari — dots below are the pagination UI instead */
-}
-
-.bingo-scroll-dots {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.bingo-scroll-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: #d8dee6;
-  transition: background 0.15s, width 0.15s;
-}
-
-.bingo-scroll-dot.active {
-  background: var(--bingo-teal);
-  width: 16px;
 }
 
 .bingo-chip {
