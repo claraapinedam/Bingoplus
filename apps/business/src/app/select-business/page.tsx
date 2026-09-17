@@ -36,14 +36,11 @@ export default function SelectBusinessPage() {
       router.replace('/login');
       return;
     }
+    // Always lands here first, even with a single business — it must always be possible to see
+    // the "+ Crear otro negocio" option and each business's real status without first being
+    // funneled straight into one that might not even be ACTIVE yet.
     apiFetch<Business[]>('/me/business')
-      .then((list) => {
-        setBusinesses(list);
-        if (list.length === 1) {
-          setActiveBusinessId(list[0].id);
-          router.replace('/orders');
-        }
-      })
+      .then(setBusinesses)
       .catch(() => setBusinesses([]));
   }, [router]);
 
@@ -101,7 +98,14 @@ export default function SelectBusinessPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontWeight: 800, fontSize: 15 }}>{b.tradeName}</div>
                 {b.status !== 'ACTIVE' && (
-                  <span className="bingo-badge" style={{ background: '#fff4e5', color: 'var(--bingo-warning)' }}>
+                  <span
+                    className="bingo-badge"
+                    style={
+                      b.status === 'REJECTED' || b.status === 'SUSPENDED'
+                        ? { background: '#fde8e8', color: 'var(--bingo-error)' }
+                        : { background: '#fff4e5', color: 'var(--bingo-warning)' }
+                    }
+                  >
                     {STATUS_LABELS[b.status] ?? b.status}
                   </span>
                 )}

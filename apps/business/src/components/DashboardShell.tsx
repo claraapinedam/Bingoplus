@@ -112,14 +112,27 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       </div>
     );
   }
+  // Every dead-end screen below always offers "Cambiar negocio" — the caller may own other
+  // businesses (or want to create a new one), and got here either by clicking this one from
+  // /select-business or because it was still the last-active business stored locally. Without
+  // this, "Salir" (full logout) was the only way out, which was the actual bug being reported.
+  const actions = (
+    <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+      <a href="/select-business" className="bingo-button secondary small" style={{ width: 'auto' }}>
+        Cambiar negocio
+      </a>
+      <button className="bingo-button secondary small" style={{ width: 'auto' }} onClick={logout}>
+        Salir
+      </button>
+    </div>
+  );
+
   if (business === null) {
     return (
       <div className="dashboard-shell">
         <div className="dashboard-main">
           <div className="bingo-error-banner">No se pudo cargar tu negocio. Intenta iniciar sesión de nuevo.</div>
-          <button className="bingo-button secondary small" style={{ marginTop: 12, width: 'auto' }} onClick={logout}>
-            Salir
-          </button>
+          {actions}
         </div>
       </div>
     );
@@ -142,9 +155,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
               firmar el contrato y empezar a operar.
             </p>
           </div>
-          <button className="bingo-button secondary small" style={{ marginTop: 12, width: 'auto' }} onClick={logout}>
-            Salir
-          </button>
+          {actions}
         </div>
       </div>
     );
@@ -154,9 +165,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       <div className="dashboard-shell">
         <div className="dashboard-main">
           <div className="bingo-error-banner">Esta solicitud de negocio fue rechazada.</div>
-          <button className="bingo-button secondary small" style={{ marginTop: 12, width: 'auto' }} onClick={logout}>
-            Salir
-          </button>
+          {actions}
         </div>
       </div>
     );
@@ -166,9 +175,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       <div className="dashboard-shell">
         <div className="dashboard-main">
           <div className="bingo-error-banner">Este negocio está suspendido. Contacta a soporte de BINGO+ para más información.</div>
-          <button className="bingo-button secondary small" style={{ marginTop: 12, width: 'auto' }} onClick={logout}>
-            Salir
-          </button>
+          {actions}
         </div>
       </div>
     );
