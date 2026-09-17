@@ -32,7 +32,7 @@ export default function LoginPage() {
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', minHeight: '100vh', justifyContent: 'center' }}>
-      <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 24 }}>
+      <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 4, height: 100, overflow: 'hidden' }}>
         <Image
           src="/Bingoplusrider.png"
           alt="BINGO+ Rider"

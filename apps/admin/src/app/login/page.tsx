@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ApiError, login } from '@/lib/api';
 import EmailField, { isValidEmail } from '@/components/EmailField';
@@ -43,10 +44,17 @@ export default function LoginPage() {
         className="bingo-card"
         style={{ width: 360, display: 'flex', flexDirection: 'column', gap: 16 }}
       >
-        <div className="bingo-logo" style={{ color: 'var(--bingo-navy)', fontSize: 26 }}>
-          BINGO<span className="plus" style={{ color: 'var(--bingo-teal)' }}>+</span>
+        <div style={{ textAlign: 'center' }}>
+          <Image
+            src="/Bingo%20plus%20manager.png"
+            alt="BINGO+ Manager"
+            width={2171}
+            height={724}
+            priority
+            style={{ width: 200, height: 'auto', margin: '8px auto' }}
+          />
         </div>
-        <p style={{ margin: 0, color: '#7f8ea3', fontSize: 14 }}>Panel administrativo</p>
+        <p style={{ margin: 0, color: '#7f8ea3', fontSize: 14, textAlign: 'center' }}>Panel administrativo</p>
 
         <EmailField email={email} onEmailChange={setEmail} />
 
