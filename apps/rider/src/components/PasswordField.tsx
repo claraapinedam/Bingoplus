@@ -30,12 +30,14 @@ function ToggleVisibilityButton({ visible, onToggle }: { visible: boolean; onTog
         background: 'none',
         border: 'none',
         cursor: 'pointer',
-        fontSize: 16,
         padding: 6,
         lineHeight: 1,
+        display: 'flex',
+        alignItems: 'center',
       }}
     >
-      {visible ? '🙈' : '👁️'}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={visible ? '/ojos%20cerrados.png' : '/ojos%20abiertos.png'} alt="" style={{ height: 18, width: 'auto' }} />
     </button>
   );
 }
