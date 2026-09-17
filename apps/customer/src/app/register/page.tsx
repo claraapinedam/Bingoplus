@@ -27,7 +27,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register({ firstName, lastName, email, password });
-      router.push('/');
+      router.push('/verify-email');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo crear la cuenta.');
     } finally {

@@ -8,6 +8,10 @@ interface CartSummary {
   items: { quantity: number }[];
 }
 
+interface Me {
+  isEmailVerified: boolean;
+}
+
 const NAV_ITEMS = [
   { href: '/', label: 'Inicio', icon: '🏠' },
   { href: '/stores', label: 'Tiendas', icon: '🏪' },
@@ -28,7 +32,15 @@ export default function CustomerShell({ children }: { children: React.ReactNode 
       router.replace('/login');
       return;
     }
-    setReady(true);
+    apiFetch<Me>('/me')
+      .then((me) => {
+        if (!me.isEmailVerified) {
+          router.replace('/verify-email');
+          return;
+        }
+        setReady(true);
+      })
+      .catch(() => undefined);
     apiFetch<CartSummary | null>('/me/cart')
       .then((cart) => setCartCount(cart?.items.reduce((n, i) => n + i.quantity, 0) ?? 0))
       .catch(() => undefined);

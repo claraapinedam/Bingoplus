@@ -9,6 +9,7 @@ export interface UserDto {
   avatarUrl: string | null;
   roles: string[];
   isActive: boolean;
+  isEmailVerified: boolean;
   ratingAvg: number;
   reviewCount: number;
   createdAt: Date;
@@ -24,6 +25,7 @@ export function toUserDto(user: User, roles: string[]): UserDto {
     avatarUrl: user.avatarUrl,
     roles,
     isActive: user.isActive,
+    isEmailVerified: user.isEmailVerified,
     ratingAvg: user.ratingAvg,
     reviewCount: user.reviewCount,
     createdAt: user.createdAt,

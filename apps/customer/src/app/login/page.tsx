@@ -57,6 +57,10 @@ export default function LoginPage() {
 
         <GoogleLoginButton app="customer" />
 
+        <p style={{ textAlign: 'center', fontSize: 13, margin: 0 }}>
+          <a href="/forgot-password" style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>¿Olvidaste tu contraseña?</a>
+        </p>
+
         <p style={{ textAlign: 'center', fontSize: 13, color: '#7f8ea3', margin: 0 }}>
           ¿No tienes cuenta? <a href="/register" style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>Regístrate</a>
         </p>

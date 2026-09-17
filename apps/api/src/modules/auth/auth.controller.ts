@@ -9,6 +9,8 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ResendVerificationEmailDto } from './dto/resend-verification-email.dto';
 import { GoogleAuthGuard, GoogleAppParam } from './guards/google-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { toUserDto } from '../users/dto/user.dto';
@@ -67,6 +69,20 @@ export class AuthController {
   @Post('reset-password')
   async resetPassword(@Body() dto: ResetPasswordDto) {
     await this.authService.resetPassword(dto.token, dto.newPassword);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('verify-email')
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    await this.authService.verifyEmail(dto.email, dto.code);
+  }
+
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('resend-verification-email')
+  async resendVerificationEmail(@Body() dto: ResendVerificationEmailDto) {
+    await this.authService.resendVerificationEmail(dto.email);
   }
 
   @Public()

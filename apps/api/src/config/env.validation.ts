@@ -111,9 +111,23 @@ class EnvironmentVariables {
   @IsOptional()
   STORAGE_BUCKET?: string;
 
+  // Legacy placeholder — never wired to anything. RESEND_API_KEY below is the real one.
   @IsString()
   @IsOptional()
   EMAIL_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  RESEND_API_KEY?: string;
+
+  // Resend's own sandbox sender (works with zero domain verification) unless overridden.
+  @IsString()
+  @IsOptional()
+  EMAIL_FROM_ADDRESS: string = 'onboarding@resend.dev';
+
+  @IsString()
+  @IsOptional()
+  EMAIL_FROM_NAME: string = 'BINGO+';
 
   @IsString()
   @IsOptional()

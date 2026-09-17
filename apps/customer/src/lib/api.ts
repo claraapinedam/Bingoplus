@@ -142,6 +142,34 @@ export async function register(input: {
   return data.user;
 }
 
+export async function forgotPassword(email: string) {
+  await apiFetch<void>('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function resetPassword(token: string, newPassword: string) {
+  await apiFetch<void>('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, newPassword }),
+  });
+}
+
+export async function verifyEmail(email: string, code: string) {
+  await apiFetch<void>('/auth/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ email, code }),
+  });
+}
+
+export async function resendVerificationEmail(email: string) {
+  await apiFetch<void>('/auth/resend-verification-email', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
 /** Uploads a single file (e.g. a pet-friendly-place photo) and returns the URL to pass back in a
  * DTO field — bypasses apiFetch's JSON Content-Type default, multipart sets its own. */
 export async function uploadFile(file: File): Promise<{ url: string }> {

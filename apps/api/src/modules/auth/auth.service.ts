@@ -7,13 +7,17 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { RoleName } from '@prisma/client';
+import { OtpPurpose, RoleName } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { parseDurationMs } from './utils/duration.util';
+
+const VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000;
+const MAX_VERIFICATION_ATTEMPTS = 5;
 
 export interface AuthTokens {
   accessToken: string;
@@ -29,6 +33,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly email: EmailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -55,6 +60,8 @@ export class AuthService {
         roles: { create: { roleId: customerRole.id } },
       },
     });
+
+    await this.sendVerificationCode(user.id, user.email);
 
     return { user, tokens: await this.issueTokens(user.id, user.email, [RoleName.CUSTOMER]) };
   }
@@ -129,16 +136,73 @@ export class AuthService {
       },
     });
 
-    const emailConfigured = Boolean(this.config.get('EMAIL_API_KEY'));
-    if (!emailConfigured) {
-      this.logger.warn(
-        `EMAIL_API_KEY is not configured — password reset link was generated but NOT sent. ` +
-          `(dev only) reset token for ${email}: ${rawToken}`,
-      );
+    // Forgot-password only ships on the Customer app today (see its login page) — the reset
+    // link always lands there regardless of which BINGO+ app the request came from.
+    const customerAppUrl = this.config.get<string>('CUSTOMER_APP_URL', 'http://localhost:3002');
+    const resetUrl = `${customerAppUrl}/reset-password?token=${rawToken}`;
+    await this.email.sendPasswordResetEmail(email, resetUrl);
+  }
+
+  /** Consumes a VERIFY_EMAIL OtpCode and flips the account over — the one way isEmailVerified
+   * ever becomes true for a password-registered account (Google sign-in sets it directly since
+   * Google already verified the address). */
+  async verifyEmail(email: string, code: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('Invalid or expired verification code');
+    }
+    if (user.isEmailVerified) {
       return;
     }
 
-    // TODO(Phase 8): send via NotificationService once an email provider is wired up.
+    const otp = await this.prisma.otpCode.findFirst({
+      where: { destination: email, purpose: OtpPurpose.VERIFY_EMAIL, consumedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!otp || otp.attempts >= MAX_VERIFICATION_ATTEMPTS) {
+      throw new BadRequestException('Invalid or expired verification code');
+    }
+
+    if (otp.codeHash !== this.hashToken(code)) {
+      await this.prisma.otpCode.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
+      throw new BadRequestException('Invalid or expired verification code');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.otpCode.update({ where: { id: otp.id }, data: { consumedAt: new Date() } }),
+      this.prisma.user.update({ where: { id: user.id }, data: { isEmailVerified: true } }),
+    ]);
+  }
+
+  /** Silently no-ops for an unknown or already-verified email — same "never reveal account
+   * existence" posture as forgotPassword. */
+  async resendVerificationEmail(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || user.isEmailVerified) {
+      return;
+    }
+    await this.sendVerificationCode(user.id, user.email);
+  }
+
+  private async sendVerificationCode(userId: string, email: string) {
+    // Only one live code per address at a time — a resend must invalidate whatever was sent before.
+    await this.prisma.otpCode.updateMany({
+      where: { destination: email, purpose: OtpPurpose.VERIFY_EMAIL, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+
+    const code = String(randomInt(100000, 1000000));
+    await this.prisma.otpCode.create({
+      data: {
+        userId,
+        destination: email,
+        purpose: OtpPurpose.VERIFY_EMAIL,
+        codeHash: this.hashToken(code),
+        expiresAt: new Date(Date.now() + VERIFICATION_CODE_TTL_MS),
+      },
+    });
+
+    await this.email.sendVerificationEmail(email, code);
   }
 
   async resetPassword(token: string, newPassword: string) {
