@@ -8,6 +8,10 @@ import EmailField, { isValidEmail } from '@/components/EmailField';
 import PasswordInput from '@/components/PasswordInput';
 import GoogleLoginButton from '@/components/GoogleLoginButton';
 
+// Rider shares its account (and password) with Customer — there's no separate reset flow, the
+// link just sends the user to where that flow actually lives.
+const CUSTOMER_APP_URL = process.env.NEXT_PUBLIC_CUSTOMER_APP_URL ?? 'http://localhost:3002';
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -55,6 +59,12 @@ export default function LoginPage() {
         </button>
 
         <GoogleLoginButton app="rider" />
+
+        <p style={{ textAlign: 'center', fontSize: 13, margin: 0 }}>
+          <a href={`${CUSTOMER_APP_URL}/forgot-password`} style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>
+            ¿Olvidaste tu contraseña?
+          </a>
+        </p>
 
         <p style={{ textAlign: 'center', fontSize: 12, color: '#7f8ea3', margin: 0 }}>
           Inicia sesión con tu usuario y contraseña de BINGO+. Si aún no eres rider, después de
