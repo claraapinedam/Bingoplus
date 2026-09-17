@@ -36,6 +36,53 @@ const PRICING_LABELS: { key: keyof PricingConfig; label: string; hint: string }[
   { key: 'defaultDeliveryFee', label: 'Tarifa de delivery por defecto (USD)', hint: 'usada si el negocio no define la suya' },
 ];
 
+// Number inputs bound directly to a number state fight the user over leading/trailing
+// characters while typing (e.g. clearing the "0" before typing "1" leaves "01" on screen,
+// since the DOM's raw text and React's coerced-back-to-number value fall out of sync mid-edit).
+// Editing as free text and only parsing to a number on blur/save avoids that entirely.
+function NumberField({
+  value,
+  onChange,
+  min,
+  max,
+  step,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  step?: string;
+}) {
+  const [text, setText] = useState(String(value));
+
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+
+  return (
+    <input
+      className="bingo-input"
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        if (e.target.value !== '' && e.target.value !== '-') {
+          const parsed = Number(e.target.value);
+          if (!Number.isNaN(parsed)) onChange(parsed);
+        }
+      }}
+      onBlur={() => {
+        if (text === '' || text === '-' || Number.isNaN(Number(text))) {
+          setText(String(value));
+        }
+      }}
+    />
+  );
+}
+
 export default function AdminSettingsPage() {
   const [weights, setWeights] = useState<RankingWeights | null>(null);
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
@@ -128,16 +175,12 @@ export default function AdminSettingsPage() {
               {WEIGHT_LABELS.map((w) => (
                 <div key={w.key} style={{ marginBottom: 10 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>{w.label}</label>
-                  <input
-                    className="bingo-input"
-                    type="number"
+                  <NumberField
                     min={0}
                     max={1}
                     step="0.01"
                     value={weights[w.key]}
-                    onChange={(e) =>
-                      setWeights({ ...weights, [w.key]: e.target.value === '' ? 0 : Number(e.target.value) })
-                    }
+                    onChange={(value) => setWeights({ ...weights, [w.key]: value })}
                   />
                 </div>
               ))}
@@ -171,15 +214,11 @@ export default function AdminSettingsPage() {
                   <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>
                     {p.label} <span style={{ fontWeight: 400, color: '#9aa5b1' }}>({p.hint})</span>
                   </label>
-                  <input
-                    className="bingo-input"
-                    type="number"
+                  <NumberField
                     min={0}
                     step="0.01"
                     value={pricing[p.key]}
-                    onChange={(e) =>
-                      setPricing({ ...pricing, [p.key]: e.target.value === '' ? 0 : Number(e.target.value) })
-                    }
+                    onChange={(value) => setPricing({ ...pricing, [p.key]: value })}
                   />
                 </div>
               ))}
