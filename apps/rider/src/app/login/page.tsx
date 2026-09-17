@@ -3,6 +3,8 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiError, login } from '@/lib/api';
+import EmailField, { isValidEmail } from '@/components/EmailField';
+import PasswordInput from '@/components/PasswordInput';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,6 +15,7 @@ export default function LoginPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!isValidEmail(email)) return;
     setError(null);
     setLoading(true);
     try {
@@ -35,33 +38,13 @@ export default function LoginPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="bingo-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <label style={{ fontSize: 13, fontWeight: 600 }}>
-          Correo electrónico
-          <input
-            className="bingo-input"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ marginTop: 4 }}
-          />
-        </label>
+        <EmailField email={email} onEmailChange={setEmail} />
 
-        <label style={{ fontSize: 13, fontWeight: 600 }}>
-          Contraseña
-          <input
-            className="bingo-input"
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ marginTop: 4 }}
-          />
-        </label>
+        <PasswordInput password={password} onPasswordChange={setPassword} />
 
         {error && <div className="bingo-error-banner">{error}</div>}
 
-        <button className="bingo-button" type="submit" disabled={loading}>
+        <button className="bingo-button" type="submit" disabled={loading || !isValidEmail(email)}>
           {loading ? 'Ingresando…' : 'Ingresar'}
         </button>
 

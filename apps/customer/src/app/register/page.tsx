@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ApiError, register } from '@/lib/api';
 import PasswordField, { passwordMeetsPolicy } from '@/components/PasswordField';
+import EmailField, { isValidEmail } from '@/components/EmailField';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -16,7 +17,7 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const canSubmit = passwordMeetsPolicy(password) && password === confirmPassword;
+  const canSubmit = isValidEmail(email) && passwordMeetsPolicy(password) && password === confirmPassword;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -58,10 +59,7 @@ export default function RegisterPage() {
           </label>
         </div>
 
-        <label style={{ fontSize: 13, fontWeight: 600 }}>
-          Correo electrónico
-          <input className="bingo-input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} style={{ marginTop: 4 }} />
-        </label>
+        <EmailField email={email} onEmailChange={setEmail} />
 
         <PasswordField
           label="Contraseña"

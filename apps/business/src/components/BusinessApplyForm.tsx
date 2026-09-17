@@ -5,6 +5,7 @@ import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
 import { apiFetch } from '@/lib/api';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 import TermsModal, { BUSINESS_TERMS_SECTIONS, PRIVACY_TERMS_SECTIONS } from './TermsModal';
+import EmailField, { isValidEmail } from './EmailField';
 
 export interface BusinessApplyValues {
   tradeName: string;
@@ -106,7 +107,7 @@ export default function BusinessApplyForm({
     tradeName.trim() !== '' &&
     legalName.trim() !== '' &&
     taxId.trim() !== '' &&
-    email.trim() !== '' &&
+    isValidEmail(email) &&
     phone.trim() !== '' &&
     addressLine.trim() !== '' &&
     city.trim() !== '' &&
@@ -208,10 +209,7 @@ export default function BusinessApplyForm({
       </div>
 
       <div className="dashboard-form-grid">
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Email de contacto *</label>
-          <input className="bingo-input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
+        <EmailField label="Email de contacto *" email={email} onEmailChange={setEmail} variant="block" />
         <div>
           <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Teléfono *</label>
           <input className="bingo-input" required value={phone} onChange={(e) => setPhone(e.target.value)} />

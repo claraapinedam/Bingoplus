@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 const REQUIREMENTS: { label: string; test: (v: string) => boolean }[] = [
   { label: 'Al menos 8 caracteres', test: (v) => v.length >= 8 },
   { label: 'Una letra mayúscula', test: (v) => /[A-Z]/.test(v) },
@@ -12,6 +14,30 @@ const REQUIREMENTS: { label: string; test: (v: string) => boolean }[] = [
  * check always happens on the backend regardless of what this returns. */
 export function passwordMeetsPolicy(password: string): boolean {
   return REQUIREMENTS.every((r) => r.test(password));
+}
+
+function ToggleVisibilityButton({ visible, onToggle }: { visible: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+      style={{
+        position: 'absolute',
+        right: 6,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        fontSize: 16,
+        padding: 6,
+        lineHeight: 1,
+      }}
+    >
+      {visible ? '🙈' : '👁️'}
+    </button>
+  );
 }
 
 export default function PasswordField({
@@ -27,6 +53,8 @@ export default function PasswordField({
   confirmPassword: string;
   onConfirmPasswordChange: (v: string) => void;
 }) {
+  const [visible, setVisible] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
   const touched = password.length > 0;
   const confirmTouched = confirmPassword.length > 0;
   const match = password === confirmPassword;
@@ -35,14 +63,18 @@ export default function PasswordField({
     <>
       <div>
         <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>{label}</label>
-        <input
-          className="bingo-input"
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => onPasswordChange(e.target.value)}
-        />
+        <div style={{ position: 'relative' }}>
+          <input
+            className="bingo-input"
+            type={visible ? 'text' : 'password'}
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => onPasswordChange(e.target.value)}
+            style={{ paddingRight: 40 }}
+          />
+          <ToggleVisibilityButton visible={visible} onToggle={() => setVisible((v) => !v)} />
+        </div>
       </div>
 
       {touched && (
@@ -60,14 +92,18 @@ export default function PasswordField({
 
       <div>
         <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Confirmar contraseña</label>
-        <input
-          className="bingo-input"
-          type="password"
-          required
-          minLength={8}
-          value={confirmPassword}
-          onChange={(e) => onConfirmPasswordChange(e.target.value)}
-        />
+        <div style={{ position: 'relative' }}>
+          <input
+            className="bingo-input"
+            type={confirmVisible ? 'text' : 'password'}
+            required
+            minLength={8}
+            value={confirmPassword}
+            onChange={(e) => onConfirmPasswordChange(e.target.value)}
+            style={{ paddingRight: 40 }}
+          />
+          <ToggleVisibilityButton visible={confirmVisible} onToggle={() => setConfirmVisible((v) => !v)} />
+        </div>
       </div>
       {confirmTouched && (
         <div style={{ fontSize: 12, marginTop: -4, color: match ? 'var(--bingo-success)' : 'var(--bingo-error)' }}>

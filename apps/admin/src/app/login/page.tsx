@@ -3,6 +3,8 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiError, login } from '@/lib/api';
+import EmailField, { isValidEmail } from '@/components/EmailField';
+import PasswordInput from '@/components/PasswordInput';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,6 +15,7 @@ export default function LoginPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!isValidEmail(email)) return;
     setError(null);
     setLoading(true);
     try {
@@ -45,35 +48,15 @@ export default function LoginPage() {
         </div>
         <p style={{ margin: 0, color: '#7f8ea3', fontSize: 14 }}>Panel administrativo</p>
 
-        <label style={{ fontSize: 13, fontWeight: 600 }}>
-          Correo electrónico
-          <input
-            className="bingo-input"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ marginTop: 4 }}
-          />
-        </label>
+        <EmailField email={email} onEmailChange={setEmail} />
 
-        <label style={{ fontSize: 13, fontWeight: 600 }}>
-          Contraseña
-          <input
-            className="bingo-input"
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ marginTop: 4 }}
-          />
-        </label>
+        <PasswordInput password={password} onPasswordChange={setPassword} />
 
         {error && (
           <p style={{ color: 'var(--bingo-error)', fontSize: 13, margin: 0 }}>{error}</p>
         )}
 
-        <button className="bingo-button" type="submit" disabled={loading}>
+        <button className="bingo-button" type="submit" disabled={loading || !isValidEmail(email)}>
           {loading ? 'Ingresando…' : 'Ingresar'}
         </button>
       </form>

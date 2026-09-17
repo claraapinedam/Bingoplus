@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
 import PasswordField, { passwordMeetsPolicy } from '@/components/PasswordField';
+import EmailField, { isValidEmail } from '@/components/EmailField';
 import { apiFetch, decodeRoles, getAccessToken, ApiError } from '@/lib/api';
 
 interface StaffUser {
@@ -40,7 +41,7 @@ export default function UsersPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const canSubmitCreate = passwordMeetsPolicy(newPassword) && newPassword === newConfirmPassword;
+  const canSubmitCreate = isValidEmail(newEmail) && passwordMeetsPolicy(newPassword) && newPassword === newConfirmPassword;
 
   useEffect(() => {
     const token = getAccessToken();
@@ -142,10 +143,7 @@ export default function UsersPage() {
               <input className="bingo-input" required value={newLastName} onChange={(e) => setNewLastName(e.target.value)} />
             </div>
           </div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Correo</label>
-            <input className="bingo-input" type="email" required value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
-          </div>
+          <EmailField label="Correo" email={newEmail} onEmailChange={setNewEmail} variant="block" />
           <PasswordField
             label="Contraseña"
             password={newPassword}
