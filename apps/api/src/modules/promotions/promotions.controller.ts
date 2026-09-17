@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { Audit } from '../../common/decorators/audit.decorator';
 import { BusinessOwnershipGuard } from '../../common/guards/business-ownership.guard';
+import { BusinessActiveGuard } from '../../common/guards/business-active.guard';
 import { PromotionsService } from './promotions.service';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { UpdatePromotionDto } from './dto/update-promotion.dto';
@@ -21,7 +22,7 @@ export class PublicPromotionsController {
 }
 
 @ApiTags('business/promotions')
-@UseGuards(BusinessOwnershipGuard)
+@UseGuards(BusinessOwnershipGuard, BusinessActiveGuard)
 @Controller('business/:businessId/promotions')
 export class BusinessPromotionsController {
   constructor(private readonly promotions: PromotionsService) {}

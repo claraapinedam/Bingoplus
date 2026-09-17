@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { BusinessCapabilityType } from '@prisma/client';
 import { BusinessOwnershipGuard } from '../../common/guards/business-ownership.guard';
 import { BusinessCapabilityGuard } from '../../common/guards/business-capability.guard';
+import { BusinessActiveGuard } from '../../common/guards/business-active.guard';
 import { RequireCapability } from '../../common/decorators/require-capability.decorator';
 import { Audit } from '../../common/decorators/audit.decorator';
 import { CatalogService } from './catalog.service';
@@ -13,7 +14,7 @@ import { ListBusinessProductsQueryDto } from './dto/list-products-query.dto';
 import { CreateProductVariantDto, UpdateProductVariantDto } from './dto/product-variant.dto';
 
 @ApiTags('business/products')
-@UseGuards(BusinessOwnershipGuard, BusinessCapabilityGuard)
+@UseGuards(BusinessOwnershipGuard, BusinessActiveGuard, BusinessCapabilityGuard)
 @RequireCapability(BusinessCapabilityType.SELLS_PRODUCTS)
 @Controller('business/:businessId/products')
 export class BusinessProductsController {

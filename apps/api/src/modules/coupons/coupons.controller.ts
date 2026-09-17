@@ -5,6 +5,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { BusinessOwnershipGuard } from '../../common/guards/business-ownership.guard';
 import { BusinessCapabilityGuard } from '../../common/guards/business-capability.guard';
+import { BusinessActiveGuard } from '../../common/guards/business-active.guard';
 import { RequireCapability } from '../../common/decorators/require-capability.decorator';
 import { Audit } from '../../common/decorators/audit.decorator';
 import { CouponsService } from './coupons.service';
@@ -73,7 +74,7 @@ export class CustomerCouponsController {
 }
 
 @ApiTags('me/business/coupons')
-@UseGuards(BusinessOwnershipGuard, BusinessCapabilityGuard)
+@UseGuards(BusinessOwnershipGuard, BusinessActiveGuard, BusinessCapabilityGuard)
 @RequireCapability(BusinessCapabilityType.COUPONS)
 @Controller('me/business/:businessId/coupons')
 export class BusinessCouponsController {

@@ -5,6 +5,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { Audit } from '../../common/decorators/audit.decorator';
 import { BusinessOwnershipGuard } from '../../common/guards/business-ownership.guard';
 import { BusinessCapabilityGuard } from '../../common/guards/business-capability.guard';
+import { BusinessActiveGuard } from '../../common/guards/business-active.guard';
 import { RequireCapability } from '../../common/decorators/require-capability.decorator';
 import { ServicesService } from './services.service';
 import { CreateServiceDto } from './dto/create-service.dto';
@@ -30,7 +31,7 @@ export class PublicServicesController {
 }
 
 @ApiTags('business/services')
-@UseGuards(BusinessOwnershipGuard, BusinessCapabilityGuard)
+@UseGuards(BusinessOwnershipGuard, BusinessActiveGuard, BusinessCapabilityGuard)
 @RequireCapability(BusinessCapabilityType.SERVICES)
 @Controller('business/:businessId/services')
 export class BusinessServicesController {

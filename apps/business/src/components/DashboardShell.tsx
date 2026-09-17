@@ -127,6 +127,52 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   if (business.status === 'APPROVED' && pathname !== '/contract') {
     return null;
   }
+  // Everything except APPROVED (handled above, redirects to /contract) and ACTIVE is a dead end —
+  // no nav, no children, nothing operational reachable. This is the actual UX half of the fix;
+  // the real enforcement is BusinessActiveGuard on the backend (this alone was only ever
+  // cosmetic — a direct API call could always bypass a frontend-only gate).
+  if (business.status === 'PENDING' || business.status === 'UNDER_REVIEW') {
+    return (
+      <div className="dashboard-shell">
+        <div className="dashboard-main">
+          <div className="bingo-card">
+            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 8px' }}>Tu solicitud está en revisión</h2>
+            <p style={{ fontSize: 13, color: '#7f8ea3', margin: 0 }}>
+              El equipo de BINGO+ está revisando tu negocio. Te avisaremos cuando esté aprobado — ahí podrás
+              firmar el contrato y empezar a operar.
+            </p>
+          </div>
+          <button className="bingo-button secondary small" style={{ marginTop: 12, width: 'auto' }} onClick={logout}>
+            Salir
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (business.status === 'REJECTED') {
+    return (
+      <div className="dashboard-shell">
+        <div className="dashboard-main">
+          <div className="bingo-error-banner">Esta solicitud de negocio fue rechazada.</div>
+          <button className="bingo-button secondary small" style={{ marginTop: 12, width: 'auto' }} onClick={logout}>
+            Salir
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (business.status === 'SUSPENDED') {
+    return (
+      <div className="dashboard-shell">
+        <div className="dashboard-main">
+          <div className="bingo-error-banner">Este negocio está suspendido. Contacta a soporte de BINGO+ para más información.</div>
+          <button className="bingo-button secondary small" style={{ marginTop: 12, width: 'auto' }} onClick={logout}>
+            Salir
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <BusinessContext.Provider value={{ business, reload: load }}>

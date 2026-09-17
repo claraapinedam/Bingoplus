@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { BusinessOwnershipGuard } from '../../common/guards/business-ownership.guard';
+import { BusinessActiveGuard } from '../../common/guards/business-active.guard';
 import { BusinessesService } from './businesses.service';
 import { ApplyBusinessDto } from './dto/apply-business.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
@@ -90,7 +91,7 @@ export class BusinessesController {
     return this.businessesService.getCapabilities(businessId);
   }
 
-  @UseGuards(BusinessOwnershipGuard)
+  @UseGuards(BusinessOwnershipGuard, BusinessActiveGuard)
   @Patch(':businessId/capabilities')
   setCapability(@Param('businessId') businessId: string, @Body() dto: SetCapabilityDto) {
     return this.businessesService.setOperationalCapability(businessId, dto.capability, dto.enabled);
