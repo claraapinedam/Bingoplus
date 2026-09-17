@@ -54,6 +54,10 @@ export default function LoginPage() {
         <button className="bingo-button" type="submit" disabled={loading || !isValidEmail(email)}>
           {loading ? 'Ingresando…' : 'Ingresar'}
         </button>
+
+        <p style={{ textAlign: 'center', fontSize: 12, color: '#7f8ea3', margin: 0 }}>
+          Inicia sesión con tu usuario y contraseña de BINGO+.
+        </p>
       </form>
     </div>
   );

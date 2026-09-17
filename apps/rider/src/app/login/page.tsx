@@ -49,7 +49,7 @@ export default function LoginPage() {
         </button>
 
         <p style={{ textAlign: 'center', fontSize: 12, color: '#7f8ea3', margin: 0 }}>
-          Usa la misma cuenta con la que te registraste en BINGO+. Si aún no eres rider, después de
+          Inicia sesión con tu usuario y contraseña de BINGO+. Si aún no eres rider, después de
           ingresar podrás solicitarlo.
         </p>
 
