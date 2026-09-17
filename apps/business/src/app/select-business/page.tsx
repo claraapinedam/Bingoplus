@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import EmptyState from '@/components/EmptyState';
 import { apiFetch, clearTokens, getAccessToken, setActiveBusinessId } from '@/lib/api';
@@ -66,10 +67,15 @@ export default function SelectBusinessPage() {
 
   return (
     <div className="bingo-app-narrow bingo-content" style={{ paddingTop: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <div className="bingo-logo" style={{ fontSize: 20 }}>
-          BINGO<span className="plus" style={{ color: 'var(--bingo-teal)' }}>+</span> Negocios
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Image
+          src="/business%20sin%20fondo.png"
+          alt="BINGO+ Negocios"
+          width={2172}
+          height={724}
+          priority
+          style={{ width: 140, height: 'auto' }}
+        />
         <button className="bingo-button secondary small" onClick={logout}>
           Cerrar sesión
         </button>
