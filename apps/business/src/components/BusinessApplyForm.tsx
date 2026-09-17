@@ -390,12 +390,12 @@ export default function BusinessApplyForm({
         <p style={{ fontSize: 11, color: '#7f8ea3', margin: '0 0 8px' }}>
           Así podemos recomendarte a los clientes según las mascotas que tengan registradas.
         </p>
-        <div className="bingo-chip-row">
+        <div className="bingo-chip-row compact">
           {orderedSpeciesOptions.map((s) => (
             <button
               key={s.id}
               type="button"
-              className={`bingo-chip${speciesSlugs.includes(s.slug) ? ' active' : ''}`}
+              className={`bingo-chip compact${speciesSlugs.includes(s.slug) ? ' active' : ''}`}
               onClick={() => toggleSpecies(s.slug)}
             >
               {SPECIES_ICONS[s.slug] ?? '🐾'} {s.name}

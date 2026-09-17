@@ -103,6 +103,15 @@ img {
   border-color: var(--bingo-teal);
 }
 
+.bingo-chip-row.compact {
+  gap: 6px;
+}
+
+.bingo-chip.compact {
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
 .bingo-card {
   background: white;
   border-radius: var(--radius-lg);
