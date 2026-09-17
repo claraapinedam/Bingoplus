@@ -6,6 +6,20 @@ import { apiFetch } from '@/lib/api';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 import TermsModal, { BUSINESS_TERMS_SECTIONS, PRIVACY_TERMS_SECTIONS } from './TermsModal';
 import EmailField, { isValidEmail } from './EmailField';
+import HorizontalScroller from './HorizontalScroller';
+
+// Mirrors apps/customer's SpeciesChips.tsx — PetSpecies.icon is a lucide-icon keyword (e.g.
+// "dog"), never meant to be rendered as literal text; this maps it to a real emoji instead.
+const SPECIES_ICONS: Record<string, string> = {
+  dog: '🐶',
+  cat: '🐱',
+  bird: '🦜',
+  fish: '🐠',
+  rabbit: '🐰',
+  rodent: '🐹',
+  reptile: '🦎',
+  other: '🐾',
+};
 
 export interface BusinessApplyValues {
   tradeName: string;
@@ -82,6 +96,10 @@ export default function BusinessApplyForm({
 }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [speciesOptions, setSpeciesOptions] = useState<PetSpeciesOption[]>([]);
+  const [idType, setIdType] = useState<'RUC' | 'CEDULA' | null>(null);
+  // The caller's own account name, fetched once for the Cédula prefill — never sent to the
+  // backend directly, only used to seed `legalName`'s initial value.
+  const [meName, setMeName] = useState('');
   const [tradeName, setTradeName] = useState('');
   const [legalName, setLegalName] = useState('');
   const [taxId, setTaxId] = useState('');
@@ -92,6 +110,9 @@ export default function BusinessApplyForm({
   const [description, setDescription] = useState('');
   const [addressLine, setAddressLine] = useState('');
   const [city, setCity] = useState('');
+  // A picklist, not free text — the marketplace's distance ranking depends on this matching a
+  // real place, so only an actual Autocomplete selection counts, never typed-then-ignored text.
+  const [citySelected, setCitySelected] = useState(false);
   const [goal, setGoal] = useState<BusinessGoal | null>(null);
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [membershipPlanId, setMembershipPlanId] = useState('');
@@ -114,13 +135,14 @@ export default function BusinessApplyForm({
   // even visible yet (Categoría before a goal is picked, Plan when not going into the Directory)
   // can't be required either, since the user has no way to fill in something they can't see.
   const isValid =
+    idType !== null &&
     tradeName.trim() !== '' &&
     legalName.trim() !== '' &&
     taxId.trim() !== '' &&
     isValidEmail(email) &&
     phone.trim() !== '' &&
     addressLine.trim() !== '' &&
-    city.trim() !== '' &&
+    citySelected &&
     goal !== null &&
     categorySlug !== '' &&
     speciesSlugs.length > 0 &&
@@ -134,6 +156,7 @@ export default function BusinessApplyForm({
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const cityAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   function handlePlaceChanged() {
     const place = autocompleteRef.current?.getPlace();
@@ -143,17 +166,49 @@ export default function BusinessApplyForm({
     setLatitude(place.geometry.location.lat());
     setLongitude(place.geometry.location.lng());
 
-    // Best-effort only — never blocks manual correction of the City field.
+    // Best-effort: a full address already carries its own city — this still came from Google,
+    // so it counts as a real picklist selection too, not free text.
     const cityName = (place.address_components ?? []).find(
       (c) => c.types.includes('locality') || c.types.includes('administrative_area_level_2'),
     )?.long_name;
-    if (cityName) setCity(cityName);
+    if (cityName) {
+      setCity(cityName);
+      setCitySelected(true);
+    }
+  }
+
+  function handleCityPlaceChanged() {
+    const place = cityAutocompleteRef.current?.getPlace();
+    const name =
+      (place?.address_components ?? []).find(
+        (c) => c.types.includes('locality') || c.types.includes('administrative_area_level_2'),
+      )?.long_name ??
+      place?.name;
+    if (!name) return;
+    setCity(name);
+    setCitySelected(true);
   }
 
   useEffect(() => {
     apiFetch<Category[]>('/public/business-categories').then(setCategories).catch(() => setCategories([]));
     apiFetch<PetSpeciesOption[]>('/public/pet-species').then(setSpeciesOptions).catch(() => setSpeciesOptions([]));
+    // Prefills contact fields from the caller's own account — a convenience default only,
+    // editing it here never touches the User record (Business.email/legalName are separate
+    // columns, this is a one-way copy at fill time).
+    apiFetch<{ firstName: string; lastName: string; email: string }>('/me')
+      .then((me) => {
+        setEmail((prev) => prev || me.email);
+        setMeName(`${me.firstName} ${me.lastName}`.trim());
+      })
+      .catch(() => undefined);
   }, []);
+
+  function selectIdType(type: 'RUC' | 'CEDULA') {
+    setIdType(type);
+    if (type === 'CEDULA' && legalName.trim() === '' && meName) {
+      setLegalName(meName);
+    }
+  }
 
   function toggleSpecies(slug: string) {
     setSpeciesSlugs((prev) => (prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]));
@@ -210,20 +265,46 @@ export default function BusinessApplyForm({
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 520 }}>
       <div>
+        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>¿Con qué te identificas? *</label>
+        <div className="bingo-chip-row">
+          <button
+            type="button"
+            className={`bingo-chip${idType === 'RUC' ? ' active' : ''}`}
+            onClick={() => selectIdType('RUC')}
+          >
+            RUC
+          </button>
+          <button
+            type="button"
+            className={`bingo-chip${idType === 'CEDULA' ? ' active' : ''}`}
+            onClick={() => selectIdType('CEDULA')}
+          >
+            Cédula
+          </button>
+        </div>
+      </div>
+
+      <div>
         <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Nombre comercial *</label>
         <input className="bingo-input" required value={tradeName} onChange={(e) => setTradeName(e.target.value)} />
       </div>
 
-      <div className="dashboard-form-grid">
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Razón social *</label>
-          <input className="bingo-input" required value={legalName} onChange={(e) => setLegalName(e.target.value)} />
+      {idType && (
+        <div className="dashboard-form-grid">
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>
+              {idType === 'RUC' ? 'Razón social *' : 'Nombre y apellido *'}
+            </label>
+            <input className="bingo-input" required value={legalName} onChange={(e) => setLegalName(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>
+              {idType === 'RUC' ? 'RUC *' : 'Cédula *'}
+            </label>
+            <input className="bingo-input" required value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+          </div>
         </div>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>RUC / Identificación tributaria *</label>
-          <input className="bingo-input" required value={taxId} onChange={(e) => setTaxId(e.target.value)} />
-        </div>
-      </div>
+      )}
 
       <div className="dashboard-form-grid">
         <EmailField label="Email de contacto *" email={email} onEmailChange={setEmail} variant="block" />
@@ -265,7 +346,31 @@ export default function BusinessApplyForm({
         </div>
         <div>
           <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Ciudad *</label>
-          <input className="bingo-input" required value={city} onChange={(e) => setCity(e.target.value)} />
+          {mapsLoaded ? (
+            <Autocomplete
+              onLoad={(ac) => {
+                cityAutocompleteRef.current = ac;
+              }}
+              onPlaceChanged={handleCityPlaceChanged}
+              options={{ types: ['(cities)'], componentRestrictions: { country: 'ec' }, fields: ['address_components', 'name'] }}
+            >
+              <input
+                className="bingo-input"
+                placeholder="Busca tu ciudad…"
+                required
+                value={city}
+                onChange={(e) => {
+                  setCity(e.target.value);
+                  setCitySelected(false);
+                }}
+              />
+            </Autocomplete>
+          ) : (
+            <input className="bingo-input" required value={city} onChange={(e) => setCity(e.target.value)} />
+          )}
+          <div style={{ fontSize: 11, color: citySelected ? 'var(--bingo-success)' : '#9aa5b1', marginTop: 4 }}>
+            {citySelected ? '✓ Ciudad seleccionada' : 'Elige una sugerencia de la lista'}
+          </div>
         </div>
       </div>
 
@@ -279,7 +384,7 @@ export default function BusinessApplyForm({
         <p style={{ fontSize: 11, color: '#7f8ea3', margin: '0 0 8px' }}>
           Así podemos recomendarte a los clientes según las mascotas que tengan registradas.
         </p>
-        <div className="bingo-chip-row">
+        <HorizontalScroller itemCount={speciesOptions.length}>
           {speciesOptions.map((s) => (
             <button
               key={s.id}
@@ -287,11 +392,10 @@ export default function BusinessApplyForm({
               className={`bingo-chip${speciesSlugs.includes(s.slug) ? ' active' : ''}`}
               onClick={() => toggleSpecies(s.slug)}
             >
-              {s.icon ? `${s.icon} ` : ''}
-              {s.name}
+              {SPECIES_ICONS[s.slug] ?? '🐾'} {s.name}
             </button>
           ))}
-        </div>
+        </HorizontalScroller>
       </div>
 
       <div>
