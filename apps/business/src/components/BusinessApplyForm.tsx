@@ -406,7 +406,7 @@ export default function BusinessApplyForm({
 
       <div>
         <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>¿Qué quieres hacer en BINGO+? *</label>
-        <div className="bingo-chip-row">
+        <div className="bingo-chip-row centered">
           {GOAL_OPTIONS.map((opt) => (
             <button
               key={opt.value}
