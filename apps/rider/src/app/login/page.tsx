@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ApiError, login } from '@/lib/api';
 import EmailField, { isValidEmail } from '@/components/EmailField';
@@ -31,11 +32,15 @@ export default function LoginPage() {
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', minHeight: '100vh', justifyContent: 'center' }}>
-      <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <div className="bingo-logo" style={{ color: 'var(--bingo-navy)', fontSize: 30 }}>
-          BINGO<span className="plus" style={{ color: 'var(--bingo-teal)' }}>+</span>
-        </div>
-        <div style={{ fontSize: 13, color: '#7f8ea3', marginTop: 2 }}>Rider</div>
+      <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 24 }}>
+        <Image
+          src="/Bingoplusrider.png"
+          alt="BINGO+ Rider"
+          width={1645}
+          height={956}
+          priority
+          style={{ width: 220, height: 'auto', margin: '0 auto' }}
+        />
       </div>
 
       <form onSubmit={handleSubmit} className="bingo-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
