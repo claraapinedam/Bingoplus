@@ -94,7 +94,7 @@ export class ContractsService {
     sellsProducts: boolean,
     directoryListing: boolean,
   ) {
-    const contractText = await this.buildContractBodyText(business.id);
+    const snapshot = await this.buildFeeSnapshot(business.id);
     return this.prisma.businessContract.create({
       data: {
         businessId: business.id,
@@ -104,7 +104,11 @@ export class ContractsService {
         taxId: business.taxId,
         sellsProducts,
         directoryListing,
-        contractText,
+        commissionRatePercent: snapshot.commissionRatePercent,
+        membershipPlanName: snapshot.membershipPlanName,
+        membershipPriceUsd: snapshot.membershipPriceUsd,
+        membershipBillingFrequency: snapshot.membershipBillingFrequency,
+        contractText: snapshot.contractText,
       },
     });
   }
@@ -228,8 +232,18 @@ export class ContractsService {
 
   /** Fictitious boilerplate clauses (placeholder pending real legal review), but the fees quoted
    * are always the business's actual, already-configured commission rate and membership plan —
-   * never invented numbers. */
-  private async buildContractBodyText(businessId: string): Promise<string> {
+   * never invented numbers. Also returns those same figures as plain values, frozen onto the
+   * contract row itself (see the schema comment on BusinessContract) rather than left as
+   * something only readable by parsing this prose back apart. Deliberately never touches
+   * Business.deliveryFeeUsd — that's what the business itself charges its own customers for
+   * delivery, unrelated to what it owes BINGO+. */
+  private async buildFeeSnapshot(businessId: string): Promise<{
+    commissionRatePercent: number | null;
+    membershipPlanName: string | null;
+    membershipPriceUsd: number | null;
+    membershipBillingFrequency: string | null;
+    contractText: string;
+  }> {
     const commission = await this.prisma.commission.findFirst({
       where: { businessId },
       orderBy: { effectiveFrom: 'desc' },
@@ -239,15 +253,20 @@ export class ContractsService {
       include: { plan: true },
     });
 
+    const commissionRatePercent = commission ? Math.round(Number(commission.rate) * 10000) / 100 : null;
+    const membershipPlanName = membership?.plan.name ?? null;
+    const membershipPriceUsd = membership ? Number(membership.plan.price) : null;
+    const membershipBillingFrequency = membership?.plan.billingFrequency ?? null;
+
     const commissionLine = commission
-      ? `BINGO+ cobrará al Negocio una comisión del ${(Number(commission.rate) * 100).toFixed(2)}% sobre cada venta realizada a través del Marketplace.`
+      ? `BINGO+ cobrará al Negocio una comisión del ${commissionRatePercent!.toFixed(2)}% sobre cada venta realizada a través del Marketplace.`
       : 'La comisión aplicable al Negocio se definirá conforme a la tarifa vigente de BINGO+ para su categoría.';
 
     const membershipLine = membership
       ? `Adicionalmente, el Negocio pagará una membresía de ${membership.plan.currency} ${membership.plan.price} por período ${membership.plan.billingFrequency === 'MONTHLY' ? 'mensual' : 'anual'} por su presencia en el Directorio de BINGO+.`
       : '';
 
-    return [
+    const contractText = [
       'CLÁUSULA PRIMERA — OBJETO. Mediante el presente contrato, BINGO+ concede al Negocio acceso a su plataforma tecnológica para la promoción, venta y/o prestación de productos y servicios dirigidos a mascotas, en los términos y condiciones aquí establecidos.',
       `CLÁUSULA SEGUNDA — TARIFAS Y COMISIONES. ${commissionLine} ${membershipLine}`.trim(),
       'CLÁUSULA TERCERA — OBLIGACIONES DEL NEGOCIO. El Negocio se compromete a mantener información veraz y actualizada, cumplir con la normativa sanitaria y comercial aplicable, atender oportunamente los pedidos y reservas recibidos a través de BINGO+, y responder por la calidad de los productos y servicios ofrecidos.',
@@ -256,6 +275,8 @@ export class ContractsService {
       'CLÁUSULA SEXTA — CONFIDENCIALIDAD Y DATOS PERSONALES. Ambas partes se obligan a mantener confidencialidad sobre la información comercial intercambiada y a tratar los datos personales de los usuarios conforme a la normativa de protección de datos aplicable.',
       'CLÁUSULA SÉPTIMA — VALIDEZ DE LA FIRMA DIGITAL. Las partes reconocen y aceptan que la firma digital consignada en este documento, junto con el identificador único de contrato y la dirección IP registrada al momento de la firma, constituyen prueba suficiente de la manifestación de voluntad y aceptación de los términos aquí descritos.',
     ].join('\n\n');
+
+    return { commissionRatePercent, membershipPlanName, membershipPriceUsd, membershipBillingFrequency, contractText };
   }
 }
 

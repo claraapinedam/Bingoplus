@@ -86,6 +86,38 @@ describe('ContractsService', () => {
             idType: 'CEDULA',
             legalName: 'Juan Pérez',
             taxId: '0102030405',
+            commissionRatePercent: null,
+            membershipPlanName: null,
+            membershipPriceUsd: null,
+          }),
+        }),
+      );
+    });
+
+    it('freezes the real commission rate and membership price onto the contract as a snapshot', async () => {
+      prisma.businessContract.findFirst.mockResolvedValue(null);
+      prisma.business.findUniqueOrThrow.mockResolvedValue({
+        id: 'b1',
+        idType: 'RUC',
+        representativeName: 'Ana Pérez',
+        legalName: 'Acme SA',
+        taxId: '123',
+      });
+      prisma.commission.findFirst.mockResolvedValue({ rate: 0.15 });
+      prisma.businessMembership.findUnique.mockResolvedValue({
+        plan: { name: 'Plan Starter', price: 25, currency: 'USD', billingFrequency: 'MONTHLY' },
+      });
+      prisma.businessContract.create.mockResolvedValue({ id: 'c1' });
+
+      await service.createForApprovedBusiness('b1');
+
+      expect(prisma.businessContract.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            commissionRatePercent: 15,
+            membershipPlanName: 'Plan Starter',
+            membershipPriceUsd: 25,
+            membershipBillingFrequency: 'MONTHLY',
           }),
         }),
       );

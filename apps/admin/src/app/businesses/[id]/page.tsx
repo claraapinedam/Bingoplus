@@ -43,13 +43,31 @@ const CAPABILITY_ORDER: CapabilityType[] = [
 interface Business {
   id: string;
   tradeName: string;
+  idType: 'RUC' | 'CEDULA';
   legalName: string;
+  representativeName: string | null;
+  taxId: string;
+  addressLine: string;
+  description: string | null;
   email: string;
   phone: string;
   city: string;
   status: string;
   category?: { name: string };
+  species: { id: string; name: string }[];
   capabilities: Record<CapabilityType, boolean>;
+}
+
+interface Contract {
+  id: string;
+  status: 'PENDING_SIGNATURE' | 'SIGNED' | 'SUPERSEDED';
+  sellsProducts: boolean;
+  directoryListing: boolean;
+  commissionRatePercent: string | number | null;
+  membershipPlanName: string | null;
+  membershipPriceUsd: string | number | null;
+  membershipBillingFrequency: string | null;
+  createdAt: string;
 }
 
 interface MembershipPlan {
@@ -89,6 +107,7 @@ export default function BusinessDetailPage() {
 
   const [business, setBusiness] = useState<Business | null>(null);
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);
+  const [contract, setContract] = useState<Contract | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [togglingCapability, setTogglingCapability] = useState<CapabilityType | null>(null);
@@ -98,12 +117,16 @@ export default function BusinessDetailPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [b, m] = await Promise.all([
+      const [b, m, contracts] = await Promise.all([
         apiFetch<Business>(`/admin/businesses/${params.id}`),
         apiFetch<Membership | null>(`/admin/businesses/${params.id}/membership`).catch(() => null),
+        apiFetch<Contract[]>(`/admin/businesses/${params.id}/contracts`).catch(() => []),
       ]);
       setBusiness(b);
       setMembership(m);
+      // Newest first — the one whose frozen figures actually apply right now (PENDING_SIGNATURE
+      // while awaiting a first or updated signature, SIGNED once done).
+      setContract(contracts[0] ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar el negocio.');
     }
@@ -246,11 +269,7 @@ export default function BusinessDetailPage() {
       {tab === 'overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div className="bingo-card">
-            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>Solicitud / Estado</h2>
-            <p style={{ fontSize: 12, color: '#7f8ea3', margin: '0 0 14px' }}>
-              Aprobar fija la tasa de comisión vigente y genera el contrato que el negocio debe firmar; se activa
-              en Marketplace/Directorio automáticamente al firmarlo (o con "Activar" como override manual).
-            </p>
+            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 14px' }}>Solicitud / Estado</h2>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {(business.status === 'PENDING' || business.status === 'UNDER_REVIEW') && (
                 <>
@@ -290,11 +309,30 @@ export default function BusinessDetailPage() {
           </div>
 
           <div className="bingo-card">
-            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>Capacidades</h2>
-            <p style={{ fontSize: 12, color: '#7f8ea3', margin: '0 0 14px' }}>
-              SELLS_PRODUCTS controla elegibilidad de Marketplace (RULE 4); DIRECTORY_LISTING controla
-              elegibilidad de Directorio (RULE 5). Independientes de la categoría del negocio.
-            </p>
+            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 10px' }}>Datos de la solicitud</h2>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              Tipo: <strong>{business.idType === 'RUC' ? 'RUC' : 'Cédula'}</strong>
+            </div>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              {business.idType === 'RUC' ? 'Razón social' : 'Nombre'}: <strong>{business.legalName}</strong>
+            </div>
+            {business.idType === 'RUC' && (
+              <div style={{ fontSize: 13, marginBottom: 6 }}>
+                Representante legal: <strong>{business.representativeName ?? '—'}</strong>
+              </div>
+            )}
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              {business.idType === 'RUC' ? 'RUC' : 'Cédula'}: <strong>{business.taxId}</strong>
+            </div>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>Dirección: {business.addressLine}</div>
+            {business.description && <div style={{ fontSize: 13, marginBottom: 6 }}>Descripción: {business.description}</div>}
+            <div style={{ fontSize: 13 }}>
+              Mascotas: {business.species.length > 0 ? business.species.map((s) => s.name).join(', ') : '—'}
+            </div>
+          </div>
+
+          <div className="bingo-card">
+            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 14px' }}>Capacidades</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {CAPABILITY_ORDER.map((cap) => {
                 const enabled = business.capabilities?.[cap] ?? false;
@@ -318,61 +356,79 @@ export default function BusinessDetailPage() {
             </div>
           </div>
 
-          <div className="bingo-card">
-            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>Membresía</h2>
-            <p style={{ fontSize: 12, color: '#7f8ea3', margin: '0 0 14px' }}>
-              Dominio financiero separado del Marketplace — paga por visibilidad en Directorio.
-            </p>
-            {membership === undefined ? (
-              <p style={{ fontSize: 13 }}>Cargando…</p>
-            ) : membership === null ? (
-              <p style={{ fontSize: 13, color: '#7f8ea3' }}>
-                Este negocio no tiene membresía todavía (se crea automáticamente al aprobarlo, si hay
-                un plan configurado).
-              </p>
-            ) : (
-              <>
-                <div style={{ fontSize: 13, marginBottom: 6 }}>
-                  Plan: <strong>{membership.plan.name}</strong> (
-                  {membership.plan.price} {membership.plan.currency})
-                </div>
-                <div style={{ fontSize: 13, marginBottom: 6 }}>
-                  Estado:{' '}
-                  <span className={`bingo-badge badge-${membership.status.toLowerCase()}`}>
-                    {membership.status}
-                  </span>
-                </div>
-                {membership.trialEndsAt && (
-                  <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 6 }}>
-                    Trial termina: {new Date(membership.trialEndsAt).toLocaleDateString('es-EC')}
+          {business.capabilities?.SELLS_PRODUCTS && (
+            <div className="bingo-card">
+              <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 10px' }}>Comisión contratada</h2>
+              {contract === undefined ? (
+                <p style={{ fontSize: 13 }}>Cargando…</p>
+              ) : contract?.sellsProducts && contract.commissionRatePercent != null ? (
+                <>
+                  <div style={{ fontSize: 22, fontWeight: 800 }}>{Number(contract.commissionRatePercent).toFixed(2)}%</div>
+                  <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 4 }}>
+                    Sobre cada venta en el Marketplace — congelada al generarse el contrato el{' '}
+                    {new Date(contract.createdAt).toLocaleDateString('es-EC')}. Cambiarla requiere un contrato nuevo.
                   </div>
-                )}
-                {membership.currentPeriodEnd && (
-                  <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 6 }}>
-                    Periodo actual termina: {new Date(membership.currentPeriodEnd).toLocaleDateString('es-EC')}
-                  </div>
-                )}
+                </>
+              ) : (
+                <p style={{ fontSize: 13, color: '#7f8ea3' }}>Se definirá al aprobar la solicitud.</p>
+              )}
+            </div>
+          )}
 
-                <div style={{ marginTop: 14 }}>
-                  <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                    Cambiar estado
-                  </label>
-                  <select
-                    className="bingo-input"
-                    value={membership.status}
-                    disabled={updatingMembership}
-                    onChange={(e) => changeMembershipStatus(e.target.value)}
-                  >
-                    {MEMBERSHIP_STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-          </div>
+          {business.capabilities?.DIRECTORY_LISTING && (
+            <div className="bingo-card">
+              <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 10px' }}>Membresía</h2>
+              {membership === undefined ? (
+                <p style={{ fontSize: 13 }}>Cargando…</p>
+              ) : membership === null ? (
+                <p style={{ fontSize: 13, color: '#7f8ea3' }}>
+                  Este negocio no tiene membresía todavía (se crea automáticamente al aprobarlo, si hay
+                  un plan configurado).
+                </p>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, marginBottom: 6 }}>
+                    Plan: <strong>{membership.plan.name}</strong> (
+                    {membership.plan.price} {membership.plan.currency})
+                  </div>
+                  <div style={{ fontSize: 13, marginBottom: 6 }}>
+                    Estado:{' '}
+                    <span className={`bingo-badge badge-${membership.status.toLowerCase()}`}>
+                      {membership.status}
+                    </span>
+                  </div>
+                  {membership.trialEndsAt && (
+                    <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 6 }}>
+                      Trial termina: {new Date(membership.trialEndsAt).toLocaleDateString('es-EC')}
+                    </div>
+                  )}
+                  {membership.currentPeriodEnd && (
+                    <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 6 }}>
+                      Periodo actual termina: {new Date(membership.currentPeriodEnd).toLocaleDateString('es-EC')}
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                      Cambiar estado
+                    </label>
+                    <select
+                      className="bingo-input"
+                      value={membership.status}
+                      disabled={updatingMembership}
+                      onChange={(e) => changeMembershipStatus(e.target.value)}
+                    >
+                      {MEMBERSHIP_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 

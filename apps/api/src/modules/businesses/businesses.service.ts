@@ -335,11 +335,12 @@ export class BusinessesService {
   async getOne(businessId: string) {
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
-      include: { category: true, documents: true },
+      include: { category: true, documents: true, species: { include: { species: true } } },
     });
     if (!business) throw new NotFoundException('Business not found');
     const capabilities = await this.capabilities.getMap(businessId);
-    return { ...business, capabilities };
+    const { species, ...rest } = business;
+    return { ...rest, species: (species ?? []).map((s) => s.species), capabilities };
   }
 
   update(businessId: string, dto: UpdateBusinessDto) {

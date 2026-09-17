@@ -365,27 +365,36 @@ enum ContractStatus {
 // signer identity at creation time rather than reading live off Business, so a later profile
 // edit never silently rewrites what was actually agreed to and signed.
 model BusinessContract {
-  id                 String         @id @default(cuid())
-  businessId         String
-  status             ContractStatus @default(PENDING_SIGNATURE)
-  idType             BusinessIdType
-  legalName          String
-  representativeName String?
-  taxId              String
+  id                         String         @id @default(cuid())
+  businessId                 String
+  status                     ContractStatus @default(PENDING_SIGNATURE)
+  idType                     BusinessIdType
+  legalName                  String
+  representativeName         String?
+  taxId                      String
   // Which capabilities this contract's terms actually cover — the signal used to detect drift
   // when Admin later enables a capability the business's currently-governing contract doesn't
   // cover yet, and what gets applied (via ContractsService.sign) once the new one is signed.
-  sellsProducts      Boolean        @default(false)
-  directoryListing   Boolean        @default(false)
-  contractText       String
+  sellsProducts              Boolean        @default(false)
+  directoryListing           Boolean        @default(false)
+  // Frozen at contract-generation time — the actual figures this contract's fee clause quotes.
+  // Admin's "current commission rate" or a MembershipPlan's price can keep changing after this
+  // moment (a new Commission row from a later re-approval, an edited plan price); this is the
+  // read-only "photo" of what THIS business actually agreed to, never recomputed from those live
+  // tables once written, exactly the way it should never change without a newly-signed contract.
+  commissionRatePercent      Decimal?       @db.Decimal(5, 2)
+  membershipPlanName         String?
+  membershipPriceUsd         Decimal?       @db.Decimal(10, 2)
+  membershipBillingFrequency String?
+  contractText               String
   // Raw base64 PNG from the signature canvas — kept alongside the rendered PDF as the primary
   // audit artifact of what was actually drawn.
-  signatureDataUrl   String?
-  signedAt           DateTime?
-  signedIp           String?
-  pdfUrl             String?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  signatureDataUrl           String?
+  signedAt                   DateTime?
+  signedIp                   String?
+  pdfUrl                     String?
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
