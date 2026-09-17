@@ -12,7 +12,7 @@ import { ListAdminReviewsQueryDto, ListAdminReviewReportsQueryDto } from './dto/
 /** Moderation surface — never a second place to author reviews, only to hide/restore and triage
  * reports (§3.6). Every action here is @Audit'd (RULE 13). */
 @ApiTags('admin/reviews')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/reviews')
 export class AdminReviewsController {

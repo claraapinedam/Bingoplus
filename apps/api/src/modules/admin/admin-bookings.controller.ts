@@ -9,7 +9,7 @@ import { ListAdminBookingsQueryDto } from '../bookings/dto/list-bookings-query.d
 /** Global read-only booking visibility (FASE 7 §33) — Customer and Business keep their own
  * Booking management surfaces, admin only supervises here, never a second Booking UI. */
 @ApiTags('admin/bookings')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/bookings')
 export class AdminBookingsController {

@@ -142,6 +142,24 @@ export async function register(input: {
   return data.user;
 }
 
+/** Uploads a single file (e.g. a pet-friendly-place photo) and returns the URL to pass back in a
+ * DTO field — bypasses apiFetch's JSON Content-Type default, multipart sets its own. */
+export async function uploadFile(file: File): Promise<{ url: string }> {
+  const token = getAccessToken();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}/uploads`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(res.status, body?.error?.code ?? 'UPLOAD_FAILED', body?.error?.message ?? 'No se pudo subir el archivo.');
+  }
+  return body.data as { url: string };
+}
+
 /**
  * Real device/browser location via the standard Geolocation API — resolves to `null` on denial,
  * timeout, or when unsupported, rather than ever fabricating coordinates (matches the project's

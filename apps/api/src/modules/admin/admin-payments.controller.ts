@@ -16,7 +16,7 @@ import { AdminRefundDto } from './dto/admin-refund.dto';
  * PAN/CVV/raw card data — this schema never stores that in the first place, so there's nothing to
  * accidentally leak here. */
 @ApiTags('admin/payments')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/payments')
 export class AdminPaymentsController {

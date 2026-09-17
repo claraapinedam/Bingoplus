@@ -9,7 +9,7 @@ import { ListAdminPromotionsQueryDto } from '../promotions/dto/list-promotions-q
 /** Global read-only supervision — the business still owns Promotion CRUD via
  * BusinessPromotionsController, admin only supervises here (§9). */
 @ApiTags('admin/promotions')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/promotions')
 export class AdminPromotionsController {

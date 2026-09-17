@@ -9,7 +9,7 @@ import { ListRidersQueryDto } from './dto/list-query.dto';
 import { SetRiderStatusDto } from './dto/set-rider-status.dto';
 
 @ApiTags('admin/riders')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/riders')
 export class AdminRidersController {

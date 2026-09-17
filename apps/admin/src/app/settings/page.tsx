@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, decodeRoles, getAccessToken, ApiError } from '@/lib/api';
 
 interface RankingWeights {
   speciesMatch: number;
@@ -45,11 +45,28 @@ export default function AdminSettingsPage() {
   const [pricingMsg, setPricingMsg] = useState<string | null>(null);
   const [weightsErr, setWeightsErr] = useState<string | null>(null);
   const [pricingErr, setPricingErr] = useState<string | null>(null);
+  // Defense in depth only — the backend's RolesGuard is the real gate (AdminSettingsController
+  // never grants RoleName.USER). AdminShell's nav already hides the link for that role.
+  const [restricted, setRestricted] = useState(false);
 
   useEffect(() => {
+    const token = getAccessToken();
+    const roles = token ? decodeRoles(token) : [];
+    const isRestricted = roles.includes('USER') && !roles.includes('ADMIN') && !roles.includes('SUPER_ADMIN');
+    setRestricted(isRestricted);
+    if (isRestricted) return;
     apiFetch<RankingWeights>('/admin/settings/ranking-weights').then(setWeights).catch(() => setWeights(null));
     apiFetch<PricingConfig>('/admin/settings/pricing').then(setPricing).catch(() => setPricing(null));
   }, []);
+
+  if (restricted) {
+    return (
+      <AdminShell>
+        <h1 className="bingo-page-title">Variables</h1>
+        <div className="bingo-card" style={{ color: 'var(--bingo-error)' }}>Tu cuenta no tiene acceso a esta sección.</div>
+      </AdminShell>
+    );
+  }
 
   const weightSum = weights ? WEIGHT_LABELS.reduce((sum, w) => sum + (weights[w.key] || 0), 0) : 0;
   const weightSumValid = Math.abs(weightSum - 1) <= 0.001;

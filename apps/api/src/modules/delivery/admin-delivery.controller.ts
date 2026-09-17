@@ -9,7 +9,7 @@ import { DeliveryCancellationService } from './delivery-cancellation.service';
 import { AdminAssignDeliveryDto, AdminCancelDeliveryDto, ListDeliveriesQueryDto } from './dto/delivery-action.dto';
 
 @ApiTags('admin/deliveries')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/deliveries')
 export class AdminDeliveryController {

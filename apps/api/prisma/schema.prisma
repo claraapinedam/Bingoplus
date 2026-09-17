@@ -24,6 +24,11 @@ datasource db {
 enum RoleName {
   SUPER_ADMIN
   ADMIN
+  // Restricted admin-panel account: can log into the Admin app and use everything except
+  // Analytics and Settings (ranking weights / pricing) — see AdminAnalyticsController and
+  // AdminSettingsController, the only two admin controllers that deliberately never add USER to
+  // their @Roles(...) allow-list. Unrelated to CUSTOMER (a marketplace shopper).
+  USER
   BUSINESS_OWNER
   BUSINESS_MANAGER
   RIDER
@@ -71,6 +76,8 @@ model User {
   analyticsEvents        AnalyticsEvent[]
   documentsReviewed      BusinessDocument[]      @relation("DocumentReviewer")
   couponRedemptions      CouponRedemption[]      @relation("CouponRedeemer")
+  submittedPetFriendlyPlaces PetFriendlyPlace[]  @relation("PetFriendlyPlaceSubmitter")
+  reviewedPetFriendlyPlaces  PetFriendlyPlace[]  @relation("PetFriendlyPlaceReviewer")
 
   @@index([email])
   @@index([phone])
@@ -1286,39 +1293,49 @@ model AvailabilityBlock {
   @@index([startDateTime, endDateTime])
 }
 
-// ───────────────────────────── Pet-friendly directory (Phase 1 schema, Phase 7 API) ─────────────────────────────
+// ───────────────────────────── Pet-friendly community directory ─────────────────────────────
+// Deliberately NOT a Business/membership/capability concept (unlike Grooming/Veterinarios/etc.)
+// — any logged-in user can submit a place (a restaurant, park, café...) that welcomes pets but
+// isn't a registered BINGO+ business. Submissions start PENDING and only become visible to
+// everyone once an admin approves them (see PetFriendlyPlacesService / AdminPetFriendlyPlacesController).
 
-model PetFriendlyCategory {
-  id   String @id @default(cuid())
-  name String
-  slug String @unique
+enum PetFriendlyPlaceCategory {
+  RESTAURANT
+  OUTDOOR_SPACE
+  OTHER
+}
 
-  places PetFriendlyPlace[]
+enum PetFriendlyPlaceStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model PetFriendlyPlace {
-  id           String                                 @id @default(cuid())
-  name         String
-  description  String?
-  categoryId   String
-  address      String
-  latitude     Float
-  longitude    Float
-  location     Unsupported("geography(Point, 4326)")?
-  phone        String?
-  website      String?
-  photos       String[]                               @default([])
-  ratingAvg    Float                                  @default(0)
-  petRules     String?
-  amenities    String[]                               @default([])
-  verified     Boolean                                @default(false)
-  openingHours Json?
-  createdAt    DateTime                               @default(now())
-  updatedAt    DateTime                               @updatedAt
+  id              String                                 @id @default(cuid())
+  name            String
+  category        PetFriendlyPlaceCategory
+  description     String?
+  address         String
+  latitude        Float
+  longitude       Float
+  location        Unsupported("geography(Point, 4326)")?
+  photoUrl        String?
+  status          PetFriendlyPlaceStatus                 @default(PENDING)
+  ratingAvg       Float                                   @default(0)
+  reviewCount     Int                                     @default(0)
+  submittedById   String
+  reviewedById    String?
+  reviewedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime                                @default(now())
+  updatedAt       DateTime                                @updatedAt
 
-  category PetFriendlyCategory @relation(fields: [categoryId], references: [id])
+  submittedBy User  @relation("PetFriendlyPlaceSubmitter", fields: [submittedById], references: [id])
+  reviewedBy  User? @relation("PetFriendlyPlaceReviewer", fields: [reviewedById], references: [id])
 
-  @@index([categoryId])
+  @@index([status])
+  @@index([category])
 }
 
 // ───────────────────────────── Reputation & growth (Phase 8) ─────────────────────────────
@@ -1331,6 +1348,11 @@ enum ReviewTargetType {
   // A business/rider rating a customer after an order — the source of User.ratingAvg once the
   // Phase 8 reviews module builds the endpoint to create these.
   CUSTOMER
+  // No order/booking context (any approved place, rated by any user) — the uniqueness guard for
+  // this target type is a partial index added by migration SQL, not the two existing
+  // orderId/bookingId-based @@unique constraints below (both would always be null here, and
+  // Postgres treats every NULL as distinct, so neither blocks a duplicate on its own).
+  PET_FRIENDLY_PLACE
 }
 
 enum ReviewStatus {

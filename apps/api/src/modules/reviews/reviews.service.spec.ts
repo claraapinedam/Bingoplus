@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { BookingStatus, FulfillmentType, OrderStatus, Prisma, ReviewStatus, ReviewTargetType } from '@prisma/client';
+import { BookingStatus, FulfillmentType, OrderStatus, PetFriendlyPlaceStatus, Prisma, ReviewStatus, ReviewTargetType } from '@prisma/client';
 import { ReviewsService } from './reviews.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
@@ -32,6 +32,7 @@ describe('ReviewsService', () => {
       rider: { update: jest.fn() },
       product: { update: jest.fn(), findUnique: jest.fn() },
       service: { update: jest.fn(), findUnique: jest.fn().mockResolvedValue({ name: 'Consulta', business: { ownerId: 'owner-1' } }) },
+      petFriendlyPlace: { findUnique: jest.fn(), update: jest.fn() },
       $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     };
     notifications = { notify: jest.fn().mockResolvedValue(undefined) };
@@ -147,6 +148,48 @@ describe('ReviewsService', () => {
         .fn()
         .mockRejectedValue(new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '5.22.0' }));
       await expect(service.submitForBooking('u1', 'bk1', { rating: 5 })).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('submitForPlace — Pet Friendly Place reviews (no order/booking context)', () => {
+    const approvedPlace = { id: 'place1', status: PetFriendlyPlaceStatus.APPROVED, submittedById: 'submitter-1', name: 'Café Huellas' };
+
+    it('404s rating a place that is still PENDING', async () => {
+      prisma.petFriendlyPlace.findUnique.mockResolvedValue({ ...approvedPlace, status: PetFriendlyPlaceStatus.PENDING });
+      await expect(service.submitForPlace('u1', 'place1', { rating: 5 })).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('creates a PET_FRIENDLY_PLACE review with no orderId/bookingId and recomputes the place aggregate', async () => {
+      prisma.petFriendlyPlace.findUnique.mockResolvedValue(approvedPlace);
+      prisma.review.create = jest.fn().mockResolvedValue({});
+
+      await service.submitForPlace('u1', 'place1', { rating: 4, comment: 'Muy buen lugar' });
+
+      expect(prisma.review.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ targetType: ReviewTargetType.PET_FRIENDLY_PLACE, targetId: 'place1', authorId: 'u1' }),
+        }),
+      );
+      const createArgs = prisma.review.create.mock.calls[0][0].data;
+      expect(createArgs.orderId).toBeUndefined();
+      expect(createArgs.bookingId).toBeUndefined();
+      expect(prisma.petFriendlyPlace.update).toHaveBeenCalledWith({ where: { id: 'place1' }, data: { ratingAvg: 4.5, reviewCount: 2 } });
+      expect(notifications.notify).toHaveBeenCalledWith(expect.objectContaining({ userId: 'submitter-1', event: 'review.created' }));
+    });
+
+    it('does not notify the submitter when they review their own place', async () => {
+      prisma.petFriendlyPlace.findUnique.mockResolvedValue({ ...approvedPlace, submittedById: 'u1' });
+      prisma.review.create = jest.fn().mockResolvedValue({});
+      await service.submitForPlace('u1', 'place1', { rating: 5 });
+      expect(notifications.notify).not.toHaveBeenCalled();
+    });
+
+    it('turns a duplicate place review into ALREADY_REVIEWED, not a 500', async () => {
+      prisma.petFriendlyPlace.findUnique.mockResolvedValue(approvedPlace);
+      prisma.review.create = jest
+        .fn()
+        .mockRejectedValue(new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '5.22.0' }));
+      await expect(service.submitForPlace('u1', 'place1', { rating: 5 })).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 

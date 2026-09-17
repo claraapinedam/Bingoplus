@@ -10,7 +10,7 @@ import { ListOrdersAdminQueryDto } from './dto/list-query.dto';
  * an admin might need (status changes, cancellation) already exists via the business/customer
  * flows; this controller exists only so an admin can see across every business at once. */
 @ApiTags('admin/orders')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/orders')
 export class AdminOrdersController {

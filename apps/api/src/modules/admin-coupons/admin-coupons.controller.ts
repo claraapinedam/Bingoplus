@@ -10,7 +10,7 @@ import { CreateAdminCouponDto, UpdateAdminCouponDto } from './dto/admin-coupon.d
 import { SetAdminCouponStatusDto } from './dto/set-admin-coupon-status.dto';
 
 @ApiTags('admin/coupons')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/coupons')
 export class AdminCouponsController {

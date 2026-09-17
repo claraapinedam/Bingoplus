@@ -1,5 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BookingStatus, FulfillmentType, OrderStatus, Prisma, ReviewReportStatus, ReviewStatus, ReviewTargetType } from '@prisma/client';
+import {
+  BookingStatus,
+  FulfillmentType,
+  OrderStatus,
+  PetFriendlyPlaceStatus,
+  Prisma,
+  ReviewReportStatus,
+  ReviewStatus,
+  ReviewTargetType,
+} from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
@@ -209,6 +218,59 @@ export class ReviewsService {
     return this.getContextForBooking(userId, bookingId);
   }
 
+  // ── Pet-friendly-place reviews — no order/booking context, any user may rate any APPROVED
+  // place once (guarded by the partial unique index on Review, not the orderId/bookingId-based
+  // @@unique constraints, since both are always null here). ────────────────────────────────
+
+  async listPublishedForPlace(placeId: string) {
+    return this.prisma.review.findMany({
+      where: { targetType: ReviewTargetType.PET_FRIENDLY_PLACE, targetId: placeId, status: ReviewStatus.PUBLISHED },
+      orderBy: { createdAt: 'desc' },
+      include: { author: { select: { firstName: true, lastName: true } } },
+    });
+  }
+
+  async submitForPlace(userId: string, placeId: string, dto: CreateBookingReviewDto) {
+    const place = await this.prisma.petFriendlyPlace.findUnique({ where: { id: placeId } });
+    if (!place || place.status !== PetFriendlyPlaceStatus.APPROVED) {
+      throw new NotFoundException('Pet-friendly place not found');
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.review.create({
+          data: {
+            authorId: userId,
+            targetType: ReviewTargetType.PET_FRIENDLY_PLACE,
+            targetId: placeId,
+            rating: dto.rating,
+            comment: dto.comment,
+          },
+        });
+        await this.recomputeAggregate(tx, ReviewTargetType.PET_FRIENDLY_PLACE, placeId);
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new BadRequestException({ error: { code: 'ALREADY_REVIEWED', message: 'You already rated this place.' } });
+      }
+      throw err;
+    }
+
+    if (place.submittedById !== userId) {
+      void this.notifications.notify({
+        userId: place.submittedById,
+        event: 'review.created',
+        title: 'Nueva reseña',
+        body: `"${place.name}" recibió una nueva reseña de ${dto.rating}★.`,
+        entityType: 'PetFriendlyPlace',
+        entityId: placeId,
+        idempotencyKey: `review-created:${userId}:PET_FRIENDLY_PLACE:${placeId}`,
+      });
+    }
+
+    return this.listPublishedForPlace(placeId);
+  }
+
   // ── Business — read + reply ─────────────────────────────────────────────
 
   async listForBusiness(businessId: string, query: { targetType?: ReviewTargetType; page?: number; pageSize?: number }) {
@@ -397,6 +459,8 @@ export class ReviewsService {
       await tx.product.update({ where: { id: targetId }, data });
     } else if (targetType === ReviewTargetType.SERVICE) {
       await tx.service.update({ where: { id: targetId }, data });
+    } else if (targetType === ReviewTargetType.PET_FRIENDLY_PLACE) {
+      await tx.petFriendlyPlace.update({ where: { id: targetId }, data });
     }
   }
 }

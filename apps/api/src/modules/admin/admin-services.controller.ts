@@ -9,7 +9,7 @@ import { ListAdminServicesQueryDto } from '../services/dto/list-services-query.d
 /** Global read-only service visibility (FASE 7 §33/34) — the business still owns Service CRUD
  * via BusinessServicesController, admin only supervises here, never a parallel management surface. */
 @ApiTags('admin/services')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/services')
 export class AdminServicesController {

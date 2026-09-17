@@ -5,12 +5,19 @@ import {
   BookingReviewsController,
   ReviewReportController,
   BusinessReviewsController,
+  PetFriendlyPlaceReviewsController,
 } from './reviews.controller';
 import { ReviewsService } from './reviews.service';
 
 @Module({
   imports: [NotificationsModule],
-  controllers: [OrderReviewsController, BookingReviewsController, ReviewReportController, BusinessReviewsController],
+  controllers: [
+    OrderReviewsController,
+    BookingReviewsController,
+    ReviewReportController,
+    BusinessReviewsController,
+    PetFriendlyPlaceReviewsController,
+  ],
   providers: [ReviewsService],
   exports: [ReviewsService],
 })

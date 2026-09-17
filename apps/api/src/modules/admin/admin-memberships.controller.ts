@@ -9,7 +9,7 @@ import { CreateMembershipPlanDto, UpdateMembershipPlanDto } from '../memberships
 import { SetMembershipStatusDto } from '../memberships/dto/set-membership-status.dto';
 
 @ApiTags('admin/membership-plans')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/membership-plans')
 export class AdminMembershipPlansController {
@@ -34,7 +34,7 @@ export class AdminMembershipPlansController {
 }
 
 @ApiTags('admin/businesses/membership')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/businesses/:id/membership')
 export class AdminBusinessMembershipController {

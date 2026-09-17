@@ -9,7 +9,7 @@ import { ListAuditLogsQueryDto } from '../admin/dto/list-query.dto';
 /** §27: browse-only — there is deliberately no create/update/delete route here. AuditLog rows are
  * written exclusively by AuditLogInterceptor as a side effect of @Audit()-decorated actions. */
 @ApiTags('admin/audit-logs')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/audit-logs')
 export class AdminAuditLogsController {

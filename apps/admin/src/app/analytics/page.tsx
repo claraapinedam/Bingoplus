@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, decodeRoles, getAccessToken } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
 
@@ -77,14 +77,33 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function AdminAnalyticsPage() {
   const [preset, setPreset] = useState('last_30_days');
   const [data, setData] = useState<AdminAnalytics | null>(null);
+  // Defense in depth only — the backend's RolesGuard is the real gate (AdminAnalyticsController
+  // never grants RoleName.USER). This just avoids a USER account hitting an infinite "Cargando…"
+  // if they type the URL directly, since AdminShell's nav already hides the link to it.
+  const [restricted, setRestricted] = useState(false);
 
   const load = useCallback(() => {
     apiFetch<AdminAnalytics>(`/admin/analytics?preset=${preset}`).then(setData).catch(() => setData(null));
   }, [preset]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    const token = getAccessToken();
+    const roles = token ? decodeRoles(token) : [];
+    setRestricted(roles.includes('USER') && !roles.includes('ADMIN') && !roles.includes('SUPER_ADMIN'));
+  }, []);
+
+  useEffect(() => {
+    if (!restricted) load();
+  }, [load, restricted]);
+
+  if (restricted) {
+    return (
+      <AdminShell>
+        <h1 className="bingo-page-title">Analíticas</h1>
+        <div className="bingo-card" style={{ color: 'var(--bingo-error)' }}>Tu cuenta no tiene acceso a esta sección.</div>
+      </AdminShell>
+    );
+  }
 
   return (
     <AdminShell>

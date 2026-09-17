@@ -15,7 +15,7 @@ import {
 import { SetCapabilityDto } from '../business-capabilities/dto/set-capability.dto';
 
 @ApiTags('admin/businesses')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/businesses')
 export class AdminBusinessesController {

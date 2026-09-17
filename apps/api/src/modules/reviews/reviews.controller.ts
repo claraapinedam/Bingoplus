@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@ne
 import { ApiTags } from '@nestjs/swagger';
 import { ReviewTargetType } from '@prisma/client';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { Audit } from '../../common/decorators/audit.decorator';
 import { BusinessOwnershipGuard } from '../../common/guards/business-ownership.guard';
 import { ReviewsService } from './reviews.service';
@@ -41,6 +42,24 @@ export class BookingReviewsController {
   @Post(':id/reviews')
   submit(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: CreateBookingReviewDto) {
     return this.reviews.submitForBooking(user.id, id, dto);
+  }
+}
+
+@ApiTags('pet-friendly-places/reviews')
+@Controller('pet-friendly-places')
+export class PetFriendlyPlaceReviewsController {
+  constructor(private readonly reviews: ReviewsService) {}
+
+  @Public()
+  @Get(':id/reviews')
+  list(@Param('id') id: string) {
+    return this.reviews.listPublishedForPlace(id);
+  }
+
+  @Audit('pet_friendly_place.review.submit', 'PetFriendlyPlace')
+  @Post(':id/reviews')
+  submit(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: CreateBookingReviewDto) {
+    return this.reviews.submitForPlace(user.id, id, dto);
   }
 }
 

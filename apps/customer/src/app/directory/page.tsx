@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
 import DirectoryListCard, { CATEGORY_ICONS, DirectoryListCardData } from '@/components/DirectoryListCard';
 import EmptyState from '@/components/EmptyState';
@@ -16,10 +17,13 @@ interface BusinessCategory {
 // "Tiendas"/"Delivery" are the two retail-type categories — the Directory never shows a business
 // in either one (see DirectoryService.list()'s category filter on the backend), so offering them
 // as filter chips here would always just return an empty result. Same partition BusinessApplyForm
-// uses on the Business Portal side.
-const NON_DIRECTORY_CATEGORY_SLUGS = ['tiendas', 'delivery'];
+// uses on the Business Portal side. "pet-friendly" used to be a business category here too — it's
+// now the community-submitted /pet-friendly directory instead (a distinct tile below, never a
+// registered Business), excluded defensively in case a stale category row ever lingers.
+const NON_DIRECTORY_CATEGORY_SLUGS = ['tiendas', 'delivery', 'pet-friendly'];
 
 function DirectoryContent() {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [categorySlug, setCategorySlug] = useState('');
   const [categories, setCategories] = useState<BusinessCategory[]>([]);
@@ -120,6 +124,16 @@ function DirectoryContent() {
                 <div style={{ fontWeight: 700, fontSize: 13 }}>{c.name}</div>
               </button>
             ))}
+            {/* Not a Business category — a community directory of places (not registered
+                BINGO+ businesses) that welcome pets, submitted by users and approved by admins. */}
+            <button
+              onClick={() => router.push('/pet-friendly')}
+              className="bingo-card"
+              style={{ textAlign: 'center', padding: '22px 12px', border: 'none', cursor: 'pointer' }}
+            >
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🐾</div>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>Espacios Pet Friendly</div>
+            </button>
           </div>
         ) : (
           <>

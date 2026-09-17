@@ -24,6 +24,18 @@ export function getRefreshToken(): string | null {
   return localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
+/** Decodes the JWT payload without verifying it — verification already happened server-side; this
+ * is only used client-side to read `roles` for nav/route gating (never trusted for real
+ * authorization, which is enforced by the backend's RolesGuard on every request regardless). */
+export function decodeRoles(accessToken: string): string[] {
+  try {
+    const payload = JSON.parse(atob(accessToken.split('.')[1]));
+    return Array.isArray(payload.roles) ? payload.roles : [];
+  } catch {
+    return [];
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -120,7 +132,8 @@ export async function login(email: string, password: string) {
     refreshToken: string;
   }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
 
-  if (!data.user.roles.includes('ADMIN') && !data.user.roles.includes('SUPER_ADMIN')) {
+  const ADMIN_PANEL_ROLES = ['ADMIN', 'SUPER_ADMIN', 'USER'];
+  if (!data.user.roles.some((r) => ADMIN_PANEL_ROLES.includes(r))) {
     throw new ApiError(403, 'NOT_ADMIN', 'This account does not have admin access.');
   }
 

@@ -16,6 +16,7 @@ import { BookingsModule } from '../bookings/bookings.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { PromotionsModule } from '../promotions/promotions.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
+import { PetFriendlyPlacesModule } from '../pet-friendly-places/pet-friendly-places.module';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminCustomersController } from './admin-customers.controller';
 import { AdminBusinessesController } from './admin-businesses.controller';
@@ -33,6 +34,7 @@ import { AdminBookingsController } from './admin-bookings.controller';
 import { AdminReviewsController } from './admin-reviews.controller';
 import { AdminPromotionsController } from './admin-promotions.controller';
 import { AdminAnalyticsController } from './admin-analytics.controller';
+import { AdminPetFriendlyPlacesController } from './admin-pet-friendly-places.controller';
 
 @Module({
   imports: [
@@ -53,6 +55,7 @@ import { AdminAnalyticsController } from './admin-analytics.controller';
     ReviewsModule,
     PromotionsModule,
     AnalyticsModule,
+    PetFriendlyPlacesModule,
   ],
   controllers: [
     AdminUsersController,
@@ -73,6 +76,7 @@ import { AdminAnalyticsController } from './admin-analytics.controller';
     AdminReviewsController,
     AdminPromotionsController,
     AdminAnalyticsController,
+    AdminPetFriendlyPlacesController,
   ],
 })
 export class AdminModule {}

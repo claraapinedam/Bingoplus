@@ -39,6 +39,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { PetFriendlyPlacesModule } from './modules/pet-friendly-places/pet-friendly-places.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     PromotionsModule,
     AnalyticsModule,
     UploadsModule,
+    PetFriendlyPlacesModule,
     AdminModule,
     HealthModule,
   ],

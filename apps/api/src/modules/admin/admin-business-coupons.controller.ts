@@ -10,7 +10,7 @@ import { ListBusinessCouponsAdminQueryDto } from './dto/list-query.dto';
  * admin-coupons module for that separate financial domain). Businesses keep full ownership of
  * their own coupons; this exists only so an admin can see across every business at once. */
 @ApiTags('admin/business-coupons')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/business-coupons')
 export class AdminBusinessCouponsController {

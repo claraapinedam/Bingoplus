@@ -1,10 +1,14 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
+import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { CreateAddressDto, UpdateAddressDto } from './dto/address.dto';
 import { toUserDto } from './dto/user.dto';
+import { CreateStaffUserDto } from '../admin/dto/create-staff-user.dto';
 import { resolvePagination } from '@bingoplus/utils';
+
+const STAFF_ROLES: RoleName[] = [RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER];
 
 @Injectable()
 export class UsersService {
@@ -112,11 +116,11 @@ export class UsersService {
     };
   }
 
-  /** Usuarios: ADMIN/SUPER_ADMIN accounts — the only ones that can sign into this admin panel. */
+  /** Usuarios: ADMIN/SUPER_ADMIN/USER accounts — the only ones that can sign into this admin panel. */
   async listStaffForAdmin(params: { page?: number; pageSize?: number; search?: string }) {
     const { skip, take, page, pageSize } = resolvePagination(params);
     const where = {
-      roles: { some: { role: { name: { in: [RoleName.ADMIN, RoleName.SUPER_ADMIN] } } } },
+      roles: { some: { role: { name: { in: STAFF_ROLES } } } },
       ...(params.search
         ? {
             OR: [
@@ -179,6 +183,38 @@ export class UsersService {
       purchasesCount: stats._count._all,
       purchasesTotal: Number(stats._sum.total ?? 0),
     };
+  }
+
+  /**
+   * The one place a staff account (ADMIN/SUPER_ADMIN/USER) is created directly with a password
+   * and a role already attached — unlike every other User in this schema, which always starts as
+   * a self-registered CUSTOMER (see AuthService.register) and earns other roles later. Same
+   * argon2 hashing as self-registration; the caller (AdminUsersController) is already gated to
+   * ADMIN/SUPER_ADMIN via @Roles, so USER accounts can never create more staff accounts.
+   */
+  async createStaffUser(dto: CreateStaffUserDto) {
+    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    if (existing) {
+      throw new ConflictException('An account with this email already exists');
+    }
+
+    const role = await this.prisma.role.findUniqueOrThrow({ where: { name: dto.role } });
+    const passwordHash = await argon2.hash(dto.password);
+    const user = await this.prisma.user.create({
+      data: {
+        email: dto.email,
+        passwordHash,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        isEmailVerified: true,
+        roles: { create: { roleId: role.id } },
+      },
+      include: { roles: { include: { role: true } } },
+    });
+    return toUserDto(
+      user,
+      user.roles.map((r) => r.role.name),
+    );
   }
 
   async setActive(userId: string, isActive: boolean) {

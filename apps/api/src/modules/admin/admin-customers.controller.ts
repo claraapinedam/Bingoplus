@@ -12,7 +12,7 @@ import { ListUsersQueryDto } from './dto/list-query.dto';
  * (admin-panel staff) and "Riders". See UsersService §Admin-facing for the full split.
  */
 @ApiTags('admin/customers')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/customers')
 export class AdminCustomersController {

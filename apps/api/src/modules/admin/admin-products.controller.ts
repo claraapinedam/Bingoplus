@@ -9,7 +9,7 @@ import { ListProductsAdminQueryDto } from './dto/list-query.dto';
 /** Global read-only product visibility (§15) — the business still owns product CRUD via
  * BusinessProductsController; admin only supervises here, never a parallel management surface. */
 @ApiTags('admin/products')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/products')
 export class AdminProductsController {

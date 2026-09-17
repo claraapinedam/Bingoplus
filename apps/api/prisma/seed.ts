@@ -8,6 +8,8 @@ import {
   BusinessStatus,
   BusinessUserRole,
   CouponDiscountType,
+  PetFriendlyPlaceCategory,
+  PetFriendlyPlaceStatus,
   PrismaClient,
   RoleName,
   ServiceType,
@@ -32,6 +34,18 @@ async function resetDevData() {
   await prisma.adminCoupon.deleteMany({});
   await prisma.couponRedemption.deleteMany({});
   await prisma.cart.deleteMany({});
+  // FASE 4/7/9: the full Order/Delivery/Booking tree holds several non-cascading FKs back into
+  // Business (directly or via Order/Delivery), so all of it must be cleared first, innermost
+  // dependents before what they reference: RiderEarning before Delivery, Delivery/Dispute/
+  // Review/Refund/Payment before Order and Booking, then Order and Booking before Business.
+  await prisma.riderEarning.deleteMany({});
+  await prisma.delivery.deleteMany({});
+  await prisma.dispute.deleteMany({});
+  await prisma.review.deleteMany({});
+  await prisma.refund.deleteMany({});
+  await prisma.payment.deleteMany({});
+  await prisma.booking.deleteMany({});
+  await prisma.order.deleteMany({});
   await prisma.business.deleteMany({});
   await prisma.membershipPlan.deleteMany({});
   await prisma.pet.deleteMany({});
@@ -81,12 +95,15 @@ async function seedCategories() {
     { name: 'Hospedajes', slug: 'hospedajes', icon: 'bed' },
     { name: 'Grooming', slug: 'grooming', icon: 'scissors' },
     { name: 'Paseadores', slug: 'paseadores', icon: 'footprints' },
-    { name: 'Pet Friendly', slug: 'pet-friendly', icon: 'paw' },
     { name: 'Delivery', slug: 'delivery', icon: 'truck' },
   ];
   for (const c of businessCategories) {
     await prisma.businessCategory.upsert({ where: { slug: c.slug }, update: {}, create: c });
   }
+  // "Pet Friendly" used to be a business/membership category here — it's now the community-
+  // submitted PetFriendlyPlace directory instead (see seedPetFriendlyPlaces), never a Business.
+  // No seeded Business ever used this slug, so removing the stale row is safe in every environment.
+  await prisma.businessCategory.deleteMany({ where: { slug: 'pet-friendly' } });
 
   const productCategories = [
     { name: 'Alimento', slug: 'alimento' },
@@ -101,19 +118,6 @@ async function seedCategories() {
   ];
   for (const c of productCategories) {
     await prisma.productCategory.upsert({ where: { slug: c.slug }, update: {}, create: c });
-  }
-
-  const petFriendlyCategories = [
-    { name: 'Restaurantes', slug: 'restaurantes' },
-    { name: 'Cafeterías', slug: 'cafeterias' },
-    { name: 'Parques', slug: 'parques' },
-    { name: 'Hoteles', slug: 'hoteles' },
-    { name: 'Centros comerciales', slug: 'centros-comerciales' },
-    { name: 'Tiendas', slug: 'tiendas-pet-friendly' },
-    { name: 'Otros', slug: 'otros-pet-friendly' },
-  ];
-  for (const c of petFriendlyCategories) {
-    await prisma.petFriendlyCategory.upsert({ where: { slug: c.slug }, update: {}, create: c });
   }
 }
 
@@ -171,6 +175,7 @@ async function seedUsers() {
   const superAdminRole = await prisma.role.findUniqueOrThrow({
     where: { name: RoleName.SUPER_ADMIN },
   });
+  const staffUserRole = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.USER } });
 
   const fakeCustomers = [
     ['maria.fake', 'María', 'Fernández'],
@@ -226,7 +231,21 @@ async function seedUsers() {
     },
   });
 
-  return { customers: users, admin, superAdmin };
+  // Restricted admin-panel role — everything except Analytics/Settings (see AdminUsersController).
+  const staffUser = await prisma.user.upsert({
+    where: { email: 'staffuser.fake@example-bingoplus.test' },
+    update: {},
+    create: {
+      email: 'staffuser.fake@example-bingoplus.test',
+      passwordHash,
+      firstName: 'Staff',
+      lastName: 'User',
+      isEmailVerified: true,
+      roles: { create: { roleId: staffUserRole.id } },
+    },
+  });
+
+  return { customers: users, admin, superAdmin, staffUser };
 }
 
 async function seedPets(customers: { id: string }[]) {
@@ -516,34 +535,41 @@ async function seedServices(businesses: { id: string; seed: BusinessSeed }[]) {
   }
 }
 
-async function seedPetFriendlyPlaces() {
-  const categories = await prisma.petFriendlyCategory.findMany();
+/** A handful of PENDING (for the admin approval-queue screen), APPROVED (visible in the
+ * customer directory) and one REJECTED example — a submitter is required (community feature,
+ * never a Business), so this borrows a few of the fake customers seeded above. */
+async function seedPetFriendlyPlaces(customers: { id: string }[]) {
   const places = [
-    ['Café Huellas', 'cafeterias'],
-    ['Parque Bicentenario Pet Zone', 'parques'],
-    ['Restaurante El Jardín Pet Friendly', 'restaurantes'],
-    ['Hotel Quito Pet Suites', 'hoteles'],
-    ['Mall Amigo Peludo', 'centros-comerciales'],
-    ['Parque La Carolina Área Canina', 'parques'],
-    ['Café Bingo Corner', 'cafeterias'],
-    ['Restaurante Terraza Mascotas', 'restaurantes'],
-    ['Tienda Pet Lovers', 'tiendas-pet-friendly'],
-    ['Centro Recreativo Amigos Peludos', 'otros-pet-friendly'],
+    ['Café Huellas', PetFriendlyPlaceCategory.RESTAURANT, PetFriendlyPlaceStatus.APPROVED],
+    ['Parque Bicentenario Pet Zone', PetFriendlyPlaceCategory.OUTDOOR_SPACE, PetFriendlyPlaceStatus.APPROVED],
+    ['Restaurante El Jardín Pet Friendly', PetFriendlyPlaceCategory.RESTAURANT, PetFriendlyPlaceStatus.APPROVED],
+    ['Parque La Carolina Área Canina', PetFriendlyPlaceCategory.OUTDOOR_SPACE, PetFriendlyPlaceStatus.APPROVED],
+    ['Café Bingo Corner', PetFriendlyPlaceCategory.RESTAURANT, PetFriendlyPlaceStatus.APPROVED],
+    ['Centro Recreativo Amigos Peludos', PetFriendlyPlaceCategory.OTHER, PetFriendlyPlaceStatus.APPROVED],
+    ['Heladería Huellitas Felices', PetFriendlyPlaceCategory.RESTAURANT, PetFriendlyPlaceStatus.PENDING],
+    ['Parque Metropolitano Zona Mascotas', PetFriendlyPlaceCategory.OUTDOOR_SPACE, PetFriendlyPlaceStatus.PENDING],
+    ['Mall Amigo Peludo', PetFriendlyPlaceCategory.OTHER, PetFriendlyPlaceStatus.REJECTED],
   ] as const;
 
   for (let i = 0; i < places.length; i++) {
-    const [name, categorySlug] = places[i];
-    const category = categories.find((c) => c.slug === categorySlug)!;
+    const [name, category, status] = places[i];
+    const submitter = customers[i % customers.length];
     await prisma.petFriendlyPlace.create({
       data: {
         name,
-        categoryId: category.id,
+        category,
+        status,
         description: `${name} — lugar de ejemplo generado para desarrollo.`,
         address: `Calle Ficticia ${200 + i}, Quito`,
         latitude: -0.18 + i * 0.003,
         longitude: -78.47 + i * 0.003,
-        verified: i % 2 === 0,
-        amenities: ['agua para mascotas', 'área exterior'],
+        submittedById: submitter.id,
+        ...(status !== PetFriendlyPlaceStatus.PENDING
+          ? {
+              reviewedAt: new Date(),
+              rejectionReason: status === PetFriendlyPlaceStatus.REJECTED ? 'Ya existe un negocio registrado en esta dirección.' : undefined,
+            }
+          : {}),
       },
     });
   }
@@ -742,7 +768,7 @@ async function main() {
   await seedProducts(businesses);
   await seedRiders(5);
   await seedServices(businesses);
-  await seedPetFriendlyPlaces();
+  await seedPetFriendlyPlaces(customers);
   await seedMemberships(businesses);
   await seedBusinessCoupons(businesses, customers);
   await seedAdminCoupons();

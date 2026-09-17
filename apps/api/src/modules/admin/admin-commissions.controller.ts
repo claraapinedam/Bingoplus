@@ -8,7 +8,7 @@ import { BusinessesService } from '../businesses/businesses.service';
 /** §26 — real GMV × current commission rate per business, never a fabricated figure. Separate
  * from Membership financials (see AdminMembershipPlansController / AdminBusinessMembershipController). */
 @ApiTags('admin/commissions')
-@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+@Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.USER)
 @UseGuards(RolesGuard)
 @Controller('admin/commissions')
 export class AdminCommissionsController {

@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { clearTokens, getAccessToken } from '@/lib/api';
+import { clearTokens, decodeRoles, getAccessToken } from '@/lib/api';
 
 const NAV_TOP = [
   { href: '/', label: 'Inicio' },
@@ -13,6 +13,7 @@ const NAV_TOP = [
   { href: '/bookings', label: 'Reservas' },
   { href: '/promotions', label: 'Promociones' },
   { href: '/reviews', label: 'Reseñas' },
+  { href: '/pet-friendly-places', label: 'Espacios Pet Friendly' },
 ];
 
 const COLLAPSIBLE_MENUS = [
@@ -53,6 +54,24 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const router = useRouter();
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
+  // USER is a restricted admin-panel role — same login access as ADMIN/SUPER_ADMIN, but the
+  // backend never grants it Analytics/Settings (see AdminAnalyticsController/
+  // AdminSettingsController), so the nav shouldn't dangle links to pages it'll just get a 403
+  // from. An account with USER *and* an elevated role (not a normal case, but not impossible)
+  // is treated as unrestricted.
+  const [restricted, setRestricted] = useState(false);
+
+  const navTop = useMemo(() => (restricted ? NAV_TOP.filter((item) => item.href !== '/analytics') : NAV_TOP), [restricted]);
+  const collapsibleMenus = useMemo(
+    () =>
+      restricted
+        ? COLLAPSIBLE_MENUS.map((menu) =>
+            menu.key === 'settings' ? { ...menu, items: menu.items.filter((item) => item.href !== '/settings') } : menu,
+          )
+        : COLLAPSIBLE_MENUS,
+    [restricted],
+  );
+
   const isMenuActive = (menu: (typeof COLLAPSIBLE_MENUS)[number]) =>
     (pathname?.startsWith(menu.matchPrefix) ?? false) || menu.items.some((item) => pathname?.startsWith(item.href));
 
@@ -61,11 +80,14 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   );
 
   useEffect(() => {
-    if (!getAccessToken()) {
+    const token = getAccessToken();
+    if (!token) {
       router.replace('/login');
-    } else {
-      setReady(true);
+      return;
     }
+    const roles = decodeRoles(token);
+    setRestricted(roles.includes('USER') && !roles.includes('ADMIN') && !roles.includes('SUPER_ADMIN'));
+    setReady(true);
   }, [router]);
 
   useEffect(() => {
