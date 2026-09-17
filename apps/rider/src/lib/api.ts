@@ -141,6 +141,35 @@ export async function login(email: string, password: string) {
   return data.user;
 }
 
+/** Creates the plain CUSTOMER account every rider needs before applying — the RIDER role itself
+ * only gets attached once the full application (POST /rider/apply) is submitted and approved. */
+export async function register(input: { email: string; password: string; firstName: string; lastName: string }) {
+  const data = await apiFetch<AuthResult>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  saveTokens(data.accessToken, data.refreshToken);
+  return data.user;
+}
+
+/** Uploads a single file (e.g. an ID photo) and returns the URL to pass back in the application
+ * DTO — deliberately bypasses apiFetch's JSON Content-Type default, multipart sets its own. */
+export async function uploadFile(file: File): Promise<{ url: string }> {
+  const token = getAccessToken();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}/uploads`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(res.status, body?.error?.code ?? 'UPLOAD_FAILED', body?.error?.message ?? 'No se pudo subir el archivo.');
+  }
+  return body.data as { url: string };
+}
+
 /**
  * Real device geolocation via the standard Geolocation API — never fabricated (matches the
  * project's "no simular GPS real" rule, same as apps/customer's getUserLocation). Resolves null

@@ -10,6 +10,12 @@ generator client {
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
+  // Only used by the Migrate engine (migrate deploy/dev) — the generated Client always talks to
+  // DATABASE_URL. Needed for providers that put a transaction-mode pooler (no prepared statement
+  // support) in front of Postgres, e.g. Supabase's pgbouncer pooler — DIRECT_URL should point at
+  // a non-pooled or session-mode connection instead. Safe to leave unset for a plain Postgres
+  // instance (e.g. local Docker): Prisma falls back to DATABASE_URL for migrations too.
+  directUrl  = env("DIRECT_URL")
   extensions = [postgis]
 }
 
@@ -796,6 +802,14 @@ model Rider {
   // Simple zone signal for eligibility filtering (§18) — not a geofence/polygon system, that's a
   // later refinement; proximity itself is computed from currentLocation, not from this string.
   city                String?
+  // Application basics — collected once, at apply time (see RiderProfileService.applyAsRider).
+  birthDate           DateTime?
+  nationalIdNumber    String?
+  address             String?
+  // Set only once both checkboxes are actually ticked in the same submission — never defaulted,
+  // never backfilled silently, so their presence is real proof of consent, not just a boolean flag.
+  termsAcceptedAt       DateTime?
+  dataConsentAcceptedAt DateTime?
   currentLatitude     Float?
   currentLongitude    Float?
   currentLocation     Unsupported("geography(Point, 4326)")?
@@ -809,6 +823,7 @@ model Rider {
   user              User                        @relation(fields: [userId], references: [id])
   vehicles          Vehicle[]
   documents         RiderDocument[]
+  payoutMethod      RiderPayoutMethod?
   deliveries        Delivery[]
   earnings          RiderEarning[]
   payouts           Payout[]
@@ -864,10 +879,20 @@ enum RiderDocumentStatus {
   EXPIRED
 }
 
+// Only meaningful for type=ID (a physical ID card has two faces) — null for LICENSE/INSURANCE/
+// VEHICLE_REGISTRATION, which are each a single document. Postgres treats every NULL as distinct
+// in a unique index, so those types can still have multiple historical rows; ID FRONT/BACK
+// cannot duplicate because the constraint below pins exactly one live row per (riderId, ID, side).
+enum RiderDocumentSide {
+  FRONT
+  BACK
+}
+
 model RiderDocument {
   id             String              @id @default(cuid())
   riderId        String
   type           RiderDocumentType
+  side           RiderDocumentSide?
   documentNumber String?
   fileUrl        String
   status         RiderDocumentStatus @default(PENDING)
@@ -880,7 +905,40 @@ model RiderDocument {
 
   rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
 
+  @@unique([riderId, type, side])
   @@index([riderId])
+}
+
+enum RiderPayoutMethodType {
+  BANK_ACCOUNT
+  MOBILE_WALLET
+}
+
+enum RiderBankAccountType {
+  SAVINGS
+  CHECKING
+}
+
+// One payout destination per rider (kept intentionally simple — a ledger of where completed-
+// delivery earnings get paid out to, not a second PaymentMethod/PCI-scoped card store; nothing
+// here is card data). Storing these fields in plaintext is a known MVP tradeoff — see
+// docs/status for the corresponding technical-debt note about encrypting at rest before this
+// goes to production with real payouts.
+model RiderPayoutMethod {
+  id                    String                @id @default(cuid())
+  riderId               String                @unique
+  method                RiderPayoutMethodType
+  bankName              String?
+  accountType           RiderBankAccountType?
+  accountNumber         String?
+  walletProvider        String?
+  walletNumber          String?
+  accountHolderName     String
+  holderDocumentNumber  String
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
 }
 
 // §15/16: the logistics lifecycle — entirely separate from OrderStatus. See the OrderStatus

@@ -69,6 +69,10 @@ export default function LoginPage() {
           Usa la misma cuenta con la que te registraste en BINGO+. Si aún no eres rider, después de
           ingresar podrás solicitarlo.
         </p>
+
+        <p style={{ textAlign: 'center', fontSize: 13, color: '#7f8ea3', margin: 0 }}>
+          ¿Quieres ser rider? <a href="/register" style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>Crea tu cuenta</a>
+        </p>
       </form>
     </div>
   );

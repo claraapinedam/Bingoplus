@@ -16,6 +16,12 @@ class EnvironmentVariables {
   @IsString()
   DATABASE_URL!: string;
 
+  // Only read by the Prisma Migrate engine (see schema.prisma's datasource block) — never by
+  // NestJS/the generated Client, so it's optional here and simply unused when absent.
+  @IsString()
+  @IsOptional()
+  DIRECT_URL?: string;
+
   @IsString()
   JWT_SECRET!: string;
 

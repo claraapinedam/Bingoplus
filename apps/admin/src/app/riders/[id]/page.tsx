@@ -20,6 +20,7 @@ interface Vehicle {
 interface RiderDocument {
   id: string;
   type: string;
+  side: 'FRONT' | 'BACK' | null;
   documentNumber: string | null;
   fileUrl: string;
   status: string;
@@ -27,11 +28,27 @@ interface RiderDocument {
   createdAt: string;
 }
 
+interface RiderPayoutMethod {
+  method: 'BANK_ACCOUNT' | 'MOBILE_WALLET';
+  bankName: string | null;
+  accountType: string | null;
+  accountNumber: string | null;
+  walletProvider: string | null;
+  walletNumber: string | null;
+  accountHolderName: string;
+  holderDocumentNumber: string;
+}
+
 interface RiderDetail {
   id: string;
   accountStatus: string;
   availabilityStatus: string;
   city: string | null;
+  birthDate: string | null;
+  nationalIdNumber: string | null;
+  address: string | null;
+  termsAcceptedAt: string | null;
+  dataConsentAcceptedAt: string | null;
   ratingAvg: number;
   reviewCount: number;
   deliveriesCompleted: number;
@@ -39,6 +56,7 @@ interface RiderDetail {
   user: { firstName: string; lastName: string; email: string; phone: string | null };
   vehicles: Vehicle[];
   documents: RiderDocument[];
+  payoutMethod: RiderPayoutMethod | null;
 }
 
 const TABS = [
@@ -154,10 +172,48 @@ export default function AdminRiderDetailPage() {
             <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Detalle</h2>
             <div style={{ fontSize: 13, marginBottom: 6 }}>Ciudad: {rider.city ?? '—'}</div>
             <div style={{ fontSize: 13, marginBottom: 6 }}>
+              Fecha de nacimiento: {rider.birthDate ? new Date(rider.birthDate).toLocaleDateString('es-EC') : '—'}
+            </div>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>Cédula / identificación: {rider.nationalIdNumber ?? '—'}</div>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>Dirección: {rider.address ?? '—'}</div>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
               Rating: {rider.ratingAvg.toFixed(1)} ({rider.reviewCount} reseñas)
             </div>
             <div style={{ fontSize: 13, marginBottom: 6 }}>Entregas completadas: {rider.deliveriesCompleted}</div>
-            <div style={{ fontSize: 12, color: '#9aa5b1' }}>Registrado: {new Date(rider.createdAt).toLocaleString('es-EC')}</div>
+            <div style={{ fontSize: 12, color: '#9aa5b1', marginBottom: 6 }}>
+              Registrado: {new Date(rider.createdAt).toLocaleString('es-EC')}
+            </div>
+            <div style={{ fontSize: 12, color: rider.termsAcceptedAt && rider.dataConsentAcceptedAt ? 'var(--bingo-success)' : '#9aa5b1' }}>
+              {rider.termsAcceptedAt && rider.dataConsentAcceptedAt
+                ? `✓ Términos y tratamiento de datos aceptados el ${new Date(rider.termsAcceptedAt).toLocaleDateString('es-EC')}`
+                : 'Términos/consentimiento de datos aún no registrados'}
+            </div>
+          </div>
+
+          <div className="bingo-card">
+            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Información de pago</h2>
+            {!rider.payoutMethod ? (
+              <p style={{ fontSize: 13, color: '#7f8ea3' }}>Sin información de pago registrada.</p>
+            ) : rider.payoutMethod.method === 'BANK_ACCOUNT' ? (
+              <>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>Método: Cuenta bancaria</div>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>Banco: {rider.payoutMethod.bankName ?? '—'}</div>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>Tipo de cuenta: {rider.payoutMethod.accountType ?? '—'}</div>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>Número de cuenta: {rider.payoutMethod.accountNumber ?? '—'}</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>Método: Billetera móvil</div>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>Proveedor: {rider.payoutMethod.walletProvider ?? '—'}</div>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>Número: {rider.payoutMethod.walletNumber ?? '—'}</div>
+              </>
+            )}
+            {rider.payoutMethod && (
+              <>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>Titular: {rider.payoutMethod.accountHolderName}</div>
+                <div style={{ fontSize: 13 }}>Cédula del titular: {rider.payoutMethod.holderDocumentNumber}</div>
+              </>
+            )}
           </div>
 
           <div className="bingo-card">
@@ -239,6 +295,7 @@ export default function AdminRiderDetailPage() {
                 <thead>
                   <tr>
                     <th>Tipo</th>
+                    <th>Lado</th>
                     <th>Número</th>
                     <th>Estado</th>
                     <th>Vence</th>
@@ -249,6 +306,7 @@ export default function AdminRiderDetailPage() {
                   {rider.documents.map((d) => (
                     <tr key={d.id}>
                       <td>{d.type}</td>
+                      <td>{d.side === 'FRONT' ? 'Delantera' : d.side === 'BACK' ? 'Trasera' : '—'}</td>
                       <td>{d.documentNumber ?? '—'}</td>
                       <td>
                         <span className={`bingo-badge badge-${d.status.toLowerCase()}`}>{d.status}</span>
@@ -256,7 +314,8 @@ export default function AdminRiderDetailPage() {
                       <td>{d.expirationDate ? new Date(d.expirationDate).toLocaleDateString('es-EC') : '—'}</td>
                       <td>
                         <a href={d.fileUrl} target="_blank" rel="noreferrer">
-                          Ver archivo
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={d.fileUrl} alt={`${d.type} ${d.side ?? ''}`} style={{ width: 64, height: 40, objectFit: 'cover', borderRadius: 4 }} />
                         </a>
                       </td>
                     </tr>

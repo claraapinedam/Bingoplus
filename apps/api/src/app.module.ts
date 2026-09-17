@@ -38,6 +38,7 @@ import { BookingsModule } from './modules/bookings/bookings.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     NotificationsModule,
     PromotionsModule,
     AnalyticsModule,
+    UploadsModule,
     AdminModule,
     HealthModule,
   ],

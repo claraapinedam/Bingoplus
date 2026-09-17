@@ -53,6 +53,7 @@ export class RidersService {
         user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
         vehicles: true,
         documents: true,
+        payoutMethod: true,
       },
     });
     if (!rider) throw new NotFoundException('Rider not found');

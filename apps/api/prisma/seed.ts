@@ -484,7 +484,7 @@ async function seedRiders(count: number) {
       update: {},
       create: {
         userId: user.id,
-        status: i === 0 ? 'PENDING_APPROVAL' : 'APPROVED',
+        accountStatus: i === 0 ? 'PENDING_APPROVAL' : 'ACTIVE',
         city: 'Quito',
         vehicles: { create: { type: i % 2 === 0 ? 'MOTORCYCLE' : 'BIKE' } },
       },

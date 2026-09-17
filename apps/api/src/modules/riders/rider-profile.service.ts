@@ -1,9 +1,21 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { RiderAccountStatus, RiderAvailabilityStatus, RiderDocumentType, RoleName, VehicleType } from '@prisma/client';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Prisma,
+  RiderAccountStatus,
+  RiderAvailabilityStatus,
+  RiderDocumentSide,
+  RiderDocumentType,
+  RiderPayoutMethodType,
+  RoleName,
+  VehicleType,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RiderLocationService } from '../delivery/rider-location.service';
+import { RegisterRiderApplicationDto } from './dto/rider-application.dto';
 
-const PROFILE_INCLUDE = { user: true, vehicles: true, documents: true } as const;
+const PROFILE_INCLUDE = { user: true, vehicles: true, documents: true, payoutMethod: true } as const;
+
+const PLATE_REQUIRED_VEHICLE_TYPES: VehicleType[] = [VehicleType.MOTORCYCLE, VehicleType.CAR];
 
 /**
  * §6/9/10: self-service surface a Rider uses on themselves — onboarding basics, availability,
@@ -25,20 +37,130 @@ export class RiderProfileService {
   }
 
   /**
-   * FASE 4B gap fix: the one and only way a plain CUSTOMER-role user becomes a Rider. Attaches
-   * the RIDER role (idempotent — calling twice is a no-op) and creates the Rider row at its
-   * default PENDING_APPROVAL. This endpoint is deliberately NOT behind `@Roles(RoleName.RIDER)`
-   * (see RiderApplicationController) — a user obviously doesn't have that role yet when applying.
-   * The caller's *current* access token still won't carry RIDER until they refresh/re-login —
-   * the Rider App calls POST /auth/refresh right after a successful apply for exactly this reason.
+   * The one and only way a plain CUSTOMER-role user becomes a Rider — a single atomic submission
+   * carrying everything the admin approval flow needs to review (basic info, contact, ID photo
+   * front+back, vehicle, payout destination, consent), not the empty-body role-flip this used to
+   * be. Attaches the RIDER role (idempotent) and leaves the Rider row PENDING_APPROVAL either way
+   * — approval itself stays exclusively RidersService's job (admin-riders.controller.ts), never
+   * decided here. The caller's *current* access token still won't carry RIDER until they
+   * refresh/re-login — the Rider App calls POST /auth/refresh right after a successful apply.
+   *
+   * Resubmission (PENDING_APPROVAL retrying with corrected data, or REJECTED trying again) is
+   * allowed and replaces the previous vehicle/ID-document/payout rows outright — there is exactly
+   * one "current application" per rider, never a history of drafts. An ACTIVE or SUSPENDED rider
+   * calling this again is rejected outright: this is an application flow, not a profile editor.
    */
-  async applyAsRider(userId: string) {
+  async applyAsRider(userId: string, dto: RegisterRiderApplicationDto) {
+    if (PLATE_REQUIRED_VEHICLE_TYPES.includes(dto.vehicleType) && !dto.plate?.trim()) {
+      throw new BadRequestException('A license plate is required for motorcycles and cars');
+    }
+    if (dto.payoutMethod === RiderPayoutMethodType.BANK_ACCOUNT && (!dto.bankName || !dto.accountType || !dto.accountNumber)) {
+      throw new BadRequestException('bankName, accountType and accountNumber are required for a bank account payout');
+    }
+    if (dto.payoutMethod === RiderPayoutMethodType.MOBILE_WALLET && (!dto.walletProvider || !dto.walletNumber)) {
+      throw new BadRequestException('walletProvider and walletNumber are required for a mobile wallet payout');
+    }
+
+    const existing = await this.prisma.rider.findUnique({ where: { userId } });
+    if (existing && (existing.accountStatus === RiderAccountStatus.ACTIVE || existing.accountStatus === RiderAccountStatus.SUSPENDED)) {
+      throw new ConflictException('You already have a rider account — this form is only for new applications.');
+    }
+
     const riderRole = await this.prisma.role.findUniqueOrThrow({ where: { name: RoleName.RIDER } });
-    await this.prisma.userRole.upsert({
-      where: { userId_roleId: { userId, roleId: riderRole.id } },
-      create: { userId, roleId: riderRole.id },
-      update: {},
-    });
+    const birthDate = new Date(dto.birthDate);
+    const now = new Date();
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.userRole.upsert({
+          where: { userId_roleId: { userId, roleId: riderRole.id } },
+          create: { userId, roleId: riderRole.id },
+          update: {},
+        });
+        if (dto.phone) {
+          await tx.user.update({ where: { id: userId }, data: { phone: dto.phone } });
+        }
+
+        const riderData = {
+          city: dto.city,
+          birthDate,
+          nationalIdNumber: dto.nationalIdNumber,
+          address: dto.address,
+          termsAcceptedAt: now,
+          dataConsentAcceptedAt: now,
+          accountStatus: RiderAccountStatus.PENDING_APPROVAL,
+        };
+        const rider = existing
+          ? await tx.rider.update({ where: { id: existing.id }, data: riderData })
+          : await tx.rider.create({ data: { userId, ...riderData } });
+
+        // Exactly one "current" vehicle/ID-document set per application — resubmitting replaces
+        // rather than accumulates.
+        await tx.vehicle.deleteMany({ where: { riderId: rider.id } });
+        await tx.vehicle.create({
+          data: {
+            riderId: rider.id,
+            type: dto.vehicleType,
+            plate: dto.plate,
+            brand: dto.vehicleBrand,
+            model: dto.vehicleModel,
+            color: dto.vehicleColor,
+            year: dto.vehicleYear,
+          },
+        });
+
+        await tx.riderDocument.deleteMany({ where: { riderId: rider.id, type: RiderDocumentType.ID } });
+        await tx.riderDocument.createMany({
+          data: [
+            {
+              riderId: rider.id,
+              type: RiderDocumentType.ID,
+              side: RiderDocumentSide.FRONT,
+              documentNumber: dto.nationalIdNumber,
+              fileUrl: dto.idPhotoFrontUrl,
+            },
+            {
+              riderId: rider.id,
+              type: RiderDocumentType.ID,
+              side: RiderDocumentSide.BACK,
+              documentNumber: dto.nationalIdNumber,
+              fileUrl: dto.idPhotoBackUrl,
+            },
+          ],
+        });
+
+        await tx.riderPayoutMethod.upsert({
+          where: { riderId: rider.id },
+          create: {
+            riderId: rider.id,
+            method: dto.payoutMethod,
+            bankName: dto.bankName,
+            accountType: dto.accountType,
+            accountNumber: dto.accountNumber,
+            walletProvider: dto.walletProvider,
+            walletNumber: dto.walletNumber,
+            accountHolderName: dto.accountHolderName,
+            holderDocumentNumber: dto.holderDocumentNumber,
+          },
+          update: {
+            method: dto.payoutMethod,
+            bankName: dto.bankName,
+            accountType: dto.accountType,
+            accountNumber: dto.accountNumber,
+            walletProvider: dto.walletProvider,
+            walletNumber: dto.walletNumber,
+            accountHolderName: dto.accountHolderName,
+            holderDocumentNumber: dto.holderDocumentNumber,
+          },
+        });
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new BadRequestException('That phone number is already in use by another account.');
+      }
+      throw err;
+    }
+
     return this.getOrCreateForUser(userId);
   }
 
