@@ -3,10 +3,11 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BusinessStatus, ContractStatus } from '@prisma/client';
+import { BusinessCapabilityType, BusinessStatus, ContractStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { UploadsService } from '../uploads/uploads.service';
+import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { buildContractPdf } from './pdf/contract-pdf.builder';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class ContractsService {
     private readonly config: ConfigService,
     private readonly email: EmailService,
     private readonly uploads: UploadsService,
+    private readonly capabilities: BusinessCapabilitiesService,
   ) {}
 
   /**
@@ -38,15 +40,70 @@ export class ContractsService {
       );
     }
 
-    const contractText = await this.buildContractBodyText(businessId);
+    const capabilityMap = await this.capabilities.getMap(businessId);
+    return this.createPendingContract(business, capabilityMap.SELLS_PRODUCTS, capabilityMap.DIRECTORY_LISTING);
+  }
 
+  /**
+   * Called by BusinessesService.setCapabilityAsAdmin right before it would enable SELLS_PRODUCTS
+   * or DIRECTORY_LISTING on a business that's already ACTIVE — those two capabilities are the only
+   * ones with real payment terms attached (commission vs. membership fee vs. both), so *adding*
+   * one that the business's current governing contract doesn't already cover is a material change
+   * it has to actually agree to, not something BINGO+ can just flip on unilaterally. Turning a
+   * capability *off* never lands here — removing an obligation doesn't need new consent.
+   *
+   * Returns `requiresSignature: false` when the desired set is already covered (nothing to do —
+   * the caller applies the toggle immediately), or `true` with the new pending contract otherwise
+   * (the caller must NOT apply the toggle yet; ContractsService.sign() is what applies it once the
+   * business actually signs).
+   */
+  async requestCapabilityChange(
+    businessId: string,
+    desiredSellsProducts: boolean,
+    desiredDirectoryListing: boolean,
+  ): Promise<{ requiresSignature: boolean; contract?: Awaited<ReturnType<ContractsService['createPendingContract']>> }> {
+    const governing = await this.getGoverningContract(businessId);
+    const alreadyCovered =
+      governing !== null &&
+      (!desiredSellsProducts || governing.sellsProducts) &&
+      (!desiredDirectoryListing || governing.directoryListing);
+    if (alreadyCovered) {
+      return { requiresSignature: false };
+    }
+
+    const existingPending = await this.prisma.businessContract.findFirst({
+      where: { businessId, status: ContractStatus.PENDING_SIGNATURE },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existingPending) {
+      return { requiresSignature: true, contract: existingPending };
+    }
+
+    const business = await this.prisma.business.findUniqueOrThrow({ where: { id: businessId } });
+    if (business.idType === 'RUC' && !business.representativeName) {
+      throw new BadRequestException(
+        'This business is missing a legal representative name — cannot generate a contract',
+      );
+    }
+    const contract = await this.createPendingContract(business, desiredSellsProducts, desiredDirectoryListing);
+    return { requiresSignature: true, contract };
+  }
+
+  private async createPendingContract(
+    business: { id: string; idType: 'RUC' | 'CEDULA'; legalName: string; representativeName: string | null; taxId: string },
+    sellsProducts: boolean,
+    directoryListing: boolean,
+  ) {
+    const contractText = await this.buildContractBodyText(business.id);
     return this.prisma.businessContract.create({
       data: {
-        businessId,
+        businessId: business.id,
         idType: business.idType,
         legalName: business.legalName,
         representativeName: business.representativeName,
         taxId: business.taxId,
+        sellsProducts,
+        directoryListing,
         contractText,
       },
     });
@@ -59,12 +116,37 @@ export class ContractsService {
     });
   }
 
+  /** Full history, newest first — SUPERSEDED contracts are never deleted or hidden, only
+   * demoted, so Admin keeps visibility into every version a business ever signed. */
+  listForBusiness(businessId: string) {
+    return this.prisma.businessContract.findMany({
+      where: { businessId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** The currently-governing contract — the terms actually in force for whatever's live today.
+   * At most one SIGNED, non-superseded contract exists per business at any time (sign() enforces
+   * this by superseding the previous one whenever a capability-expansion contract gets signed). */
+  getGoverningContract(businessId: string) {
+    return this.prisma.businessContract.findFirst({
+      where: { businessId, status: ContractStatus.SIGNED },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   /**
    * Consumes the business's drawn signature: renders the final PDF (BINGO+'s fixed
    * representative/RUC block plus the business's own signature image), stores it as a
-   * BusinessDocument attachment, activates the business, and emails a copy to the business's
-   * onboarding contact address. `signedIp` is the caller's real request IP — the "garantía digital
-   * de validez" the contract calls for, stamped on every PDF page alongside the contract's own id.
+   * BusinessDocument attachment, and emails a copy to the business's onboarding contact address.
+   * `signedIp` is the caller's real request IP — the "garantía digital de validez" the contract
+   * calls for, stamped on every PDF page alongside the contract's own id.
+   *
+   * Two distinct businesses can reach this: a first-ever contract (business.status is still
+   * APPROVED) flips it to ACTIVE, same as before. A capability-expansion contract for an
+   * already-ACTIVE business instead applies whichever capabilities *this* contract newly covers
+   * and retires the previous governing contract to SUPERSEDED — the business never goes back
+   * through the APPROVED gate just because it added something.
    */
   async sign(businessId: string, signatureDataUrl: string, signedIp: string, apiOrigin: string) {
     const contract = await this.prisma.businessContract.findFirst({
@@ -101,16 +183,31 @@ export class ContractsService {
 
     const pdfUrl = this.savePdf(pdfBuffer, apiOrigin);
 
-    const [, , signed] = await this.prisma.$transaction([
-      this.prisma.businessDocument.create({
-        data: { businessId, type: 'CONTRACT', fileUrl: pdfUrl, status: 'APPROVED' },
-      }),
-      this.prisma.business.update({ where: { id: businessId }, data: { status: BusinessStatus.ACTIVE } }),
+    const isFirstContract = business.status === BusinessStatus.APPROVED;
+    const ops: Prisma.PrismaPromise<unknown>[] = [
       this.prisma.businessContract.update({
         where: { id: contract.id },
         data: { status: ContractStatus.SIGNED, signedAt, signedIp, signatureDataUrl, pdfUrl },
       }),
-    ]);
+      this.prisma.businessDocument.create({
+        data: { businessId, type: 'CONTRACT', fileUrl: pdfUrl, status: 'APPROVED' },
+      }),
+    ];
+    if (isFirstContract) {
+      ops.push(this.prisma.business.update({ where: { id: businessId }, data: { status: BusinessStatus.ACTIVE } }));
+    } else {
+      if (contract.sellsProducts) ops.push(this.capabilities.set(businessId, BusinessCapabilityType.SELLS_PRODUCTS, true));
+      if (contract.directoryListing) ops.push(this.capabilities.set(businessId, BusinessCapabilityType.DIRECTORY_LISTING, true));
+      ops.push(
+        this.prisma.businessContract.updateMany({
+          where: { businessId, status: ContractStatus.SIGNED, id: { not: contract.id } },
+          data: { status: ContractStatus.SUPERSEDED },
+        }),
+      );
+    }
+
+    await this.prisma.$transaction(ops);
+    const signed = await this.prisma.businessContract.findUniqueOrThrow({ where: { id: contract.id } });
 
     await this.email.sendSignedContractEmail(business.email, business.tradeName, pdfBuffer);
 

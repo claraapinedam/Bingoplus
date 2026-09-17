@@ -30,9 +30,16 @@ describe('BusinessesService', () => {
       platformSetting: { findUnique: jest.fn() },
       $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     };
-    capabilities = { getMap: jest.fn().mockResolvedValue({}), grantOnboardingDefaults: jest.fn() };
+    capabilities = {
+      getMap: jest.fn().mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: false }),
+      grantOnboardingDefaults: jest.fn(),
+      set: jest.fn().mockResolvedValue({ id: 'cap1' }),
+    };
     memberships = { startTrialIfMissing: jest.fn(), redeemAdminCoupon: jest.fn() };
-    contracts = { createForApprovedBusiness: jest.fn().mockResolvedValue({ id: 'contract1' }) };
+    contracts = {
+      createForApprovedBusiness: jest.fn().mockResolvedValue({ id: 'contract1' }),
+      requestCapabilityChange: jest.fn().mockResolvedValue({ requiresSignature: false }),
+    };
     service = new BusinessesService(
       prisma as unknown as PrismaService,
       {} as any,
@@ -269,6 +276,43 @@ describe('BusinessesService', () => {
       data: { status: BusinessStatus.ACTIVE },
     });
     expect(result.status).toBe(BusinessStatus.ACTIVE);
+  });
+
+  describe('setCapabilityAsAdmin — capability changes with real payment terms need a new signature', () => {
+    it('applies immediately when turning a capability off', async () => {
+      const result = await service.setCapabilityAsAdmin('b1', 'SELLS_PRODUCTS' as any, false);
+
+      expect(contracts.requestCapabilityChange).not.toHaveBeenCalled();
+      expect(capabilities.set).toHaveBeenCalledWith('b1', 'SELLS_PRODUCTS', false);
+      expect(result).toEqual({ requiresSignature: false, capability: { id: 'cap1' } });
+    });
+
+    it('applies immediately for a non-monetized capability like SERVICES', async () => {
+      await service.setCapabilityAsAdmin('b1', 'SERVICES' as any, true);
+
+      expect(contracts.requestCapabilityChange).not.toHaveBeenCalled();
+      expect(capabilities.set).toHaveBeenCalledWith('b1', 'SERVICES', true);
+    });
+
+    it('applies immediately when the governing contract already covers the addition', async () => {
+      contracts.requestCapabilityChange.mockResolvedValue({ requiresSignature: false });
+
+      const result = await service.setCapabilityAsAdmin('b1', 'SELLS_PRODUCTS' as any, true);
+
+      expect(contracts.requestCapabilityChange).toHaveBeenCalledWith('b1', true, false);
+      expect(capabilities.set).toHaveBeenCalledWith('b1', 'SELLS_PRODUCTS', true);
+      expect(result.requiresSignature).toBe(false);
+    });
+
+    it('withholds the toggle and returns the pending contract when a new signature is required', async () => {
+      contracts.requestCapabilityChange.mockResolvedValue({ requiresSignature: true, contract: { id: 'contract2' } });
+
+      const result = await service.setCapabilityAsAdmin('b1', 'DIRECTORY_LISTING' as any, true);
+
+      expect(memberships.startTrialIfMissing).toHaveBeenCalledWith('b1');
+      expect(capabilities.set).not.toHaveBeenCalled();
+      expect(result).toEqual({ requiresSignature: true, pendingContractId: 'contract2' });
+    });
   });
 
   describe('approve — membership only for Directory-listed businesses', () => {

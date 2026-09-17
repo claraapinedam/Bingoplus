@@ -74,9 +74,9 @@ export class AdminBusinessesController {
     return this.businessesService.setCapabilityAsAdmin(id, dto.capability, dto.enabled);
   }
 
-  @Get(':id/contract')
-  getContract(@Param('id') id: string) {
-    return this.contractsService.getLatestForBusiness(id);
+  @Get(':id/contracts')
+  getContracts(@Param('id') id: string) {
+    return this.contractsService.listForBusiness(id);
   }
 
   @Get(':id/commissions')

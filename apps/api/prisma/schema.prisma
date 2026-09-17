@@ -355,6 +355,9 @@ model BusinessSpecies {
 enum ContractStatus {
   PENDING_SIGNATURE
   SIGNED
+  // Replaced by a newer signed contract after a capability change (e.g. a Tienda-only business
+  // adding Directory) — kept forever for audit visibility, just no longer the governing one.
+  SUPERSEDED
 }
 
 // Created automatically the moment Admin approves a business (BusinessesService.approve) —
@@ -369,6 +372,11 @@ model BusinessContract {
   legalName          String
   representativeName String?
   taxId              String
+  // Which capabilities this contract's terms actually cover — the signal used to detect drift
+  // when Admin later enables a capability the business's currently-governing contract doesn't
+  // cover yet, and what gets applied (via ContractsService.sign) once the new one is signed.
+  sellsProducts      Boolean        @default(false)
+  directoryListing   Boolean        @default(false)
   contractText       String
   // Raw base64 PNG from the signature canvas — kept alongside the rendered PDF as the primary
   // audit artifact of what was actually drawn.

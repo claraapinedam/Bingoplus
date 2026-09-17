@@ -350,9 +350,40 @@ export class BusinessesService {
     return this.capabilities.getMap(businessId);
   }
 
-  /** ADMIN can toggle any capability, including Marketplace/Directory eligibility itself. */
-  setCapabilityAsAdmin(businessId: string, capability: BusinessCapabilityType, enabled: boolean) {
-    return this.capabilities.set(businessId, capability, enabled);
+  /**
+   * ADMIN can toggle any capability, including Marketplace/Directory eligibility itself — but
+   * *adding* SELLS_PRODUCTS or DIRECTORY_LISTING to an already-ACTIVE business changes what it
+   * owes BINGO+ (commission vs. membership fee vs. both), so that one capability doesn't apply
+   * immediately: it waits on ContractsService.requestCapabilityChange, which generates an updated
+   * contract the business must sign first (ContractsService.sign() is what actually flips it on).
+   * Every other capability, and turning one of these two *off*, applies immediately as before.
+   */
+  async setCapabilityAsAdmin(businessId: string, capability: BusinessCapabilityType, enabled: boolean) {
+    const isMaterialAddition =
+      enabled &&
+      (capability === BusinessCapabilityType.SELLS_PRODUCTS || capability === BusinessCapabilityType.DIRECTORY_LISTING);
+
+    if (isMaterialAddition) {
+      const current = await this.capabilities.getMap(businessId);
+      const desiredSellsProducts =
+        capability === BusinessCapabilityType.SELLS_PRODUCTS ? true : current.SELLS_PRODUCTS;
+      const desiredDirectoryListing =
+        capability === BusinessCapabilityType.DIRECTORY_LISTING ? true : current.DIRECTORY_LISTING;
+
+      // A newly-added Directory presence needs a membership to actually charge for — same
+      // provisioning approve() already does for a business that chose it at onboarding.
+      if (capability === BusinessCapabilityType.DIRECTORY_LISTING) {
+        await this.memberships.startTrialIfMissing(businessId);
+      }
+
+      const outcome = await this.contracts.requestCapabilityChange(businessId, desiredSellsProducts, desiredDirectoryListing);
+      if (outcome.requiresSignature) {
+        return { requiresSignature: true as const, pendingContractId: outcome.contract!.id };
+      }
+    }
+
+    const capabilityRow = await this.capabilities.set(businessId, capability, enabled);
+    return { requiresSignature: false as const, capability: capabilityRow };
   }
 
   /**

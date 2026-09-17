@@ -90,6 +90,7 @@ export default function BusinessDetailPage() {
   const [business, setBusiness] = useState<Business | null>(null);
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [togglingCapability, setTogglingCapability] = useState<CapabilityType | null>(null);
   const [updatingMembership, setUpdatingMembership] = useState(false);
   const [actingOnStatus, setActingOnStatus] = useState(false);
@@ -118,11 +119,21 @@ export default function BusinessDetailPage() {
 
   async function toggleCapability(capability: CapabilityType, enabled: boolean) {
     setTogglingCapability(capability);
+    setError(null);
+    setNotice(null);
     try {
-      await apiFetch(`/admin/businesses/${params.id}/capabilities`, {
-        method: 'PATCH',
-        body: JSON.stringify({ capability, enabled }),
-      });
+      // Enabling SELLS_PRODUCTS/DIRECTORY_LISTING on an already-ACTIVE business may not apply
+      // immediately — if it changes what the business owes BINGO+, the backend instead generates
+      // a new contract and withholds the toggle until the business signs it from their own app.
+      const result = await apiFetch<{ requiresSignature: boolean; pendingContractId?: string }>(
+        `/admin/businesses/${params.id}/capabilities`,
+        { method: 'PATCH', body: JSON.stringify({ capability, enabled }) },
+      );
+      if (result.requiresSignature) {
+        setNotice(
+          `${CAPABILITY_LABELS[capability]} no se activó todavía: se generó un contrato actualizado que el negocio debe firmar primero (pestaña Contrato).`,
+        );
+      }
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo actualizar la capacidad.');
@@ -211,6 +222,11 @@ export default function BusinessDetailPage() {
       {error && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>
           {error}
+        </div>
+      )}
+      {notice && (
+        <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-warning)' }}>
+          {notice}
         </div>
       )}
 

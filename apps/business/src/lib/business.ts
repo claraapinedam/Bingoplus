@@ -38,12 +38,14 @@ export function getBusinessProfile(businessId: string) {
 
 export interface BusinessContract {
   id: string;
-  status: 'PENDING_SIGNATURE' | 'SIGNED';
+  status: 'PENDING_SIGNATURE' | 'SIGNED' | 'SUPERSEDED';
   idType: 'RUC' | 'CEDULA';
   legalName: string;
   representativeName: string | null;
   taxId: string;
   contractText: string;
+  sellsProducts: boolean;
+  directoryListing: boolean;
   pdfUrl: string | null;
   signedAt: string | null;
 }

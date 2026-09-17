@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch, clearTokens, getAccessToken, getActiveBusinessId } from '@/lib/api';
-import { getBusinessProfile, BusinessProfile, CapabilityMap } from '@/lib/business';
+import { getBusinessProfile, getBusinessContract, BusinessContract, BusinessProfile, CapabilityMap } from '@/lib/business';
 
 interface BusinessContextValue {
   business: BusinessProfile;
@@ -54,6 +54,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const businessId = getActiveBusinessId();
   const [business, setBusiness] = useState<BusinessProfile | null | undefined>(undefined);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [pendingContract, setPendingContract] = useState<BusinessContract | null>(null);
 
   const load = () => {
     if (!businessId) return;
@@ -82,6 +83,20 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       router.replace('/contract');
     }
   }, [business, pathname, router]);
+
+  // An already-ACTIVE business can still have a newer, capability-expansion contract waiting on a
+  // signature (e.g. Admin enabled Directory on a Tienda-only business) — unlike the first-contract
+  // case above, this never blocks the dashboard, just surfaces a banner (see the AskUserQuestion
+  // decision: only the new capability stays gated, everything already working keeps working).
+  useEffect(() => {
+    if (business?.status !== 'ACTIVE' || !businessId) {
+      setPendingContract(null);
+      return;
+    }
+    getBusinessContract(businessId)
+      .then((c) => setPendingContract(c?.status === 'PENDING_SIGNATURE' ? c : null))
+      .catch(() => setPendingContract(null));
+  }, [business, businessId]);
 
   function logout() {
     clearTokens();
@@ -158,7 +173,23 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             </button>
           </div>
         </aside>
-        <main className="dashboard-main">{children}</main>
+        <main className="dashboard-main">
+          {pendingContract && pathname !== '/contract' && (
+            <div
+              className="bingo-card"
+              style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: '#fff8e6' }}
+            >
+              <span style={{ fontSize: 13 }}>
+                Tienes un contrato actualizado pendiente de firma para activar una capacidad nueva. Lo que ya
+                tienes activo sigue funcionando normalmente.
+              </span>
+              <a href="/contract" className="bingo-button secondary small" style={{ width: 'auto', whiteSpace: 'nowrap' }}>
+                Ver contrato
+              </a>
+            </div>
+          )}
+          {children}
+        </main>
       </div>
     </BusinessContext.Provider>
   );

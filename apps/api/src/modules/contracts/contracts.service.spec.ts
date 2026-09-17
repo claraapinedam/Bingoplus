@@ -4,6 +4,7 @@ import { ContractsService } from './contracts.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { UploadsService } from '../uploads/uploads.service';
+import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 
 // A real, minimal 1x1 transparent PNG — pdfkit's doc.image() needs actual valid PNG bytes to not throw.
 const VALID_PNG_DATA_URL =
@@ -13,10 +14,11 @@ describe('ContractsService', () => {
   let service: ContractsService;
   let prisma: any;
   let email: { sendSignedContractEmail: jest.Mock };
+  let capabilities: { getMap: jest.Mock; set: jest.Mock };
 
   beforeEach(() => {
     prisma = {
-      businessContract: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
+      businessContract: { findFirst: jest.fn(), findUniqueOrThrow: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
       business: { findUniqueOrThrow: jest.fn(), update: jest.fn() },
       businessDocument: { create: jest.fn() },
       commission: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -24,6 +26,10 @@ describe('ContractsService', () => {
       $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     };
     email = { sendSignedContractEmail: jest.fn().mockResolvedValue(undefined) };
+    capabilities = {
+      getMap: jest.fn().mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: false }),
+      set: jest.fn().mockResolvedValue({ id: 'cap1' }),
+    };
     const config = { get: jest.fn((_key: string, fallback?: unknown) => fallback) } as unknown as ConfigService;
     const uploads = { directory: '/tmp/bingoplus-test-uploads', publicPath: (f: string) => `/uploads/${f}` } as unknown as UploadsService;
 
@@ -32,6 +38,7 @@ describe('ContractsService', () => {
       config,
       email as unknown as EmailService,
       uploads,
+      capabilities as unknown as BusinessCapabilitiesService,
     );
   });
 
@@ -104,7 +111,7 @@ describe('ContractsService', () => {
       expect(prisma.businessDocument.create).not.toHaveBeenCalled();
     });
 
-    it('generates the PDF, attaches it, activates the business, and emails the signer on success', async () => {
+    it('generates the PDF, attaches it, activates the business (first contract), and emails the signer on success', async () => {
       prisma.businessContract.findFirst.mockResolvedValue({
         id: 'c1',
         idType: 'CEDULA',
@@ -112,11 +119,15 @@ describe('ContractsService', () => {
         representativeName: null,
         taxId: '0102030405',
         contractText: 'Cuerpo del contrato.',
+        sellsProducts: true,
+        directoryListing: false,
       });
-      prisma.business.findUniqueOrThrow.mockResolvedValue({ id: 'b1', email: 'b@example.com', tradeName: 'Biz' });
+      // status: APPROVED — this is the business's very first contract, not yet ACTIVE.
+      prisma.business.findUniqueOrThrow.mockResolvedValue({ id: 'b1', email: 'b@example.com', tradeName: 'Biz', status: 'APPROVED' });
       prisma.businessDocument.create.mockResolvedValue({ id: 'doc1' });
       prisma.business.update.mockResolvedValue({ id: 'b1', status: 'ACTIVE' });
       prisma.businessContract.update.mockResolvedValue({ id: 'c1', status: 'SIGNED' });
+      prisma.businessContract.findUniqueOrThrow.mockResolvedValue({ id: 'c1', status: 'SIGNED' });
 
       const result = await service.sign('b1', VALID_PNG_DATA_URL, '1.2.3.4', 'http://localhost:3001');
 
@@ -133,5 +144,86 @@ describe('ContractsService', () => {
       expect(email.sendSignedContractEmail).toHaveBeenCalledWith('b@example.com', 'Biz', expect.any(Buffer));
       expect(result).toEqual({ id: 'c1', status: 'SIGNED' });
     }, 15000);
+
+    it('applies the new capabilities and supersedes the previous contract for an already-ACTIVE business', async () => {
+      prisma.businessContract.findFirst.mockResolvedValue({
+        id: 'c2',
+        idType: 'CEDULA',
+        legalName: 'Juan Pérez',
+        representativeName: null,
+        taxId: '0102030405',
+        contractText: 'Cuerpo del contrato ampliado.',
+        sellsProducts: true,
+        directoryListing: true,
+      });
+      // status: ACTIVE already — this contract only adds DIRECTORY_LISTING to an existing business.
+      prisma.business.findUniqueOrThrow.mockResolvedValue({ id: 'b1', email: 'b@example.com', tradeName: 'Biz', status: 'ACTIVE' });
+      prisma.businessDocument.create.mockResolvedValue({ id: 'doc2' });
+      prisma.businessContract.update.mockResolvedValue({ id: 'c2', status: 'SIGNED' });
+      prisma.businessContract.findUniqueOrThrow.mockResolvedValue({ id: 'c2', status: 'SIGNED' });
+
+      await service.sign('b1', VALID_PNG_DATA_URL, '1.2.3.4', 'http://localhost:3001');
+
+      expect(prisma.business.update).not.toHaveBeenCalled();
+      expect(capabilities.set).toHaveBeenCalledWith('b1', 'SELLS_PRODUCTS', true);
+      expect(capabilities.set).toHaveBeenCalledWith('b1', 'DIRECTORY_LISTING', true);
+      expect(prisma.businessContract.updateMany).toHaveBeenCalledWith({
+        where: { businessId: 'b1', status: 'SIGNED', id: { not: 'c2' } },
+        data: { status: 'SUPERSEDED' },
+      });
+    }, 15000);
+  });
+
+  describe('requestCapabilityChange', () => {
+    it('does nothing when the governing contract already covers what was requested', async () => {
+      jest.spyOn(service, 'getGoverningContract').mockResolvedValue({
+        id: 'c1',
+        sellsProducts: true,
+        directoryListing: false,
+      } as any);
+
+      const result = await service.requestCapabilityChange('b1', true, false);
+
+      expect(result).toEqual({ requiresSignature: false });
+      expect(prisma.businessContract.create).not.toHaveBeenCalled();
+    });
+
+    it('reuses an already-pending request instead of creating a duplicate', async () => {
+      jest.spyOn(service, 'getGoverningContract').mockResolvedValue({
+        id: 'c1',
+        sellsProducts: true,
+        directoryListing: false,
+      } as any);
+      prisma.businessContract.findFirst.mockResolvedValue({ id: 'c2', status: 'PENDING_SIGNATURE' });
+
+      const result = await service.requestCapabilityChange('b1', true, true);
+
+      expect(result).toEqual({ requiresSignature: true, contract: { id: 'c2', status: 'PENDING_SIGNATURE' } });
+      expect(prisma.businessContract.create).not.toHaveBeenCalled();
+    });
+
+    it('creates a new pending contract covering the newly-requested capabilities', async () => {
+      jest.spyOn(service, 'getGoverningContract').mockResolvedValue({
+        id: 'c1',
+        sellsProducts: true,
+        directoryListing: false,
+      } as any);
+      prisma.businessContract.findFirst.mockResolvedValue(null);
+      prisma.business.findUniqueOrThrow.mockResolvedValue({
+        id: 'b1',
+        idType: 'CEDULA',
+        representativeName: null,
+        legalName: 'Juan Pérez',
+        taxId: '0102030405',
+      });
+      prisma.businessContract.create.mockResolvedValue({ id: 'c2', status: 'PENDING_SIGNATURE' });
+
+      const result = await service.requestCapabilityChange('b1', true, true);
+
+      expect(result.requiresSignature).toBe(true);
+      expect(prisma.businessContract.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sellsProducts: true, directoryListing: true }) }),
+      );
+    });
   });
 });
