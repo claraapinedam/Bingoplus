@@ -35,7 +35,7 @@ export default function LoginPage() {
     <div className="bingo-app-narrow" style={{ padding: 24, display: 'flex', flexDirection: 'column', minHeight: '100vh', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
         <Image
-          src="/Bingoplus%20business.png"
+          src="/business%20sin%20fondo.png"
           alt="BINGO+ Negocios"
           width={2172}
           height={724}
