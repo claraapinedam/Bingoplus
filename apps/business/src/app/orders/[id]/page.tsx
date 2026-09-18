@@ -33,7 +33,6 @@ interface OrderDetail {
   subtotal: string | number;
   discount: string | number;
   tax: string | number;
-  platformFee: string | number;
   serviceFee: string | number;
   deliveryFee: string | number;
   total: string | number;
@@ -233,7 +232,7 @@ export default function BusinessOrderDetailPage() {
             ['Subtotal', Number(order.subtotal)],
             ['Descuento', -Number(order.discount)],
             ['Impuestos', Number(order.tax)],
-            ['Tarifa de servicio', Number(order.platformFee) + Number(order.serviceFee)],
+            ['Tarifa de servicio', Number(order.serviceFee)],
             ['Envío', Number(order.deliveryFee)],
           ].map(([label, value]) => (
             <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a' }}>

@@ -26,8 +26,6 @@ export interface BusinessProfile {
   status: string;
   ratingAvg: number;
   reviewCount: number;
-  deliveryFeeUsd: string | number | null;
-  deliveryEstimateMinutes: number | null;
   category: { id: string; name: string; slug: string };
   capabilities: CapabilityMap;
 }

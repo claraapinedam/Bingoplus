@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import BusinessApplyForm, { BusinessApplyValues } from '@/components/BusinessApplyForm';
+import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError, getAccessToken, setActiveBusinessId } from '@/lib/api';
 
 /** Reached from /select-business's "+ Crear negocio" — not wrapped in DashboardShell (same
@@ -62,9 +63,7 @@ export default function ApplyBusinessPage() {
 
   return (
     <div className="bingo-app-narrow bingo-content" style={{ paddingTop: 24, maxWidth: 600 }}>
-      <button className="bingo-button secondary small" style={{ marginBottom: 16, width: 'auto' }} onClick={() => router.push('/select-business')}>
-        ← Volver
-      </button>
+      <BackButton onClick={() => router.push('/select-business')} />
       <div className="bingo-logo" style={{ fontSize: 20, marginBottom: 4 }}>
         Crear negocio
       </div>

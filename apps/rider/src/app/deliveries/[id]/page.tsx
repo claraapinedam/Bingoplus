@@ -216,10 +216,10 @@ export default function DeliveryDetailPage() {
         <button className="bingo-button secondary small" style={{ marginBottom: 10 }} onClick={() => router.push('/')}>
           ← Inicio
         </button>
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
+        <div className="bingo-header-sub" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
           Pedido {delivery.order.orderNumber}
-        </div>
-        <div className="bingo-header-sub">
           <span
             className="bingo-badge"
             style={{ background: 'rgba(255,255,255,0.15)', color: DELIVERY_STATUS_COLORS[delivery.status] ?? 'white' }}

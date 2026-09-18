@@ -63,6 +63,11 @@ img {
   color: var(--bingo-teal);
 }
 
+.bingo-logo-img {
+  height: 24px;
+  width: auto;
+}
+
 .bingo-header-sub {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.75);
@@ -152,6 +157,76 @@ img {
   padding: 12px 14px;
   font-size: 14px;
   width: 100%;
+}
+
+/* ── Terms/privacy detail modal (RiderApplyForm) ─────────────────────────── */
+.dashboard-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(23, 43, 77, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+}
+
+.dashboard-modal {
+  background: white;
+  border-radius: var(--radius-lg);
+  max-width: 560px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(23, 43, 77, 0.25);
+}
+
+.dashboard-modal-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid #eef1f5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dashboard-modal-title {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--bingo-navy);
+}
+
+.dashboard-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: #9aa5b1;
+  line-height: 1;
+  padding: 4px;
+}
+
+.dashboard-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  font-size: 13px;
+  color: #333f52;
+  line-height: 1.6;
+}
+
+.dashboard-modal-body h4 {
+  font-size: 13px;
+  color: var(--bingo-navy);
+  margin: 16px 0 6px;
+}
+
+.dashboard-modal-body h4:first-child {
+  margin-top: 0;
+}
+
+.dashboard-modal-footer {
+  padding: 14px 20px;
+  border-top: 1px solid #eef1f5;
 }
 
 .bingo-bottom-nav {

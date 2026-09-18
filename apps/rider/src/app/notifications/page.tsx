@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import RiderShell from '@/components/RiderShell';
 import EmptyState from '@/components/EmptyState';
 import { apiFetch } from '@/lib/api';
@@ -16,7 +15,6 @@ interface NotificationRow {
 }
 
 export default function NotificationsPage() {
-  const router = useRouter();
   const [notifications, setNotifications] = useState<NotificationRow[] | null>(null);
 
   const load = useCallback(() => {
@@ -44,13 +42,10 @@ export default function NotificationsPage() {
   return (
     <RiderShell>
       <header className="bingo-header">
-        <button className="bingo-button secondary small" style={{ marginBottom: 10 }} onClick={() => router.back()}>
-          ← Volver
-        </button>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="bingo-logo" style={{ fontSize: 18 }}>
-            Avisos
-          </div>
+          <div className="bingo-header-sub" style={{ marginTop: 4 }}>Avisos</div>
           {unreadCount > 0 && (
             <button className="bingo-button secondary small" onClick={markAllRead}>
               Marcar todo leído

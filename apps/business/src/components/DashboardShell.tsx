@@ -186,9 +186,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       <div className="dashboard-shell">
         <aside className="dashboard-sidebar">
           <div className="dashboard-sidebar-header">
-            <div className="bingo-logo" style={{ fontSize: 18 }}>
-              BINGO<span className="plus" style={{ color: 'var(--bingo-teal)' }}>+</span>
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
             <div className="dashboard-sidebar-business">{business.tradeName}</div>
           </div>
           <nav className="dashboard-nav">

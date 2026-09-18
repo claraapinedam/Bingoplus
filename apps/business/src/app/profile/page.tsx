@@ -23,8 +23,6 @@ function ProfileContent() {
   const [description, setDescription] = useState(business.description ?? '');
   const [logoUrl, setLogoUrl] = useState(business.logoUrl ?? '');
   const [coverImageUrl, setCoverImageUrl] = useState(business.coverImageUrl ?? '');
-  const [deliveryFeeUsd, setDeliveryFeeUsd] = useState(business.deliveryFeeUsd?.toString() ?? '');
-  const [deliveryEstimateMinutes, setDeliveryEstimateMinutes] = useState(business.deliveryEstimateMinutes?.toString() ?? '');
   const [hours, setHours] = useState<Hours>(business.openingHours ?? {});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +30,7 @@ function ProfileContent() {
 
   useEffect(() => {
     setSaved(false);
-  }, [tradeName, description, logoUrl, coverImageUrl, deliveryFeeUsd, deliveryEstimateMinutes, hours]);
+  }, [tradeName, description, logoUrl, coverImageUrl, hours]);
 
   function toggleDay(key: string, enabled: boolean) {
     setHours((prev) => {
@@ -61,8 +59,6 @@ function ProfileContent() {
           logoUrl: logoUrl || undefined,
           coverImageUrl: coverImageUrl || undefined,
           openingHours: hours,
-          deliveryFeeUsd: deliveryFeeUsd ? Number(deliveryFeeUsd) : undefined,
-          deliveryEstimateMinutes: deliveryEstimateMinutes ? Number(deliveryEstimateMinutes) : undefined,
         }),
       });
       reload();
@@ -125,22 +121,9 @@ function ProfileContent() {
         </div>
 
         {business.capabilities.SELLS_PRODUCTS && business.capabilities.DELIVERY && (
-          <div className="dashboard-form-grid">
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Tarifa de envío (USD)</label>
-              <input className="bingo-input" type="number" min={0} step="0.01" value={deliveryFeeUsd} onChange={(e) => setDeliveryFeeUsd(e.target.value)} />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Tiempo estimado (min)</label>
-              <input
-                className="bingo-input"
-                type="number"
-                min={0}
-                step="1"
-                value={deliveryEstimateMinutes}
-                onChange={(e) => setDeliveryEstimateMinutes(e.target.value)}
-              />
-            </div>
+          <div className="bingo-card" style={{ fontSize: 12, color: '#7f8ea3' }}>
+            La tarifa de delivery la calcula BINGO+ (mínimo por franja horaria, distancia, tiempo y demanda) —
+            no es algo que el negocio configure. Se cobra al cliente en cada pedido.
           </div>
         )}
 

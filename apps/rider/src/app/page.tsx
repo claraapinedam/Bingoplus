@@ -125,11 +125,10 @@ export default function RiderHomePage() {
   return (
     <RiderShell>
       <header className="bingo-header">
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Hola, {profile.user.firstName}
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
         <div className="bingo-header-sub">
-          ⭐ {profile.ratingAvg.toFixed(1)} · {profile.deliveriesCompleted} entregas completadas
+          Hola, {profile.user.firstName} · ⭐ {profile.ratingAvg.toFixed(1)} · {profile.deliveriesCompleted} entregas completadas
         </div>
       </header>
 

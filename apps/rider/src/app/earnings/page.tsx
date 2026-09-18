@@ -41,9 +41,9 @@ export default function EarningsPage() {
   return (
     <RiderShell>
       <header className="bingo-header">
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Ganancias
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
+        <div className="bingo-header-sub" style={{ marginTop: 4 }}>Ganancias</div>
       </header>
       <div className="bingo-content">
         <div className="bingo-card" style={{ textAlign: 'center' }}>
