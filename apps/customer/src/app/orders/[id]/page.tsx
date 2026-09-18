@@ -41,7 +41,7 @@ interface OrderDetail {
   cancelReason: string | null;
   createdAt: string;
   items: OrderItem[];
-  business: { id: string; tradeName: string; addressLine: string; city: string };
+  business: { id: string; tradeName: string; addressLine: string; city: string; latitude: number | null; longitude: number | null };
   payment: { status: string } | null;
   deliveryAddressSnapshot: { label: string; line1: string; line2: string | null; city: string } | null;
 }
@@ -108,6 +108,11 @@ export default function OrderDetailPage() {
     } finally {
       setSubmittingReview(false);
     }
+  }
+
+  function openDirections() {
+    if (!order || order.business.latitude == null || order.business.longitude == null) return;
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${order.business.latitude},${order.business.longitude}`, '_blank');
   }
 
   async function cancelOrder() {
@@ -236,6 +241,20 @@ export default function OrderDetailPage() {
             <span style={{ color: '#9aa5b1' }}>→</span>
           </a>
         )}
+
+        {order.fulfillmentType === 'PICKUP' &&
+          currentStepIndex >= 1 &&
+          order.business.latitude != null &&
+          order.business.longitude != null && (
+            <button
+              className="bingo-card"
+              onClick={openDirections}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, width: '100%', border: 'none', cursor: 'pointer' }}
+            >
+              <span style={{ fontWeight: 700, fontSize: 14 }}>🧭 Cómo llegar</span>
+              <span style={{ color: '#9aa5b1' }}>→</span>
+            </button>
+          )}
 
         <h2 className="bingo-section-title">Resumen</h2>
         <div className="bingo-card">

@@ -159,7 +159,7 @@ export default function StoreDetailPage() {
         </button>
       </div>
 
-      <div style={{ padding: 16, marginTop: -32 }}>
+      <div style={{ padding: 16 }}>
         <div
           style={{
             width: 64,
