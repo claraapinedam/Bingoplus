@@ -15,6 +15,7 @@ import {
   ServiceType,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { seedRolesAndPermissions, seedCategories, seedPlatformSettings, seedMarketplaceRankingConfig, seedPetSpecies } from './seed-helpers';
 
 const prisma = new PrismaClient();
 
@@ -52,121 +53,6 @@ async function resetDevData() {
   await prisma.petFriendlyPlace.deleteMany({});
 }
 
-async function seedRolesAndPermissions() {
-  const roles = Object.values(RoleName);
-  for (const name of roles) {
-    await prisma.role.upsert({ where: { name }, update: {}, create: { name } });
-  }
-
-  const permissions: Array<[string, string]> = [
-    ['businesses', 'approve'],
-    ['businesses', 'suspend'],
-    ['businesses', 'capabilities'],
-    ['users', 'suspend'],
-    ['orders', 'refund'],
-    ['settings', 'write'],
-    ['memberships', 'manage'],
-    ['coupons', 'manage'],
-  ];
-  for (const [resource, action] of permissions) {
-    await prisma.permission.upsert({
-      where: { resource_action: { resource, action } },
-      update: {},
-      create: { resource, action },
-    });
-  }
-
-  const adminRole = await prisma.role.findUniqueOrThrow({ where: { name: RoleName.ADMIN } });
-  const allPermissions = await prisma.permission.findMany();
-  for (const permission of allPermissions) {
-    await prisma.rolePermission.upsert({
-      where: { roleId_permissionId: { roleId: adminRole.id, permissionId: permission.id } },
-      update: {},
-      create: { roleId: adminRole.id, permissionId: permission.id },
-    });
-  }
-}
-
-async function seedCategories() {
-  const businessCategories = [
-    { name: 'Tiendas', slug: 'tiendas', icon: 'shopping-bag' },
-    { name: 'Veterinarios', slug: 'veterinarios', icon: 'stethoscope' },
-    { name: 'Guarderías', slug: 'guarderias', icon: 'home' },
-    { name: 'Hospedajes', slug: 'hospedajes', icon: 'bed' },
-    { name: 'Grooming', slug: 'grooming', icon: 'scissors' },
-    { name: 'Paseadores', slug: 'paseadores', icon: 'footprints' },
-    { name: 'Delivery', slug: 'delivery', icon: 'truck' },
-  ];
-  for (const c of businessCategories) {
-    await prisma.businessCategory.upsert({ where: { slug: c.slug }, update: {}, create: c });
-  }
-  // "Pet Friendly" used to be a business/membership category here — it's now the community-
-  // submitted PetFriendlyPlace directory instead (see seedPetFriendlyPlaces), never a Business.
-  // No seeded Business ever used this slug, so removing the stale row is safe in every environment.
-  await prisma.businessCategory.deleteMany({ where: { slug: 'pet-friendly' } });
-
-  const productCategories = [
-    { name: 'Alimento', slug: 'alimento' },
-    { name: 'Snacks', slug: 'snacks' },
-    { name: 'Juguetes', slug: 'juguetes' },
-    { name: 'Accesorios', slug: 'accesorios' },
-    { name: 'Higiene', slug: 'higiene' },
-    { name: 'Camas', slug: 'camas' },
-    { name: 'Transporte', slug: 'transporte' },
-    { name: 'Farmacia veterinaria', slug: 'farmacia-veterinaria' },
-    { name: 'Otros', slug: 'otros' },
-  ];
-  for (const c of productCategories) {
-    await prisma.productCategory.upsert({ where: { slug: c.slug }, update: {}, create: c });
-  }
-}
-
-async function seedPlatformSettings() {
-  const settings: Array<[string, unknown, string]> = [
-    ['default_commission_rate', 0.15, 'Default marketplace commission applied to a new business unless overridden'],
-    ['default_service_fee_rate', 0.05, 'Service fee charged to the customer at checkout'],
-    ['delivery_fee_base', 1.5, 'Base delivery fee (currency units) before distance-based pricing'],
-    ['delivery_fee_per_km', 0.4, 'Additional delivery fee per kilometer'],
-  ];
-  for (const [key, value, description] of settings) {
-    await prisma.platformSetting.upsert({
-      where: { key },
-      update: {},
-      create: { key, value: value as any, description },
-    });
-  }
-}
-
-/** Only seeds a default row if none exists yet — MarketplaceRankingConfig is append-only history, not an upsert-by-key table. */
-async function seedMarketplaceRankingConfig() {
-  const existing = await prisma.marketplaceRankingConfig.findFirst();
-  if (existing) return;
-  await prisma.marketplaceRankingConfig.create({
-    data: {
-      speciesMatchWeight: 0.45,
-      distanceWeight: 0.25,
-      availabilityWeight: 0.1,
-      ratingWeight: 0.1,
-      deliveryWeight: 0.1,
-    },
-  });
-}
-
-async function seedPetSpecies() {
-  const species = [
-    { name: 'Perro', slug: 'dog', icon: 'dog' },
-    { name: 'Gato', slug: 'cat', icon: 'cat' },
-    { name: 'Ave', slug: 'bird', icon: 'bird' },
-    { name: 'Pez', slug: 'fish', icon: 'fish' },
-    { name: 'Conejo', slug: 'rabbit', icon: 'rabbit' },
-    { name: 'Roedor', slug: 'rodent', icon: 'rodent' },
-    { name: 'Reptil', slug: 'reptile', icon: 'reptile' },
-    { name: 'Otro', slug: 'other', icon: 'paw' },
-  ];
-  for (const s of species) {
-    await prisma.petSpecies.upsert({ where: { slug: s.slug }, update: {}, create: s });
-  }
-}
 
 async function seedUsers() {
   const passwordHash = await argon2.hash(DEV_PASSWORD);
@@ -755,11 +641,11 @@ async function seedAdminCoupons() {
 async function main() {
   console.log('Seeding BINGO+ development data (all fictitious)...');
   await resetDevData();
-  await seedRolesAndPermissions();
-  await seedCategories();
-  await seedPetSpecies();
-  await seedPlatformSettings();
-  await seedMarketplaceRankingConfig();
+  await seedRolesAndPermissions(prisma);
+  await seedCategories(prisma);
+  await seedPetSpecies(prisma);
+  await seedPlatformSettings(prisma);
+  await seedMarketplaceRankingConfig(prisma);
   const { customers } = await seedUsers();
   await seedPets(customers);
   const businesses = await seedBusinesses(customers);

@@ -14,6 +14,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:reset-clean": "prisma migrate reset --force --skip-seed && ts-node prisma/seed-reset.ts",
     "prisma:studio": "prisma studio",
     "prisma:deploy:test": "dotenv -e .env.test -- prisma migrate deploy"
   },
