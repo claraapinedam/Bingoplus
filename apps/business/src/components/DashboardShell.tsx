@@ -71,7 +71,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       return;
     }
     load();
-    apiFetch<number>('/me/notifications/unread-count').then(setUnreadNotifications).catch(() => undefined);
+    apiFetch<number>('/me/notifications/unread-count?audience=BUSINESS').then(setUnreadNotifications).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessId, pathname]);
 

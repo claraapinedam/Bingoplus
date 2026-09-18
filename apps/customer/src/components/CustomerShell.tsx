@@ -44,7 +44,7 @@ export default function CustomerShell({ children }: { children: React.ReactNode 
     apiFetch<CartSummary | null>('/me/cart')
       .then((cart) => setCartCount(cart?.items.reduce((n, i) => n + i.quantity, 0) ?? 0))
       .catch(() => undefined);
-    apiFetch<number>('/me/notifications/unread-count')
+    apiFetch<number>('/me/notifications/unread-count?audience=CUSTOMER')
       .then(setUnreadNotifications)
       .catch(() => undefined);
   }, [router, pathname]);

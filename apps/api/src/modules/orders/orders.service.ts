@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { FulfillmentType, OrderStatus } from '@prisma/client';
+import { FulfillmentType, NotificationAudience, OrderStatus } from '@prisma/client';
 import { resolveDateRange, resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
@@ -15,7 +15,7 @@ const ORDER_STATUS_NOTIFICATIONS: Partial<Record<OrderStatus, { event: string; t
 
 const ORDER_INCLUDE = {
   items: true,
-  business: { select: { id: true, tradeName: true, logoUrl: true, addressLine: true, city: true, openingHours: true } },
+  business: { select: { id: true, tradeName: true, logoUrl: true, addressLine: true, city: true, latitude: true, longitude: true, openingHours: true } },
   // FASE 4C gap fix: the business-facing Pedidos screens need to identify who placed the order —
   // this include was Customer-only before and never carried that. First/last name only, same
   // "minimum necessary" rule already applied to Rider info shown to Customers — no email/phone.
@@ -210,6 +210,7 @@ export class OrdersService {
     if (notif) {
       void this.notifications.notify({
         userId: order.userId,
+        audience: NotificationAudience.CUSTOMER,
         event: notif.event,
         title: notif.title,
         body: notif.body,

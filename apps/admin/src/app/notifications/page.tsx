@@ -17,7 +17,7 @@ export default function AdminNotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationRow[] | null>(null);
 
   const load = useCallback(() => {
-    apiFetch<NotificationRow[]>('/me/notifications').then(setNotifications).catch(() => setNotifications([]));
+    apiFetch<NotificationRow[]>('/me/notifications?audience=ADMIN').then(setNotifications).catch(() => setNotifications([]));
   }, []);
 
   useEffect(() => {
@@ -25,13 +25,13 @@ export default function AdminNotificationsPage() {
   }, [load]);
 
   async function markAllRead() {
-    await apiFetch('/me/notifications/read-all', { method: 'PATCH' });
+    await apiFetch('/me/notifications/read-all?audience=ADMIN', { method: 'PATCH' });
     load();
   }
 
   async function openNotification(n: NotificationRow) {
     if (!n.read) {
-      await apiFetch(`/me/notifications/${n.id}/read`, { method: 'PATCH' });
+      await apiFetch(`/me/notifications/${n.id}/read?audience=ADMIN`, { method: 'PATCH' });
       load();
     }
   }

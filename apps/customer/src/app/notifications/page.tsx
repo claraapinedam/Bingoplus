@@ -21,7 +21,7 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationRow[] | null>(null);
 
   const load = useCallback(() => {
-    apiFetch<NotificationRow[]>('/me/notifications')
+    apiFetch<NotificationRow[]>('/me/notifications?audience=CUSTOMER')
       .then(setNotifications)
       .catch(() => setNotifications([]));
   }, []);
@@ -31,13 +31,13 @@ export default function NotificationsPage() {
   }, [load]);
 
   async function markAllRead() {
-    await apiFetch('/me/notifications/read-all', { method: 'PATCH' });
+    await apiFetch('/me/notifications/read-all?audience=CUSTOMER', { method: 'PATCH' });
     load();
   }
 
   async function openNotification(n: NotificationRow) {
     if (!n.read) {
-      await apiFetch(`/me/notifications/${n.id}/read`, { method: 'PATCH' });
+      await apiFetch(`/me/notifications/${n.id}/read?audience=CUSTOMER`, { method: 'PATCH' });
       load();
     }
   }

@@ -18,7 +18,7 @@ function NotificationsContent() {
   const [notifications, setNotifications] = useState<NotificationRow[] | null>(null);
 
   const load = useCallback(() => {
-    apiFetch<NotificationRow[]>('/me/notifications').then(setNotifications).catch(() => setNotifications([]));
+    apiFetch<NotificationRow[]>('/me/notifications?audience=BUSINESS').then(setNotifications).catch(() => setNotifications([]));
   }, []);
 
   useEffect(() => {
@@ -26,13 +26,13 @@ function NotificationsContent() {
   }, [load]);
 
   async function markAllRead() {
-    await apiFetch('/me/notifications/read-all', { method: 'PATCH' });
+    await apiFetch('/me/notifications/read-all?audience=BUSINESS', { method: 'PATCH' });
     load();
   }
 
   async function openNotification(n: NotificationRow) {
     if (!n.read) {
-      await apiFetch(`/me/notifications/${n.id}/read`, { method: 'PATCH' });
+      await apiFetch(`/me/notifications/${n.id}/read?audience=BUSINESS`, { method: 'PATCH' });
       load();
     }
   }

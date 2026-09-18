@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import {
   BookingStatus,
   FulfillmentType,
+  NotificationAudience,
   OrderStatus,
   PetFriendlyPlaceStatus,
   Prisma,
@@ -145,6 +146,7 @@ export class ReviewsService {
       if (business) {
         void this.notifications.notify({
           userId: business.ownerId,
+          audience: NotificationAudience.BUSINESS,
           event: 'review.created',
           title: 'Nueva reseña',
           body: `Tu negocio recibió una nueva reseña de ${dto.business.rating}★.`,
@@ -206,6 +208,7 @@ export class ReviewsService {
     if (service) {
       void this.notifications.notify({
         userId: service.business.ownerId,
+        audience: NotificationAudience.BUSINESS,
         event: 'review.created',
         title: 'Nueva reseña',
         body: `"${service.name}" recibió una nueva reseña de ${dto.rating}★.`,
@@ -259,6 +262,7 @@ export class ReviewsService {
     if (place.submittedById !== userId) {
       void this.notifications.notify({
         userId: place.submittedById,
+        audience: NotificationAudience.CUSTOMER,
         event: 'review.created',
         title: 'Nueva reseña',
         body: `"${place.name}" recibió una nueva reseña de ${dto.rating}★.`,

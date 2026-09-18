@@ -4,6 +4,7 @@ import {
   DeliveryAssignmentSource,
   DeliveryIncidentType,
   DeliveryStatus,
+  NotificationAudience,
   Prisma,
   RiderAccountStatus,
   RiderAvailabilityStatus,
@@ -175,6 +176,7 @@ export class DeliveryService {
       this.gateway.emitStatusUpdated(deliveryId, updated.status);
       this.notifications.notify({
         userId: updated.order.userId,
+        audience: NotificationAudience.CUSTOMER,
         event: 'delivery.rider_accepted',
         title: 'Tu repartidor está en camino',
         body: 'Un repartidor aceptó tu pedido y va camino al negocio.',
@@ -212,6 +214,7 @@ export class DeliveryService {
     const updated = await this.transition(riderId, deliveryId, DeliveryStatus.PICKED_UP, { pickedUpAt: new Date() });
     await this.notifications.notify({
       userId: updated.order.userId,
+      audience: NotificationAudience.CUSTOMER,
       event: 'delivery.picked_up',
       title: 'Tu pedido va en camino',
       body: 'El repartidor recogió tu pedido en el negocio.',
@@ -228,6 +231,7 @@ export class DeliveryService {
     const updated = await this.transition(riderId, deliveryId, DeliveryStatus.ARRIVED_AT_CUSTOMER, {});
     await this.notifications.notify({
       userId: updated.order.userId,
+      audience: NotificationAudience.CUSTOMER,
       event: 'delivery.rider_arrived',
       title: 'Tu repartidor llegó',
       body: 'El repartidor está en la dirección de entrega.',
@@ -299,6 +303,7 @@ export class DeliveryService {
       this.gateway.emitCompleted(deliveryId);
       await this.notifications.notify({
         userId: updated.order.userId,
+        audience: NotificationAudience.CUSTOMER,
         event: 'delivery.completed',
         title: '¡Pedido entregado!',
         body: 'Tu pedido fue entregado con éxito.',

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BookingStatus, BusinessCapabilityType, BusinessStatus, PaymentStatus, Prisma } from '@prisma/client';
+import { BookingStatus, BusinessCapabilityType, BusinessStatus, NotificationAudience, PaymentStatus, Prisma } from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
@@ -198,6 +198,7 @@ export class BookingsService {
 
     void this.notifications.notify({
       userId,
+      audience: NotificationAudience.CUSTOMER,
       event: 'booking.created',
       title: 'Reserva creada',
       body: `Tu reserva de "${booking.service.name}" quedó pendiente de confirmación.`,
@@ -205,6 +206,7 @@ export class BookingsService {
     });
     void this.notifications.notify({
       userId: service.business.ownerId,
+      audience: NotificationAudience.BUSINESS,
       event: 'booking.new',
       title: 'Nueva reserva',
       body: `${booking.user.firstName} reservó "${booking.service.name}".`,
@@ -225,6 +227,7 @@ export class BookingsService {
     const ownerId = await this.getBusinessOwnerId(updated.businessId);
     void this.notifications.notify({
       userId: ownerId,
+      audience: NotificationAudience.BUSINESS,
       event: 'booking.cancelled',
       title: 'Reserva cancelada',
       body: `${updated.user.firstName} canceló su reserva de "${updated.service.name}".`,
@@ -282,6 +285,7 @@ export class BookingsService {
     } else if (paymentStatus === PaymentStatus.FAILED) {
       void this.notifications.notify({
         userId: booking.userId,
+        audience: NotificationAudience.CUSTOMER,
         event: 'booking.payment_failed',
         title: 'Pago no procesado',
         body: 'No pudimos procesar el pago de tu reserva. Puedes intentarlo de nuevo.',
@@ -326,6 +330,7 @@ export class BookingsService {
     });
     void this.notifications.notify({
       userId: updated.userId,
+      audience: NotificationAudience.CUSTOMER,
       event: 'booking.confirmed',
       title: 'Reserva confirmada',
       body: `${updated.business.tradeName} confirmó tu reserva de "${updated.service.name}".`,
@@ -344,6 +349,7 @@ export class BookingsService {
     });
     void this.notifications.notify({
       userId: updated.userId,
+      audience: NotificationAudience.CUSTOMER,
       event: 'booking.cancelled',
       title: 'Reserva cancelada',
       body: `${updated.business.tradeName} canceló tu reserva de "${updated.service.name}".`,
@@ -364,6 +370,7 @@ export class BookingsService {
     });
     void this.notifications.notify({
       userId: updated.userId,
+      audience: NotificationAudience.CUSTOMER,
       event: 'booking.completed',
       title: 'Reserva completada',
       body: `Tu reserva de "${updated.service.name}" fue completada.`,

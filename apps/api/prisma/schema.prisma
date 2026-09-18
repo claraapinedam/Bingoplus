@@ -1918,9 +1918,21 @@ enum NotificationCategory {
   MARKETING
 }
 
+// Which app's Notification Center this row belongs in — the same person can be a Customer,
+// a Business owner and a Rider on one account (one shared login), so a row is only ever shown
+// back in the one app it's actually about (e.g. "your order was paid" is CUSTOMER-only, never
+// surfaced in that same person's Business dashboard just because they also own a business).
+enum NotificationAudience {
+  CUSTOMER
+  BUSINESS
+  RIDER
+  ADMIN
+}
+
 model Notification {
   id             String               @id @default(cuid())
   userId         String
+  audience       NotificationAudience
   channel        NotificationChannel  @default(IN_APP)
   category       NotificationCategory @default(TRANSACTIONAL)
   event          String
@@ -1940,8 +1952,8 @@ model Notification {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, read])
-  @@index([userId, createdAt])
+  @@index([userId, audience, read])
+  @@index([userId, audience, createdAt])
 }
 
 // §10: only MARKETING/PROMOTIONS are ever gated by preference — TRANSACTIONAL notifications

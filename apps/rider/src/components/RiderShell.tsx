@@ -36,7 +36,7 @@ export default function RiderShell({ children }: { children: React.ReactNode }) 
       return;
     }
     setReady(true);
-    apiFetch<number>('/me/notifications/unread-count').then(setUnreadNotifications).catch(() => undefined);
+    apiFetch<number>('/me/notifications/unread-count?audience=RIDER').then(setUnreadNotifications).catch(() => undefined);
   }, [router, pathname]);
 
   // Approved-but-not-yet-signed riders never reach the rest of the app — same redirect pattern

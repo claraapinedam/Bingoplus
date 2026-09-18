@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, PetFriendlyPlaceStatus } from '@prisma/client';
+import { Prisma, NotificationAudience, PetFriendlyPlaceStatus } from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
@@ -103,6 +103,7 @@ export class PetFriendlyPlacesService {
     });
     void this.notifications.notify({
       userId: place.submittedById,
+      audience: NotificationAudience.CUSTOMER,
       event: 'pet_friendly_place.approved',
       title: 'Tu lugar fue aprobado',
       body: `"${place.name}" ya es visible en el directorio de lugares Pet Friendly.`,
@@ -123,6 +124,7 @@ export class PetFriendlyPlacesService {
     });
     void this.notifications.notify({
       userId: place.submittedById,
+      audience: NotificationAudience.CUSTOMER,
       event: 'pet_friendly_place.rejected',
       title: 'Tu lugar no fue aprobado',
       body: reason ? `"${place.name}" fue rechazado: ${reason}` : `"${place.name}" no fue aprobado para el directorio.`,

@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BusinessCapabilityType, BusinessStatus, FulfillmentType, OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
+import { BusinessCapabilityType, BusinessStatus, FulfillmentType, NotificationAudience, OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { PriceCalculationService, PriceableCartItem, DeliveryFareContext } from '../pricing/price-calculation.service';
@@ -201,6 +201,7 @@ export class CheckoutService {
 
       void this.notifications.notify({
         userId: order.userId,
+        audience: NotificationAudience.CUSTOMER,
         event: 'order.paid',
         title: 'Pago confirmado',
         body: 'Recibimos tu pago. Tu pedido fue enviado al negocio.',
@@ -211,6 +212,7 @@ export class CheckoutService {
       if (business) {
         void this.notifications.notify({
           userId: business.ownerId,
+          audience: NotificationAudience.BUSINESS,
           event: 'order.new',
           title: 'Nuevo pedido',
           body: `Tienes un nuevo pedido #${order.orderNumber}.`,
@@ -241,6 +243,7 @@ export class CheckoutService {
 
       void this.notifications.notify({
         userId: order.userId,
+        audience: NotificationAudience.CUSTOMER,
         event: 'order.payment_failed',
         title: 'Pago no procesado',
         body: 'No pudimos procesar el pago de tu pedido. Inténtalo de nuevo.',

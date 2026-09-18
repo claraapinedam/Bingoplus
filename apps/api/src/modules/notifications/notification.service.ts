@@ -1,10 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NotificationCategory, Prisma } from '@prisma/client';
+import { NotificationAudience, NotificationCategory, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface NotificationPayload {
   userId: string;
+  /** Which app's Notification Center this belongs in — the same account can be a Customer, a
+   * Business owner and a Rider at once, so this is never inferred from the event name (the exact
+   * same "review.created"/"booking.cancelled" event fires for different audiences depending on
+   * who's actually being notified) — every call site must say who it's actually for. */
+  audience: NotificationAudience;
   /** Domain event name (§56), e.g. "delivery.rider_assigned" — not free text, so a future
    * provider integration can map events to templates instead of parsing prose. */
   event: string;
@@ -56,6 +61,7 @@ export class NotificationService {
       await this.prisma.notification.create({
         data: {
           userId: payload.userId,
+          audience: payload.audience,
           event: payload.event,
           title: payload.title,
           body: payload.body,
@@ -87,10 +93,10 @@ export class NotificationService {
   // ── Notification Center (§2.6) — every recipient (Customer/Business/Rider/Admin) reads their
   // own notifications through the same `/me/notifications` surface, scoped by userId. ───────────
 
-  async list(userId: string, params: { unreadOnly?: boolean; page?: number; pageSize?: number }) {
+  async list(userId: string, audience: NotificationAudience, params: { unreadOnly?: boolean; page?: number; pageSize?: number }) {
     const page = Math.max(1, params.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 30));
-    const where = { userId, ...(params.unreadOnly ? { read: false } : {}) };
+    const where = { userId, audience, ...(params.unreadOnly ? { read: false } : {}) };
     const [total, notifications] = await this.prisma.$transaction([
       this.prisma.notification.count({ where }),
       this.prisma.notification.findMany({
@@ -103,21 +109,21 @@ export class NotificationService {
     return { data: notifications, meta: { page, pageSize, total } };
   }
 
-  unreadCount(userId: string) {
-    return this.prisma.notification.count({ where: { userId, read: false } });
+  unreadCount(userId: string, audience: NotificationAudience) {
+    return this.prisma.notification.count({ where: { userId, audience, read: false } });
   }
 
-  async markRead(userId: string, notificationId: string) {
+  async markRead(userId: string, audience: NotificationAudience, notificationId: string) {
     const { count } = await this.prisma.notification.updateMany({
-      where: { id: notificationId, userId },
+      where: { id: notificationId, userId, audience },
       data: { read: true, readAt: new Date() },
     });
     return { updated: count > 0 };
   }
 
-  async markAllRead(userId: string) {
+  async markAllRead(userId: string, audience: NotificationAudience) {
     const { count } = await this.prisma.notification.updateMany({
-      where: { userId, read: false },
+      where: { userId, audience, read: false },
       data: { read: true, readAt: new Date() },
     });
     return { updated: count };
