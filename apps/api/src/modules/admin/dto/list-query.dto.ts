@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import {
   BusinessCouponStatus,
   BusinessStatus,
@@ -59,6 +59,16 @@ export class ListOrdersAdminQueryDto extends ListUsersQueryDto {
   @IsOptional()
   @IsString()
   businessId?: string;
+
+  @ApiPropertyOptional({ description: 'Filters on Order.createdAt — a date-only string means the whole day, a full datetime an exact bound' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'Filters on Order.createdAt — a date-only string means the whole day, a full datetime an exact bound' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }
 
 export class ListProductsAdminQueryDto extends ListUsersQueryDto {
@@ -83,6 +93,16 @@ export class ListPaymentsAdminQueryDto extends ListUsersQueryDto {
   @IsOptional()
   @IsString()
   businessId?: string;
+
+  @ApiPropertyOptional({ description: 'Filters on Payment.createdAt — a date-only string means the whole day, a full datetime an exact bound' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'Filters on Payment.createdAt — a date-only string means the whole day, a full datetime an exact bound' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }
 
 export class ListBusinessCouponsAdminQueryDto extends ListUsersQueryDto {
@@ -136,6 +156,11 @@ export class ListAdminReviewsQueryDto {
   @IsOptional()
   @IsEnum(ReviewTargetType)
   targetType?: ReviewTargetType;
+
+  @ApiPropertyOptional({ description: 'Scope to one specific target entity (e.g. one PetFriendlyPlace id) — combine with targetType.' })
+  @IsOptional()
+  @IsString()
+  targetId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

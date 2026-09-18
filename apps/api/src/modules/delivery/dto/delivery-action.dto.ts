@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DeliveryIncidentType, DeliveryStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class RejectDeliveryDto {
   @ApiPropertyOptional()
@@ -87,4 +87,14 @@ export class ListDeliveriesQueryDto {
   @IsOptional()
   @IsString()
   userId?: string;
+
+  @ApiPropertyOptional({ description: 'Filters on Delivery.createdAt — a date-only string means the whole day, a full datetime an exact bound' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'Filters on Delivery.createdAt — a date-only string means the whole day, a full datetime an exact bound' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }

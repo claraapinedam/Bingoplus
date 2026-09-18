@@ -114,9 +114,13 @@ export function resolveDateRange(params: DateRangeParams, now: Date = new Date()
   const parseLocalDate = (s: string) => new Date(s.includes('T') ? s : `${s}T00:00:00`);
 
   if (params.preset === 'custom' || (!params.preset && (params.from || params.to))) {
+    // A date-only string ("2026-01-01") still means the whole calendar day — snapped to its
+    // start/end. A string that already carries a time ("2026-01-01T14:00") means the caller picked
+    // an actual hour, e.g. an admin filtering "today, 2pm to 6pm" — used exactly as given, never
+    // silently widened back out to the full day.
     return {
-      from: params.from ? startOfDay(parseLocalDate(params.from)) : startOfDay(now),
-      to: params.to ? endOfDay(parseLocalDate(params.to)) : endOfDay(now),
+      from: params.from ? (params.from.includes('T') ? parseLocalDate(params.from) : startOfDay(parseLocalDate(params.from))) : startOfDay(now),
+      to: params.to ? (params.to.includes('T') ? parseLocalDate(params.to) : endOfDay(parseLocalDate(params.to))) : endOfDay(now),
       preset: 'custom',
     };
   }

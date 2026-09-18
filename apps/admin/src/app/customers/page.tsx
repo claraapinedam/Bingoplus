@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
 import RatingCell from '@/components/RatingCell';
+import IconButton from '@/components/IconButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface Customer {
@@ -56,10 +57,7 @@ export default function CustomersPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Clientes</h1>
-      <p className="bingo-page-subtitle">
-        Compradores de la plataforma — busca, activa o suspende cuentas de clientes.
-      </p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Clientes</h1>
 
       <div style={{ marginBottom: 16, maxWidth: 320 }}>
         <input
@@ -119,17 +117,16 @@ export default function CustomersPage() {
                       {c.isActive ? 'Activo' : 'Suspendido'}
                     </span>
                   </td>
-                  <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <a href={`/customers/${c.id}`} className="bingo-button secondary">
-                      Ver
-                    </a>
-                    <button
-                      className={`bingo-button ${c.isActive ? 'danger' : ''}`}
-                      disabled={actingOn === c.id}
-                      onClick={() => toggleActive(c)}
-                    >
-                      {c.isActive ? 'Suspender' : 'Activar'}
-                    </button>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <IconButton icon="view" label="Ver" href={`/customers/${c.id}`} />
+                      <IconButton
+                        icon={c.isActive ? 'reject' : 'approve'}
+                        label={c.isActive ? 'Suspender' : 'Activar'}
+                        disabled={actingOn === c.id}
+                        onClick={() => toggleActive(c)}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}

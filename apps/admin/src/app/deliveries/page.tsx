@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
+import DateRangeFilter, { DateRangeFilterValue } from '@/components/DateRangeFilter';
 import { apiFetch } from '@/lib/api';
 
 interface DeliveryRow {
@@ -27,18 +28,23 @@ const STATUS_TABS = [
 
 export default function AdminDeliveriesPage() {
   const [status, setStatus] = useState('');
+  const [range, setRange] = useState<DateRangeFilterValue>({});
   const [deliveries, setDeliveries] = useState<DeliveryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const query = status ? `?status=${status}` : '';
-      setDeliveries(await apiFetch<DeliveryRow[]>(`/admin/deliveries${query}`));
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+      if (range.from) params.set('from', range.from);
+      if (range.to) params.set('to', range.to);
+      const qs = params.toString();
+      setDeliveries(await apiFetch<DeliveryRow[]>(`/admin/deliveries${qs ? `?${qs}` : ''}`));
     } catch {
       setError('No se pudo cargar la lista de entregas.');
     }
-  }, [status]);
+  }, [status, range]);
 
   useEffect(() => {
     load();
@@ -46,8 +52,7 @@ export default function AdminDeliveriesPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Delivery</h1>
-      <p className="bingo-page-subtitle">Supervisión global de entregas — no reconstruye el backend de tracking, solo lo consume.</p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Delivery</h1>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {STATUS_TABS.map((tab) => (
@@ -61,6 +66,8 @@ export default function AdminDeliveriesPage() {
           </button>
         ))}
       </div>
+
+      <DateRangeFilter value={range} onChange={setRange} allowAll />
 
       {error && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>

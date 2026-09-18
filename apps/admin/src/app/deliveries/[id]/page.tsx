@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AdminShell from '@/components/AdminShell';
+import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface DeliveryDetail {
@@ -99,15 +100,13 @@ export default function AdminDeliveryDetailPage() {
 
   return (
     <AdminShell>
-      <button className="bingo-button secondary" style={{ marginBottom: 16, padding: '8px 14px', fontSize: 13 }} onClick={() => router.push('/deliveries')}>
-        ← Volver a Delivery
-      </button>
+      <BackButton onClick={() => router.push('/deliveries')} label="Volver a Delivery" />
 
-      <h1 className="bingo-page-title">Entrega — {delivery.order.orderNumber}</h1>
-      <p className="bingo-page-subtitle">
-        {delivery.order.user.firstName} {delivery.order.user.lastName} · {delivery.order.business.tradeName} ·{' '}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
+        <h1 className="bingo-page-title" style={{ margin: 0 }}>Entrega — {delivery.order.orderNumber}</h1>
+        <span>{delivery.order.user.firstName} {delivery.order.user.lastName} · {delivery.order.business.tradeName}</span>
         <span className={`bingo-badge badge-${delivery.status.toLowerCase()}`}>{delivery.status}</span>
-      </p>
+      </div>
 
       {error && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>

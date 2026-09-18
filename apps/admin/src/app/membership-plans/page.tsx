@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
+import IconButton from '@/components/IconButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface MembershipPlan {
@@ -95,12 +96,7 @@ export default function MembershipPlansPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Planes de Membresía</h1>
-      <p className="bingo-page-subtitle">
-        Catálogo que define lo que un negocio paga por presencia en el Directorio — dominio
-        financiero separado del Marketplace. El plan marcado &quot;Default&quot; es el que reciben
-        los negocios al aprobarse.
-      </p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Planes de Membresía</h1>
 
       {error && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>
@@ -213,18 +209,15 @@ export default function MembershipPlansPage() {
                   <td>
                     <span className={`bingo-badge badge-${p.status.toLowerCase()}`}>{p.status}</span>
                   </td>
-                  <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {!p.isDefault && (
-                      <button className="bingo-button secondary" onClick={() => makeDefault(p)}>
-                        Hacer default
-                      </button>
-                    )}
-                    <button
-                      className={`bingo-button ${p.status === 'ACTIVE' ? 'danger' : ''}`}
-                      onClick={() => toggleStatus(p)}
-                    >
-                      {p.status === 'ACTIVE' ? 'Desactivar' : 'Activar'}
-                    </button>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {!p.isDefault && <IconButton icon="star" label="Hacer default" onClick={() => makeDefault(p)} />}
+                      <IconButton
+                        icon={p.status === 'ACTIVE' ? 'reject' : 'approve'}
+                        label={p.status === 'ACTIVE' ? 'Desactivar' : 'Activar'}
+                        onClick={() => toggleStatus(p)}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -14,7 +14,10 @@ export class AdminCouponsService {
   constructor(private readonly prisma: PrismaService) {}
 
   list() {
-    return this.prisma.adminCoupon.findMany({ orderBy: { createdAt: 'desc' } });
+    return this.prisma.adminCoupon.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { redemptions: true } } },
+    });
   }
 
   async getOne(id: string) {

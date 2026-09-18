@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
+import IconButton from '@/components/IconButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 type AdminCouponType =
@@ -29,6 +30,7 @@ interface AdminCoupon {
   usageLimit: number | null;
   usagePerBusiness: number | null;
   status: 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'EXPIRED' | 'CANCELLED';
+  _count: { redemptions: number };
 }
 
 const EMPTY_FORM = {
@@ -105,12 +107,7 @@ export default function AdminCouponsPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Cupones de Plataforma</h1>
-      <p className="bingo-page-subtitle">
-        Sólo afectan la facturación de Membresía de un negocio — nunca el Marketplace ni los
-        cupones propios de cada tienda (dominios financieros separados, RULE 16/17). &quot;Meses
-        gratis&quot; extiende de verdad el periodo de facturación, nunca es simulado.
-      </p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Cupones de Plataforma</h1>
 
       {error && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>
@@ -257,6 +254,7 @@ export default function AdminCouponsPage() {
                 <th>Tipo</th>
                 <th>Valor</th>
                 <th>Vigencia</th>
+                <th>Límites</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
@@ -280,25 +278,19 @@ export default function AdminCouponsPage() {
                     {new Date(c.startDate).toLocaleDateString('es-EC')} –{' '}
                     {new Date(c.expirationDate).toLocaleDateString('es-EC')}
                   </td>
+                  <td style={{ fontSize: 12 }}>
+                    <div>{c._count.redemptions} redimido(s){c.usageLimit != null ? ` / ${c.usageLimit} global` : ''}</div>
+                    {c.usagePerBusiness != null && <div style={{ color: '#7f8ea3' }}>máx. {c.usagePerBusiness} por negocio</div>}
+                  </td>
                   <td>
                     <span className={`bingo-badge badge-${c.status.toLowerCase()}`}>{c.status}</span>
                   </td>
-                  <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {c.status !== 'ACTIVE' && (
-                      <button className="bingo-button" onClick={() => setStatus(c, 'ACTIVE')}>
-                        Activar
-                      </button>
-                    )}
-                    {c.status === 'ACTIVE' && (
-                      <button className="bingo-button secondary" onClick={() => setStatus(c, 'PAUSED')}>
-                        Pausar
-                      </button>
-                    )}
-                    {c.status !== 'CANCELLED' && (
-                      <button className="bingo-button danger" onClick={() => setStatus(c, 'CANCELLED')}>
-                        Cancelar
-                      </button>
-                    )}
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {c.status !== 'ACTIVE' && <IconButton icon="approve" label="Activar" onClick={() => setStatus(c, 'ACTIVE')} />}
+                      {c.status === 'ACTIVE' && <IconButton icon="pause" label="Pausar" onClick={() => setStatus(c, 'PAUSED')} />}
+                      {c.status !== 'CANCELLED' && <IconButton icon="reject" label="Cancelar" onClick={() => setStatus(c, 'CANCELLED')} />}
+                    </div>
                   </td>
                 </tr>
               ))}

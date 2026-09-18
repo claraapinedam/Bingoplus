@@ -62,6 +62,13 @@ button {
   color: var(--bingo-teal);
 }
 
+.bingo-logo-img {
+  height: 30px;
+  width: auto;
+  margin-bottom: 32px;
+  align-self: flex-start;
+}
+
 .bingo-nav-toggle {
   width: 100%;
   display: flex;
@@ -179,6 +186,9 @@ button {
 .badge-rejected { background: #fdecec; color: var(--bingo-error); }
 .badge-suspended { background: #fdecec; color: var(--bingo-error); }
 .badge-pending_approval { background: #fff3e0; color: var(--bingo-warning); }
+.badge-pending_signature { background: #fff3e0; color: var(--bingo-warning); }
+.badge-signed { background: #e3f8ec; color: var(--bingo-success); }
+.badge-superseded { background: #eef1f5; color: #7f8ea3; }
 .badge-available { background: #e3f8ec; color: var(--bingo-success); }
 .badge-busy { background: #fff3e0; color: var(--bingo-warning); }
 .badge-offline { background: #eef1f5; color: #7f8ea3; }
@@ -239,6 +249,31 @@ button {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Circular icon-only row actions — the compact alternative to .bingo-button.small for table
+   "Acciones" columns, several fit side by side with no wasted label width. */
+.bingo-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.bingo-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bingo-icon-btn.view { background: #eef1f5; color: var(--bingo-navy); }
+.bingo-icon-btn.approve { background: #e3f8ec; color: var(--bingo-success); }
+.bingo-icon-btn.reject { background: #fdecec; color: var(--bingo-error); }
+.bingo-icon-btn.neutral { background: #fff3e0; color: var(--bingo-warning); }
 
 .bingo-input {
   border: 1px solid #e0e4ea;

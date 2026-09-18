@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AdminShell from '@/components/AdminShell';
+import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
@@ -99,15 +100,13 @@ export default function AdminPaymentDetailPage() {
 
   return (
     <AdminShell>
-      <button className="bingo-button secondary" style={{ marginBottom: 16, padding: '8px 14px', fontSize: 13 }} onClick={() => router.back()}>
-        ← Volver
-      </button>
+      <BackButton onClick={() => router.back()} />
 
-      <h1 className="bingo-page-title">Pago — {payment.order.orderNumber}</h1>
-      <p className="bingo-page-subtitle">
-        {payment.order.user.firstName} {payment.order.user.lastName} · {payment.order.business.tradeName} ·{' '}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
+        <h1 className="bingo-page-title" style={{ margin: 0 }}>Pago — {payment.order.orderNumber}</h1>
+        <span>{payment.order.user.firstName} {payment.order.user.lastName} · {payment.order.business.tradeName}</span>
         <span className={`bingo-badge badge-${payment.status.toLowerCase()}`}>{payment.status}</span>
-      </p>
+      </div>
 
       {error && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>

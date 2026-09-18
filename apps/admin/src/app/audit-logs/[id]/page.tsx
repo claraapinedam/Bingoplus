@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AdminShell from '@/components/AdminShell';
+import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface AuditLogDetail {
@@ -71,14 +72,12 @@ export default function AdminAuditLogDetailPage() {
 
   return (
     <AdminShell>
-      <button className="bingo-button secondary" style={{ marginBottom: 16, padding: '8px 14px', fontSize: 13 }} onClick={() => router.push('/audit-logs')}>
-        ← Volver a Auditoría
-      </button>
+      <BackButton onClick={() => router.push('/audit-logs')} label="Volver a Auditoría" />
 
-      <h1 className="bingo-page-title">{log.action}</h1>
-      <p className="bingo-page-subtitle">
-        {log.entityType} · {log.entityId} · {new Date(log.createdAt).toLocaleString('es-EC')}
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
+        <h1 className="bingo-page-title" style={{ margin: 0 }}>{log.action}</h1>
+        <span>{log.entityType} · {log.entityId} · {new Date(log.createdAt).toLocaleString('es-EC')}</span>
+      </div>
 
       <div className="bingo-card" style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 13, marginBottom: 4 }}>

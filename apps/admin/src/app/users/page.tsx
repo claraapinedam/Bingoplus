@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
 import PasswordField, { passwordMeetsPolicy } from '@/components/PasswordField';
 import EmailField, { isValidEmail } from '@/components/EmailField';
+import IconButton from '@/components/IconButton';
 import { apiFetch, decodeRoles, getAccessToken, ApiError } from '@/lib/api';
 
 interface StaffUser {
@@ -108,11 +109,7 @@ export default function UsersPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Usuarios</h1>
-      <p className="bingo-page-subtitle">
-        Cuentas con acceso a este panel administrativo (ADMIN / SUPER_ADMIN / USER). Los
-        compradores están en Clientes y los repartidores en Riders.
-      </p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Usuarios</h1>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap' }}>
         <input
@@ -203,13 +200,12 @@ export default function UsersPage() {
                     </span>
                   </td>
                   <td>
-                    <button
-                      className={`bingo-button ${u.isActive ? 'danger' : ''}`}
+                    <IconButton
+                      icon={u.isActive ? 'reject' : 'approve'}
+                      label={u.isActive ? 'Suspender' : 'Activar'}
                       disabled={actingOn === u.id}
                       onClick={() => toggleActive(u)}
-                    >
-                      {u.isActive ? 'Suspender' : 'Activar'}
-                    </button>
+                    />
                   </td>
                 </tr>
               ))}

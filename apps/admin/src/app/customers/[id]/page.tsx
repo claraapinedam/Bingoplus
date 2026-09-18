@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import AdminShell from '@/components/AdminShell';
 import RatingCell from '@/components/RatingCell';
 import DeliveriesTab from '@/components/customer-tabs/DeliveriesTab';
+import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
@@ -90,24 +91,20 @@ export default function AdminCustomerDetailPage() {
 
   return (
     <AdminShell>
-      <button className="bingo-button secondary" style={{ marginBottom: 16, padding: '8px 14px', fontSize: 13 }} onClick={() => router.back()}>
-        ← Volver
-      </button>
+      <BackButton onClick={() => router.back()} />
 
-      <h1 className="bingo-page-title">
-        {customer.firstName} {customer.lastName}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
+        <h1 className="bingo-page-title" style={{ margin: 0 }}>
+          {customer.firstName} {customer.lastName}
+        </h1>
         {customer.roles.includes('BUSINESS_OWNER') && (
-          <span className="bingo-badge badge-approved" style={{ fontSize: 11, marginLeft: 10, verticalAlign: 'middle' }}>
-            Dueño de negocio
-          </span>
+          <span className="bingo-badge badge-approved" style={{ fontSize: 11 }}>Dueño de negocio</span>
         )}
-      </h1>
-      <p className="bingo-page-subtitle">
-        {customer.email} · {customer.phone ?? 'sin teléfono'} ·{' '}
+        <span>{customer.email} · {customer.phone ?? 'sin teléfono'}</span>
         <span className={`bingo-badge ${customer.isActive ? 'badge-active' : 'badge-suspended'}`}>
           {customer.isActive ? 'Activo' : 'Suspendido'}
         </span>
-      </p>
+      </div>
 
       {error && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>

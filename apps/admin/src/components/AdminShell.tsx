@@ -9,11 +9,6 @@ const NAV_TOP = [
   { href: '/analytics', label: 'Analíticas' },
   { href: '/deliveries', label: 'Delivery' },
   { href: '/customers', label: 'Clientes' },
-  { href: '/services', label: 'Servicios' },
-  { href: '/bookings', label: 'Reservas' },
-  { href: '/promotions', label: 'Promociones' },
-  { href: '/reviews', label: 'Reseñas' },
-  { href: '/pet-friendly-places', label: 'Espacios Pet Friendly' },
 ];
 
 const COLLAPSIBLE_MENUS = [
@@ -33,6 +28,15 @@ const COLLAPSIBLE_MENUS = [
     items: [
       { href: '/riders/requests', label: 'Solicitudes de Riders' },
       { href: '/riders', label: 'Riders' },
+    ],
+  },
+  {
+    key: 'pet-friendly',
+    label: 'Pet Friendly',
+    matchPrefix: '/pet-friendly-places',
+    items: [
+      { href: '/pet-friendly-places/requests', label: 'Nuevos espacios pet friendly' },
+      { href: '/pet-friendly-places', label: 'Espacios pet friendly' },
     ],
   },
   {
@@ -101,9 +105,8 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   return (
     <div className="bingo-shell">
       <aside className="bingo-sidebar">
-        <div className="bingo-logo">
-          BINGO<span className="plus">+</span>
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
         {NAV_TOP.map((item) => (
           <a
             key={item.href}

@@ -2,57 +2,84 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
+import DateRangeFilter, { DateRangeFilterValue } from '@/components/DateRangeFilter';
+import DonutChart from '@/components/DonutChart';
 import { apiFetch, decodeRoles, getAccessToken } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
 
-const PRESETS = [
-  { value: 'today', label: 'Hoy' },
-  { value: 'last_7_days', label: 'Últimos 7 días' },
-  { value: 'last_30_days', label: 'Últimos 30 días' },
-  { value: 'this_month', label: 'Este mes' },
-  { value: 'last_month', label: 'Mes anterior' },
-];
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  CREATED: 'Creado',
+  PAYMENT_PENDING: 'Pago pendiente',
+  PAID: 'Pagado',
+  CONFIRMED: 'Confirmado',
+  PREPARING: 'Preparando',
+  READY_FOR_PICKUP: 'Listo para retiro',
+  COMPLETED: 'Completado',
+  CANCELLED: 'Cancelado',
+};
+
+const ORDER_STATUS_COLORS: Record<string, string> = {
+  CREATED: '#c7cdd6',
+  PAYMENT_PENDING: '#f5a524',
+  PAID: '#16a085',
+  CONFIRMED: '#4b8bf5',
+  PREPARING: '#f5a524',
+  READY_FOR_PICKUP: '#8b5cf6',
+  COMPLETED: '#22a06b',
+  CANCELLED: '#d64545',
+};
+
+const BUSINESS_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Pendiente',
+  UNDER_REVIEW: 'En revisión',
+  APPROVED: 'Aprobado (sin firmar)',
+  ACTIVE: 'Activo',
+  SUSPENDED: 'Suspendido',
+  REJECTED: 'Rechazado',
+};
+
+const BUSINESS_STATUS_COLORS: Record<string, string> = {
+  PENDING: '#c7cdd6',
+  UNDER_REVIEW: '#f5a524',
+  APPROVED: '#4b8bf5',
+  ACTIVE: '#22a06b',
+  SUSPENDED: '#e08b3f',
+  REJECTED: '#d64545',
+};
 
 interface AdminAnalytics {
   marketplace: {
     gmv: number;
     ordersCount: number;
-    completedOrders: number;
-    cancelledOrders: number;
     averageTicket: number;
-    deliveryVsPickup: { delivery: number; pickup: number };
     estimatedCommissionRevenue: number;
     discountsGranted: number;
+    ordersByStatus: { status: string; count: number }[];
+    deliveryVsPickup: { delivery: number; pickup: number };
   };
   directory: {
-    activeBusinesses: number;
-    newBusinesses: number;
+    businessesByStatus: { status: string; count: number }[];
     activeMemberships: number;
-    cancelledMemberships: number;
-    businessesByCategory: { categoryId: string; name: string; count: number }[];
-    businessesByCapability: Record<string, number>;
-  };
-  services: {
-    bookingsCount: number;
-    completedBookings: number;
-    cancelledBookings: number;
-    noShowBookings: number;
-    topServices: { serviceId: string; name: string; business: string; bookingsCount: number }[];
+    trialMemberships: number;
+    cancelledMembershipsTotal: number;
+    activeMembershipValue: number;
+    trialMembershipValue: number;
   };
   delivery: {
     deliveriesCount: number;
     completedDeliveries: number;
     cancelledDeliveries: number;
     failedDeliveries: number;
+    inProgressDeliveries: number;
     averageDurationMinutes: number | null;
     averageDistanceKm: number | null;
-    activeRiders: number;
-    incidents: number;
+    revenue: number;
   };
-  coupons: {
-    businessCoupons: { active: number; redemptions: number; discountGranted: number };
-    adminCoupons: { active: number; redemptions: number };
+  platformCoupons: {
+    active: number;
+    totalCapacity: number;
+    totalRedeemed: number;
   };
 }
 
@@ -69,13 +96,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <section style={{ marginBottom: 28 }}>
       <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 12, color: 'var(--bingo-navy)' }}>{title}</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>{children}</div>
+      {children}
     </section>
   );
 }
 
 export default function AdminAnalyticsPage() {
-  const [preset, setPreset] = useState('last_30_days');
+  const [range, setRange] = useState<DateRangeFilterValue>({ preset: 'last_30_days' });
   const [data, setData] = useState<AdminAnalytics | null>(null);
   // Defense in depth only — the backend's RolesGuard is the real gate (AdminAnalyticsController
   // never grants RoleName.USER). This just avoids a USER account hitting an infinite "Cargando…"
@@ -83,8 +110,12 @@ export default function AdminAnalyticsPage() {
   const [restricted, setRestricted] = useState(false);
 
   const load = useCallback(() => {
-    apiFetch<AdminAnalytics>(`/admin/analytics?preset=${preset}`).then(setData).catch(() => setData(null));
-  }, [preset]);
+    const params = new URLSearchParams();
+    if (range.preset) params.set('preset', range.preset);
+    if (range.from) params.set('from', range.from);
+    if (range.to) params.set('to', range.to);
+    apiFetch<AdminAnalytics>(`/admin/analytics?${params}`).then(setData).catch(() => setData(null));
+  }, [range]);
 
   useEffect(() => {
     const token = getAccessToken();
@@ -107,112 +138,127 @@ export default function AdminAnalyticsPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Analíticas</h1>
-      <p className="bingo-page-subtitle">Métricas reales de toda la plataforma — nunca estimaciones inventadas.</p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 20 }}>Analíticas</h1>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {PRESETS.map((p) => (
-          <button key={p.value} onClick={() => setPreset(p.value)} className={`bingo-button ${preset === p.value ? '' : 'secondary'}`} style={{ padding: '8px 14px', fontSize: 13 }}>
-            {p.label}
-          </button>
-        ))}
-      </div>
+      <DateRangeFilter value={range} onChange={setRange} />
 
       {data === null ? (
         <p>Cargando…</p>
       ) : (
         <>
           <Section title="Marketplace">
-            <Kpi label="GMV" value={currencyFormatter.format(data.marketplace.gmv)} />
-            <Kpi label="Pedidos" value={data.marketplace.ordersCount} />
-            <Kpi label="Completados" value={data.marketplace.completedOrders} />
-            <Kpi label="Cancelados" value={data.marketplace.cancelledOrders} />
-            <Kpi label="Ticket promedio" value={currencyFormatter.format(data.marketplace.averageTicket)} />
-            <Kpi label="Delivery" value={data.marketplace.deliveryVsPickup.delivery} />
-            <Kpi label="Pickup" value={data.marketplace.deliveryVsPickup.pickup} />
-            <Kpi label="Comisión estimada" value={currencyFormatter.format(data.marketplace.estimatedCommissionRevenue)} />
-            <Kpi label="Descuentos otorgados" value={currencyFormatter.format(data.marketplace.discountsGranted)} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
+              <Kpi label="GMV" value={currencyFormatter.format(data.marketplace.gmv)} />
+              <Kpi label="Ticket promedio" value={currencyFormatter.format(data.marketplace.averageTicket)} />
+              <Kpi label="Comisión estimada" value={currencyFormatter.format(data.marketplace.estimatedCommissionRevenue)} />
+              <Kpi label="Descuentos otorgados" value={currencyFormatter.format(data.marketplace.discountsGranted)} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <div className="bingo-card" style={{ flex: '1 1 320px' }}>
+                <h3 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 14px', color: 'var(--bingo-navy)' }}>Pedidos por estado</h3>
+                <DonutChart
+                  centerValue={data.marketplace.ordersCount}
+                  centerLabel="pedidos"
+                  slices={data.marketplace.ordersByStatus.map((s) => ({
+                    label: ORDER_STATUS_LABELS[s.status] ?? s.status,
+                    value: s.count,
+                    color: ORDER_STATUS_COLORS[s.status] ?? '#9aa5b1',
+                  }))}
+                />
+              </div>
+              <div className="bingo-card" style={{ flex: '1 1 320px' }}>
+                <h3 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 14px', color: 'var(--bingo-navy)' }}>Delivery vs. retiro en tienda</h3>
+                <DonutChart
+                  centerValue={data.marketplace.deliveryVsPickup.delivery + data.marketplace.deliveryVsPickup.pickup}
+                  centerLabel="pedidos"
+                  slices={[
+                    { label: 'Delivery', value: data.marketplace.deliveryVsPickup.delivery, color: '#16a085' },
+                    { label: 'Retiro en tienda', value: data.marketplace.deliveryVsPickup.pickup, color: '#4b8bf5' },
+                  ]}
+                />
+              </div>
+            </div>
           </Section>
 
           <Section title="Directorio">
-            <Kpi label="Negocios activos" value={data.directory.activeBusinesses} />
-            <Kpi label="Nuevos en el período" value={data.directory.newBusinesses} />
-            <Kpi label="Membresías activas" value={data.directory.activeMemberships} />
-            <Kpi label="Membresías canceladas" value={data.directory.cancelledMemberships} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
+              <Kpi label="Valor activo en membresías" value={currencyFormatter.format(data.directory.activeMembershipValue)} />
+              <Kpi label="Valor en trial (no confirmado)" value={currencyFormatter.format(data.directory.trialMembershipValue)} />
+            </div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <div className="bingo-card" style={{ flex: '1 1 320px' }}>
+                <h3 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 14px', color: 'var(--bingo-navy)' }}>Negocios por estado</h3>
+                <DonutChart
+                  centerValue={data.directory.businessesByStatus.reduce((sum, s) => sum + s.count, 0)}
+                  centerLabel="negocios"
+                  slices={data.directory.businessesByStatus.map((s) => ({
+                    label: BUSINESS_STATUS_LABELS[s.status] ?? s.status,
+                    value: s.count,
+                    color: BUSINESS_STATUS_COLORS[s.status] ?? '#9aa5b1',
+                  }))}
+                />
+              </div>
+              <div className="bingo-card" style={{ flex: '1 1 320px' }}>
+                <h3 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 14px', color: 'var(--bingo-navy)' }}>Membresías por estado</h3>
+                <DonutChart
+                  centerValue={data.directory.activeMemberships + data.directory.cancelledMembershipsTotal + data.directory.trialMemberships}
+                  centerLabel="membresías"
+                  slices={[
+                    { label: 'Activas (pagando)', value: data.directory.activeMemberships, color: '#22a06b' },
+                    { label: 'Gratuitas (trial)', value: data.directory.trialMemberships, color: '#4b8bf5' },
+                    { label: 'Canceladas', value: data.directory.cancelledMembershipsTotal, color: '#d64545' },
+                  ]}
+                />
+              </div>
+            </div>
           </Section>
 
-          <Section title="Servicios y Reservas">
-            <Kpi label="Reservas" value={data.services.bookingsCount} />
-            <Kpi label="Completadas" value={data.services.completedBookings} />
-            <Kpi label="Canceladas" value={data.services.cancelledBookings} />
-            <Kpi label="No asistió" value={data.services.noShowBookings} />
+          <Section title="Cupones de Plataforma">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
+              <Kpi label="Cupones activos" value={data.platformCoupons.active} />
+            </div>
+            {data.platformCoupons.totalCapacity > 0 && (
+              <div className="bingo-card" style={{ maxWidth: 420 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 14px', color: 'var(--bingo-navy)' }}>
+                  Uso de cupones activos (de {data.platformCoupons.totalCapacity} disponibles)
+                </h3>
+                <DonutChart
+                  centerValue={data.platformCoupons.totalRedeemed}
+                  centerLabel="redimidos"
+                  slices={[
+                    { label: 'Redimidos', value: data.platformCoupons.totalRedeemed, color: '#4b8bf5' },
+                    {
+                      label: 'Disponibles',
+                      value: Math.max(data.platformCoupons.totalCapacity - data.platformCoupons.totalRedeemed, 0),
+                      color: '#e0e4ea',
+                    },
+                  ]}
+                />
+              </div>
+            )}
           </Section>
 
           <Section title="Delivery">
-            <Kpi label="Entregas" value={data.delivery.deliveriesCount} />
-            <Kpi label="Completadas" value={data.delivery.completedDeliveries} />
-            <Kpi label="Canceladas" value={data.delivery.cancelledDeliveries} />
-            <Kpi label="Fallidas" value={data.delivery.failedDeliveries} />
-            <Kpi label="Duración promedio" value={data.delivery.averageDurationMinutes != null ? `${data.delivery.averageDurationMinutes} min` : '—'} />
-            <Kpi label="Distancia promedio" value={data.delivery.averageDistanceKm != null ? `${data.delivery.averageDistanceKm} km` : '—'} />
-            <Kpi label="Riders activos" value={data.delivery.activeRiders} />
-            <Kpi label="Incidencias" value={data.delivery.incidents} />
-          </Section>
-
-          <Section title="Cupones de Negocios">
-            <Kpi label="Activos" value={data.coupons.businessCoupons.active} />
-            <Kpi label="Redenciones" value={data.coupons.businessCoupons.redemptions} />
-            <Kpi label="Descuento otorgado" value={currencyFormatter.format(data.coupons.businessCoupons.discountGranted)} />
-          </Section>
-
-          <Section title="Cupones de Plataforma (Membresías)">
-            <Kpi label="Activos" value={data.coupons.adminCoupons.active} />
-            <Kpi label="Redenciones" value={data.coupons.adminCoupons.redemptions} />
-          </Section>
-
-          {data.services.topServices.length > 0 && (
-            <div className="bingo-card" style={{ marginBottom: 20 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Servicios más reservados</h2>
-              <table className="bingo-table">
-                <thead>
-                  <tr>
-                    <th>Servicio</th>
-                    <th>Negocio</th>
-                    <th>Reservas</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.services.topServices.map((s) => (
-                    <tr key={s.serviceId}>
-                      <td>{s.name}</td>
-                      <td>{s.business}</td>
-                      <td>{s.bookingsCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
+              <Kpi label="Ingresos por delivery" value={currencyFormatter.format(data.delivery.revenue)} />
+              <Kpi label="Duración promedio" value={data.delivery.averageDurationMinutes != null ? `${data.delivery.averageDurationMinutes} min` : '—'} />
+              <Kpi label="Distancia promedio" value={data.delivery.averageDistanceKm != null ? `${data.delivery.averageDistanceKm} km` : '—'} />
             </div>
-          )}
-
-          <div className="bingo-card">
-            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Negocios por categoría (activos)</h2>
-            <table className="bingo-table">
-              <thead>
-                <tr>
-                  <th>Categoría</th>
-                  <th>Negocios</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.directory.businessesByCategory.map((c) => (
-                  <tr key={c.categoryId}>
-                    <td>{c.name}</td>
-                    <td>{c.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            <div className="bingo-card" style={{ maxWidth: 420 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 14px', color: 'var(--bingo-navy)' }}>Entregas por estado</h3>
+              <DonutChart
+                centerValue={data.delivery.deliveriesCount}
+                centerLabel="entregas"
+                slices={[
+                  { label: 'Completadas', value: data.delivery.completedDeliveries, color: '#22a06b' },
+                  { label: 'En curso', value: data.delivery.inProgressDeliveries, color: '#4b8bf5' },
+                  { label: 'Canceladas', value: data.delivery.cancelledDeliveries, color: '#d64545' },
+                  { label: 'Fallidas', value: data.delivery.failedDeliveries, color: '#f5a524' },
+                ]}
+              />
+            </div>
+          </Section>
         </>
       )}
     </AdminShell>

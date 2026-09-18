@@ -40,8 +40,7 @@ export default function AdminNotificationsPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Notificaciones</h1>
-      <p className="bingo-page-subtitle">{unreadCount} sin leer</p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Notificaciones</h1>
 
       {unreadCount > 0 && (
         <button className="bingo-button secondary" style={{ marginBottom: 16 }} onClick={markAllRead}>

@@ -35,8 +35,7 @@ export default function AdminAuditLogsPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Auditoría</h1>
-      <p className="bingo-page-subtitle">{total} acción(es) registradas — de solo lectura, nunca editable.</p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Auditoría</h1>
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <input className="bingo-input" style={{ maxWidth: 280 }} placeholder="Buscar acción, entidad o ID…" value={search} onChange={(e) => setSearch(e.target.value)} />
