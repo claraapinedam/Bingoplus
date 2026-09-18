@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AdminShell from '@/components/AdminShell';
+import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
@@ -53,15 +54,13 @@ export default function AdminBookingDetailPage() {
 
   return (
     <AdminShell>
-      <button className="bingo-button secondary" style={{ marginBottom: 16, padding: '8px 14px', fontSize: 13 }} onClick={() => router.back()}>
-        ← Volver
-      </button>
+      <BackButton onClick={() => router.back()} />
 
-      <h1 className="bingo-page-title">{booking.service.name}</h1>
-      <p className="bingo-page-subtitle">
-        <a href={`/businesses/${booking.business.id}`}>{booking.business.tradeName}</a> ·{' '}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
+        <h1 className="bingo-page-title" style={{ margin: 0 }}>{booking.service.name}</h1>
+        <a href={`/businesses/${booking.business.id}`}>{booking.business.tradeName}</a>
         <span className={`bingo-badge badge-${booking.status.toLowerCase()}`}>{booking.status}</span>
-      </p>
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div className="bingo-card">

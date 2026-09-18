@@ -9,6 +9,11 @@ import CouponsTab from '@/components/business-tabs/CouponsTab';
 import PaymentsTab from '@/components/business-tabs/PaymentsTab';
 import CommissionsTab from '@/components/business-tabs/CommissionsTab';
 import ContractTab from '@/components/business-tabs/ContractTab';
+import ServicesTab from '@/components/business-tabs/ServicesTab';
+import BookingsTab from '@/components/business-tabs/BookingsTab';
+import PromotionsTab from '@/components/business-tabs/PromotionsTab';
+import ReviewsList from '@/components/ReviewsList';
+import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 type CapabilityType =
@@ -93,9 +98,13 @@ const TABS = [
   { value: 'overview', label: 'Resumen' },
   { value: 'products', label: 'Productos' },
   { value: 'orders', label: 'Pedidos' },
+  { value: 'services', label: 'Servicios' },
+  { value: 'bookings', label: 'Reservas' },
+  { value: 'promotions', label: 'Promociones' },
   { value: 'coupons', label: 'Cupones' },
   { value: 'payments', label: 'Pagos' },
   { value: 'commissions', label: 'Comisiones' },
+  { value: 'reviews', label: 'Reseñas' },
   { value: 'contract', label: 'Contrato' },
 ];
 
@@ -227,20 +236,12 @@ export default function BusinessDetailPage() {
 
   return (
     <AdminShell>
-      <button
-        className="bingo-button secondary"
-        style={{ marginBottom: 16, padding: '8px 14px', fontSize: 13 }}
-        onClick={() => router.back()}
-      >
-        ← Volver
-      </button>
+      <BackButton onClick={() => router.back()} />
 
-      <h1 className="bingo-page-title">{business.tradeName}</h1>
-      <p className="bingo-page-subtitle">
-        {business.legalName} · {business.category?.name ?? '—'} · {business.city}
-        {' · '}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
+        <h1 className="bingo-page-title" style={{ margin: 0 }}>{business.tradeName}</h1>
         <span className={`bingo-badge badge-${business.status.toLowerCase()}`}>{business.status}</span>
-      </p>
+      </div>
 
       {error && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>
@@ -434,9 +435,13 @@ export default function BusinessDetailPage() {
 
       {tab === 'products' && <ProductsTab businessId={business.id} />}
       {tab === 'orders' && <OrdersTab businessId={business.id} />}
+      {tab === 'services' && <ServicesTab businessId={business.id} />}
+      {tab === 'bookings' && <BookingsTab businessId={business.id} />}
+      {tab === 'promotions' && <PromotionsTab businessId={business.id} />}
       {tab === 'coupons' && <CouponsTab businessId={business.id} />}
       {tab === 'payments' && <PaymentsTab businessId={business.id} />}
       {tab === 'commissions' && <CommissionsTab businessId={business.id} />}
+      {tab === 'reviews' && <ReviewsList targetType="BUSINESS" targetId={business.id} />}
       {tab === 'contract' && <ContractTab businessId={business.id} />}
     </AdminShell>
   );

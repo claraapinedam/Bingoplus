@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
 import RatingCell from '@/components/RatingCell';
+import IconButton from '@/components/IconButton';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api';
 
 interface Business {
@@ -88,11 +89,7 @@ export default function BusinessRequestsPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Solicitudes de Negocios</h1>
-      <p className="bingo-page-subtitle">
-        {total} solicitud(es). Al aprobar, se genera un contrato que el negocio debe firmar desde su app — se
-        activa automáticamente al firmarlo.
-      </p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Solicitudes de Negocios</h1>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {STATUS_TABS.map((t) => (
@@ -148,37 +145,19 @@ export default function BusinessRequestsPage() {
                     <br />
                     {b.phone}
                   </td>
-                  <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <a href={`/businesses/${b.id}`} className="bingo-button secondary">
-                      Ver
-                    </a>
-                    {(b.status === 'PENDING' || b.status === 'UNDER_REVIEW') && (
-                      <>
-                        <button
-                          className="bingo-button"
-                          disabled={actingOn === b.id}
-                          onClick={() => approve(b.id)}
-                        >
-                          Aprobar
-                        </button>
-                        <button
-                          className="bingo-button danger"
-                          disabled={actingOn === b.id}
-                          onClick={() => runAction(b.id, 'reject')}
-                        >
-                          Rechazar
-                        </button>
-                      </>
-                    )}
-                    {b.status === 'APPROVED' && (
-                      <button
-                        className="bingo-button"
-                        disabled={actingOn === b.id}
-                        onClick={() => runAction(b.id, 'activate')}
-                      >
-                        Activar
-                      </button>
-                    )}
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <IconButton icon="view" label="Ver" href={`/businesses/${b.id}`} />
+                      {(b.status === 'PENDING' || b.status === 'UNDER_REVIEW') && (
+                        <>
+                          <IconButton icon="approve" label="Aprobar" disabled={actingOn === b.id} onClick={() => approve(b.id)} />
+                          <IconButton icon="reject" label="Rechazar" disabled={actingOn === b.id} onClick={() => runAction(b.id, 'reject')} />
+                        </>
+                      )}
+                      {b.status === 'APPROVED' && (
+                        <IconButton icon="approve" label="Activar" disabled={actingOn === b.id} onClick={() => runAction(b.id, 'activate')} />
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

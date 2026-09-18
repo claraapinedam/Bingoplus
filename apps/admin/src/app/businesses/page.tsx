@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
 import RatingCell from '@/components/RatingCell';
+import IconButton from '@/components/IconButton';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api';
 
 interface Business {
@@ -73,11 +74,7 @@ export default function BusinessesPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Negocios</h1>
-      <p className="bingo-page-subtitle">
-        {total} negocio(s) activo(s) o suspendido(s). Elige un negocio para ver sus productos, pedidos, cupones,
-        pagos y comisiones por separado.
-      </p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Negocios</h1>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {STATUS_TABS.map((tab) => (
@@ -145,28 +142,16 @@ export default function BusinessesPage() {
                     <br />
                     {b.phone}
                   </td>
-                  <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <a href={`/businesses/${b.id}`} className="bingo-button secondary">
-                      Ver
-                    </a>
-                    {b.status === 'ACTIVE' && (
-                      <button
-                        className="bingo-button danger"
-                        disabled={actingOn === b.id}
-                        onClick={() => runAction(b.id, 'suspend')}
-                      >
-                        Suspender
-                      </button>
-                    )}
-                    {b.status === 'SUSPENDED' && (
-                      <button
-                        className="bingo-button"
-                        disabled={actingOn === b.id}
-                        onClick={() => runAction(b.id, 'activate')}
-                      >
-                        Reactivar
-                      </button>
-                    )}
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <IconButton icon="view" label="Ver" href={`/businesses/${b.id}`} />
+                      {b.status === 'ACTIVE' && (
+                        <IconButton icon="reject" label="Suspender" disabled={actingOn === b.id} onClick={() => runAction(b.id, 'suspend')} />
+                      )}
+                      {b.status === 'SUSPENDED' && (
+                        <IconButton icon="approve" label="Reactivar" disabled={actingOn === b.id} onClick={() => runAction(b.id, 'activate')} />
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

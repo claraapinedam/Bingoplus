@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import AdminShell from '@/components/AdminShell';
 import { apiFetchPage } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
@@ -21,48 +20,39 @@ interface BookingRow {
   startTime: string;
   price: string | number;
   service: { name: string };
-  business: { tradeName: string };
   user: { firstName: string; lastName: string };
   pet: { name: string } | null;
 }
 
-export default function AdminBookingsPage() {
+export default function BookingsTab({ businessId }: { businessId: string }) {
   const [status, setStatus] = useState('');
-  const [search, setSearch] = useState('');
   const [bookings, setBookings] = useState<BookingRow[] | null>(null);
   const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
-    const params = new URLSearchParams({ pageSize: '100' });
+    const params = new URLSearchParams({ pageSize: '100', businessId });
     if (status) params.set('status', status);
-    if (search) params.set('search', search);
     const result = await apiFetchPage<BookingRow>(`/admin/bookings?${params}`);
     setBookings(result.data);
     setTotal(result.meta.total);
-  }, [status, search]);
+  }, [businessId, status]);
 
   useEffect(() => {
-    const t = setTimeout(load, 250);
-    return () => clearTimeout(t);
+    load();
   }, [load]);
 
   return (
-    <AdminShell>
-      <h1 className="bingo-page-title">Reservas</h1>
-      <p className="bingo-page-subtitle">
-        {total} reserva(s) — supervisión global del Booking Engine. Solo lectura: Customer y Business gestionan sus
-        propias reservas.
+    <div>
+      <p style={{ fontSize: 13, color: '#7f8ea3', marginBottom: 14 }}>
+        {total} reserva(s) — solo lectura, Customer y Business gestionan sus propias reservas.
       </p>
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input className="bingo-input" style={{ maxWidth: 280 }} placeholder="Buscar cliente o servicio…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {STATUS_TABS.map((t) => (
-            <button key={t.value} onClick={() => setStatus(t.value)} className={`bingo-button ${status === t.value ? '' : 'secondary'}`} style={{ padding: '8px 14px', fontSize: 13 }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        {STATUS_TABS.map((t) => (
+          <button key={t.value} onClick={() => setStatus(t.value)} className={`bingo-button ${status === t.value ? '' : 'secondary'}`} style={{ padding: '8px 14px', fontSize: 13 }}>
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <div className="bingo-card">
@@ -75,7 +65,6 @@ export default function AdminBookingsPage() {
             <thead>
               <tr>
                 <th>Servicio</th>
-                <th>Negocio</th>
                 <th>Cliente</th>
                 <th>Mascota</th>
                 <th>Fecha</th>
@@ -87,7 +76,6 @@ export default function AdminBookingsPage() {
               {bookings.map((b) => (
                 <tr key={b.id} onClick={() => (window.location.href = `/bookings/${b.id}`)} style={{ cursor: 'pointer' }}>
                   <td>{b.service.name}</td>
-                  <td>{b.business.tradeName}</td>
                   <td>
                     {b.user.firstName} {b.user.lastName}
                   </td>
@@ -103,6 +91,6 @@ export default function AdminBookingsPage() {
           </table>
         )}
       </div>
-    </AdminShell>
+    </div>
   );
 }

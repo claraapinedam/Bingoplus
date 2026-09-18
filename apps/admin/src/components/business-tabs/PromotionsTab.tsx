@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import AdminShell from '@/components/AdminShell';
 import { apiFetchPage } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
@@ -23,32 +22,30 @@ interface PromotionRow {
   status: string;
   startDate: string;
   endDate: string;
-  business: { tradeName: string };
   targets: { targetType: string }[];
 }
 
-export default function AdminPromotionsPage() {
+export default function PromotionsTab({ businessId }: { businessId: string }) {
   const [status, setStatus] = useState('');
   const [promotions, setPromotions] = useState<PromotionRow[] | null>(null);
   const [total, setTotal] = useState(0);
 
   const load = useCallback(async () => {
-    const params = new URLSearchParams({ pageSize: '50' });
+    const params = new URLSearchParams({ pageSize: '50', businessId });
     if (status) params.set('status', status);
     const result = await apiFetchPage<PromotionRow>(`/admin/promotions?${params}`);
     setPromotions(result.data);
     setTotal(result.meta.total);
-  }, [status]);
+  }, [businessId, status]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   return (
-    <AdminShell>
-      <h1 className="bingo-page-title">Promociones</h1>
-      <p className="bingo-page-subtitle">
-        {total} promoción(es) — supervisión global. Solo lectura: cada negocio administra sus propias promociones.
+    <div>
+      <p style={{ fontSize: 13, color: '#7f8ea3', marginBottom: 14 }}>
+        {total} promoción(es) — solo lectura, este negocio administra sus propias promociones.
       </p>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -69,7 +66,6 @@ export default function AdminPromotionsPage() {
             <thead>
               <tr>
                 <th>Nombre</th>
-                <th>Negocio</th>
                 <th>Aplica a</th>
                 <th>Descuento</th>
                 <th>Vigencia</th>
@@ -80,7 +76,6 @@ export default function AdminPromotionsPage() {
               {promotions.map((p) => (
                 <tr key={p.id}>
                   <td>{p.name}</td>
-                  <td>{p.business.tradeName}</td>
                   <td>{p.targets.map((t) => t.targetType).join(', ')}</td>
                   <td>{p.type === 'PERCENTAGE' ? `${p.value}%` : currencyFormatter.format(Number(p.value))}</td>
                   <td style={{ fontSize: 12 }}>
@@ -95,6 +90,6 @@ export default function AdminPromotionsPage() {
           </table>
         )}
       </div>
-    </AdminShell>
+    </div>
   );
 }

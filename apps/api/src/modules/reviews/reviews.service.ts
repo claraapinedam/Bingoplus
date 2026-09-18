@@ -349,11 +349,19 @@ export class ReviewsService {
 
   // ── Admin moderation ─────────────────────────────────────────────────────
 
-  async listForAdmin(query: { status?: ReviewStatus; targetType?: ReviewTargetType; search?: string; page?: number; pageSize?: number }) {
+  async listForAdmin(query: {
+    status?: ReviewStatus;
+    targetType?: ReviewTargetType;
+    targetId?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
     const { skip, take, page, pageSize } = resolvePagination(query);
     const where: Prisma.ReviewWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.targetType ? { targetType: query.targetType } : {}),
+      ...(query.targetId ? { targetId: query.targetId } : {}),
       ...(query.search ? { comment: { contains: query.search, mode: 'insensitive' } } : {}),
     };
     const [total, reviews] = await this.prisma.$transaction([
