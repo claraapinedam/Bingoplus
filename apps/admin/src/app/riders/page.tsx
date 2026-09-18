@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
+import IconButton from '@/components/IconButton';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api';
 
 interface Rider {
@@ -75,10 +76,7 @@ export default function RidersPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Riders</h1>
-      <p className="bingo-page-subtitle">
-        {total} rider(s) con cuenta activa, suspendida o inactiva. Elige un rider para ver sus entregas.
-      </p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Riders</h1>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {STATUS_TABS.map((tab) => (
@@ -142,37 +140,19 @@ export default function RidersPage() {
                     <br />
                     {r.user.phone}
                   </td>
-                  <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <a href={`/riders/${r.id}`} className="bingo-button secondary">
-                      Ver
-                    </a>
-                    {r.accountStatus === 'SUSPENDED' && (
-                      <button
-                        className="bingo-button"
-                        disabled={actingOn === r.id}
-                        onClick={() => runAction(r.id, 'reactivate')}
-                      >
-                        Reactivar
-                      </button>
-                    )}
-                    {r.accountStatus === 'INACTIVE' && (
-                      <button
-                        className="bingo-button"
-                        disabled={actingOn === r.id}
-                        onClick={() => runAction(r.id, 'activate')}
-                      >
-                        Reactivar
-                      </button>
-                    )}
-                    {r.accountStatus === 'ACTIVE' && (
-                      <button
-                        className="bingo-button danger"
-                        disabled={actingOn === r.id}
-                        onClick={() => runAction(r.id, 'suspend')}
-                      >
-                        Suspender
-                      </button>
-                    )}
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <IconButton icon="view" label="Ver" href={`/riders/${r.id}`} />
+                      {r.accountStatus === 'SUSPENDED' && (
+                        <IconButton icon="approve" label="Reactivar" disabled={actingOn === r.id} onClick={() => runAction(r.id, 'reactivate')} />
+                      )}
+                      {r.accountStatus === 'INACTIVE' && (
+                        <IconButton icon="approve" label="Reactivar" disabled={actingOn === r.id} onClick={() => runAction(r.id, 'activate')} />
+                      )}
+                      {r.accountStatus === 'ACTIVE' && (
+                        <IconButton icon="reject" label="Suspender" disabled={actingOn === r.id} onClick={() => runAction(r.id, 'suspend')} />
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

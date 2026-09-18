@@ -1,18 +1,22 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { RiderAccountStatus, RiderAvailabilityStatus } from '@prisma/client';
 import { RidersService } from './riders.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RiderContractsService } from '../contracts/rider-contracts.service';
 
 describe('RidersService', () => {
   let service: RidersService;
   let prisma: any;
+  let riderContracts: any;
 
   beforeEach(() => {
     prisma = {
       rider: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-      $transaction: jest.fn(),
+      riderDocument: { findUnique: jest.fn(), update: jest.fn() },
+      $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     };
-    service = new RidersService(prisma as unknown as PrismaService);
+    riderContracts = { createForApprovedRider: jest.fn().mockResolvedValue(undefined) };
+    service = new RidersService(prisma as unknown as PrismaService, riderContracts as unknown as RiderContractsService);
   });
 
   it('only approves riders that are PENDING_APPROVAL', async () => {
@@ -20,15 +24,16 @@ describe('RidersService', () => {
     await expect(service.approve('r1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('approves a pending rider', async () => {
+  it('approves a pending rider into APPROVED (not straight to ACTIVE) and generates a contract', async () => {
     prisma.rider.findUnique.mockResolvedValue({ id: 'r1', accountStatus: RiderAccountStatus.PENDING_APPROVAL });
-    prisma.rider.update.mockResolvedValue({ id: 'r1', accountStatus: RiderAccountStatus.ACTIVE });
+    prisma.rider.update.mockResolvedValue({ id: 'r1', accountStatus: RiderAccountStatus.APPROVED });
     const result = await service.approve('r1');
     expect(prisma.rider.update).toHaveBeenCalledWith({
       where: { id: 'r1' },
-      data: { accountStatus: RiderAccountStatus.ACTIVE },
+      data: { accountStatus: RiderAccountStatus.APPROVED },
     });
-    expect(result.accountStatus).toBe(RiderAccountStatus.ACTIVE);
+    expect(riderContracts.createForApprovedRider).toHaveBeenCalledWith('r1');
+    expect(result.accountStatus).toBe(RiderAccountStatus.APPROVED);
   });
 
   it('only reactivates riders that are SUSPENDED', async () => {
@@ -63,6 +68,54 @@ describe('RidersService', () => {
     expect(prisma.rider.update).toHaveBeenCalledWith({
       where: { id: 'r1' },
       data: { accountStatus: RiderAccountStatus.ACTIVE },
+    });
+  });
+
+  describe('verifyDocument / rejectDocument', () => {
+    it('rejects a document id that does not belong to this rider', async () => {
+      prisma.riderDocument.findUnique.mockResolvedValue({ id: 'd1', riderId: 'someone-else' });
+      await expect(service.verifyDocument('r1', 'd1', 'admin1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.riderDocument.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown document id', async () => {
+      prisma.riderDocument.findUnique.mockResolvedValue(null);
+      await expect(service.verifyDocument('r1', 'd1', 'admin1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('marks the document VERIFIED with the reviewing admin stamped on it', async () => {
+      prisma.riderDocument.findUnique.mockResolvedValue({ id: 'd1', riderId: 'r1' });
+      prisma.riderDocument.update.mockResolvedValue({ id: 'd1', status: 'VERIFIED' });
+      await service.verifyDocument('r1', 'd1', 'admin1');
+      expect(prisma.riderDocument.update).toHaveBeenCalledWith({
+        where: { id: 'd1' },
+        data: { status: 'VERIFIED', reviewedBy: 'admin1', reviewedAt: expect.any(Date) },
+      });
+    });
+
+    it('marks the document REJECTED with the reviewing admin stamped on it', async () => {
+      prisma.riderDocument.findUnique.mockResolvedValue({ id: 'd1', riderId: 'r1' });
+      prisma.riderDocument.update.mockResolvedValue({ id: 'd1', status: 'REJECTED' });
+      await service.rejectDocument('r1', 'd1', 'admin1');
+      expect(prisma.riderDocument.update).toHaveBeenCalledWith({
+        where: { id: 'd1' },
+        data: { status: 'REJECTED', reviewedBy: 'admin1', reviewedAt: expect.any(Date) },
+      });
+    });
+  });
+
+  describe('listWithPendingDocuments', () => {
+    it('returns riders that have at least one PENDING document, regardless of their own accountStatus', async () => {
+      prisma.rider.count.mockResolvedValue(1);
+      prisma.rider.findMany.mockResolvedValue([
+        { id: 'r1', user: { firstName: 'Juan', lastName: 'Pérez' }, documents: [{ id: 'd1' }] },
+      ]);
+
+      const result = await service.listWithPendingDocuments();
+
+      expect(prisma.rider.count).toHaveBeenCalledWith({ where: { documents: { some: { status: 'PENDING' } } } });
+      expect(result.total).toBe(1);
+      expect(result.riders).toHaveLength(1);
     });
   });
 });

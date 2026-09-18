@@ -1,4 +1,4 @@
-import { RiderAccountStatus, RiderPayoutMethodType, RoleName, VehicleType } from '@prisma/client';
+import { BusinessIdType, RiderAccountStatus, RiderPayoutMethodType, RoleName, VehicleType } from '@prisma/client';
 import { ConflictException } from '@nestjs/common';
 import { RiderProfileService } from './rider-profile.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -8,12 +8,14 @@ import { RegisterRiderApplicationDto } from './dto/rider-application.dto';
 function baseApplicationDto(overrides: Partial<RegisterRiderApplicationDto> = {}): RegisterRiderApplicationDto {
   return {
     birthDate: '1995-01-01',
+    idType: BusinessIdType.CEDULA,
     nationalIdNumber: '0102030405',
     phone: '0991234567',
     address: 'Av. Siempre Viva 123',
     city: 'Quito',
     idPhotoFrontUrl: 'http://localhost:3001/uploads/front.jpg',
     idPhotoBackUrl: 'http://localhost:3001/uploads/back.jpg',
+    selfiePhotoUrl: 'http://localhost:3001/uploads/selfie.jpg',
     vehicleType: VehicleType.MOTORCYCLE,
     plate: 'ABC-1234',
     payoutMethod: RiderPayoutMethodType.BANK_ACCOUNT,
@@ -82,6 +84,7 @@ describe('RiderProfileService', () => {
           data: [
             expect.objectContaining({ side: 'FRONT', fileUrl: 'http://localhost:3001/uploads/front.jpg' }),
             expect.objectContaining({ side: 'BACK', fileUrl: 'http://localhost:3001/uploads/back.jpg' }),
+            expect.objectContaining({ type: 'SELFIE', fileUrl: 'http://localhost:3001/uploads/selfie.jpg' }),
           ],
         }),
       );
@@ -143,6 +146,58 @@ describe('RiderProfileService', () => {
           baseApplicationDto({ payoutMethod: RiderPayoutMethodType.MOBILE_WALLET, bankName: undefined, accountType: undefined, accountNumber: undefined }),
         ),
       ).rejects.toThrow('walletProvider and walletNumber are required for a mobile wallet payout');
+    });
+
+    it('rejects an applicant under 18', async () => {
+      prisma.rider.findUnique.mockResolvedValue(null);
+      const turningSeventeenToday = new Date();
+      turningSeventeenToday.setFullYear(turningSeventeenToday.getFullYear() - 17);
+      const birthDate = turningSeventeenToday.toISOString().slice(0, 10);
+      await expect(service.applyAsRider('u1', baseApplicationDto({ birthDate }))).rejects.toThrow(
+        'You must be at least 18 years old to apply as a rider',
+      );
+    });
+
+    it('accepts an applicant who turns 18 today', async () => {
+      prisma.rider.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
+      prisma.rider.create.mockResolvedValue({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
+      const turningEighteenToday = new Date();
+      turningEighteenToday.setFullYear(turningEighteenToday.getFullYear() - 18);
+      const birthDate = turningEighteenToday.toISOString().slice(0, 10);
+      await expect(service.applyAsRider('u1', baseApplicationDto({ birthDate }))).resolves.toBeDefined();
+    });
+
+    it('rejects a RUC application with no legalName (razón social)', async () => {
+      prisma.rider.findUnique.mockResolvedValue(null);
+      await expect(
+        service.applyAsRider('u1', baseApplicationDto({ idType: BusinessIdType.RUC, legalName: undefined })),
+      ).rejects.toThrow('legalName (razón social) is required when idType is RUC');
+    });
+
+    it('stores legalName for a RUC application', async () => {
+      prisma.rider.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
+      prisma.rider.create.mockResolvedValue({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
+
+      await service.applyAsRider('u1', baseApplicationDto({ idType: BusinessIdType.RUC, legalName: 'Juan Pérez Cía. Ltda.' }));
+      expect(prisma.rider.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idType: 'RUC', legalName: 'Juan Pérez Cía. Ltda.' }) }),
+      );
+    });
+
+    it('never stores legalName for a CEDULA application, even if one was sent', async () => {
+      prisma.rider.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
+      prisma.rider.create.mockResolvedValue({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
+
+      await service.applyAsRider('u1', baseApplicationDto({ idType: BusinessIdType.CEDULA, legalName: 'Should be ignored' }));
+      expect(prisma.rider.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idType: 'CEDULA', legalName: null }) }),
+      );
     });
   });
 

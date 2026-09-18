@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
+import IconButton from '@/components/IconButton';
 import { apiFetch, apiFetchPage, ApiError } from '@/lib/api';
 
 interface Rider {
@@ -13,11 +14,12 @@ interface Rider {
   vehicles: { type: string }[];
 }
 
-const NOT_YET_LIVE = ['PENDING_APPROVAL', 'REJECTED'];
+const NOT_YET_LIVE = ['PENDING_APPROVAL', 'APPROVED', 'REJECTED'];
 
 const STATUS_TABS = [
   { value: '', label: 'Todas' },
   { value: 'PENDING_APPROVAL', label: 'Pendientes' },
+  { value: 'APPROVED', label: 'Aprobadas (por firmar)' },
   { value: 'REJECTED', label: 'Rechazadas' },
 ];
 
@@ -74,12 +76,21 @@ export default function RiderRequestsPage() {
     }
   }
 
+  async function forceActivate(id: string) {
+    setActingOn(id);
+    try {
+      await apiFetch(`/admin/riders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'ACTIVE' }) });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'La acción falló.');
+    } finally {
+      setActingOn(null);
+    }
+  }
+
   return (
     <AdminShell>
-      <h1 className="bingo-page-title">Solicitudes de Riders</h1>
-      <p className="bingo-page-subtitle">
-        {total} solicitud(es). Al aprobar, el rider deja de aparecer aquí y pasa a Riders como cuenta activa.
-      </p>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Solicitudes de Riders</h1>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {STATUS_TABS.map((t) => (
@@ -135,20 +146,19 @@ export default function RiderRequestsPage() {
                     <br />
                     {r.user.phone}
                   </td>
-                  <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <a href={`/riders/${r.id}`} className="bingo-button secondary">
-                      Ver
-                    </a>
-                    {r.accountStatus === 'PENDING_APPROVAL' && (
-                      <>
-                        <button className="bingo-button" disabled={actingOn === r.id} onClick={() => approve(r.id)}>
-                          Aprobar
-                        </button>
-                        <button className="bingo-button danger" disabled={actingOn === r.id} onClick={() => reject(r.id)}>
-                          Rechazar
-                        </button>
-                      </>
-                    )}
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <IconButton icon="view" label="Ver" href={`/riders/${r.id}`} />
+                      {r.accountStatus === 'PENDING_APPROVAL' && (
+                        <>
+                          <IconButton icon="approve" label="Aprobar" disabled={actingOn === r.id} onClick={() => approve(r.id)} />
+                          <IconButton icon="reject" label="Rechazar" disabled={actingOn === r.id} onClick={() => reject(r.id)} />
+                        </>
+                      )}
+                      {r.accountStatus === 'APPROVED' && (
+                        <IconButton icon="approve" label="Activar sin firma" disabled={actingOn === r.id} onClick={() => forceActivate(r.id)} />
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

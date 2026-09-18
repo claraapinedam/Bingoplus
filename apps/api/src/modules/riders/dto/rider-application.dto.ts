@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RiderBankAccountType, RiderPayoutMethodType, VehicleType } from '@prisma/client';
+import { BusinessIdType, RiderBankAccountType, RiderPayoutMethodType, VehicleType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { Equals, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
 
@@ -9,7 +9,21 @@ export class RegisterRiderApplicationDto {
   @IsDateString()
   birthDate!: string;
 
-  @ApiProperty({ description: 'Cédula/DNI/passport number' })
+  // Reuses Business's RUC/CEDULA distinction — see the schema comment on Rider.idType. The
+  // 18+ minimum-age check on birthDate lives in RiderProfileService.applyAsRider, not here,
+  // for the same reason plate/payout cross-field checks do: it can't be expressed per-field.
+  @ApiProperty({ enum: BusinessIdType })
+  @IsEnum(BusinessIdType)
+  idType!: BusinessIdType;
+
+  // Required only when idType is RUC (the "razón social") — enforced in
+  // RiderProfileService.applyAsRider, not here, since the rule depends on the sibling idType field.
+  @ApiPropertyOptional({ description: 'Razón social — required when idType is RUC' })
+  @IsOptional()
+  @IsString()
+  legalName?: string;
+
+  @ApiProperty({ description: 'Cédula/RUC/passport number' })
   @IsString()
   @MinLength(5)
   nationalIdNumber!: string;
@@ -37,6 +51,10 @@ export class RegisterRiderApplicationDto {
   @ApiProperty()
   @IsUrl({ require_tld: false })
   idPhotoBackUrl!: string;
+
+  @ApiProperty({ description: 'Selfie photo, white background' })
+  @IsUrl({ require_tld: false })
+  selfiePhotoUrl!: string;
 
   // ── Vehicle ─────────────────────────────────────────────────────────────
   @ApiProperty({ enum: VehicleType, enumName: 'RiderApplicationVehicleType' })

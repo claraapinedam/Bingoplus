@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  BusinessIdType,
   Prisma,
   RiderAccountStatus,
   RiderAvailabilityStatus,
@@ -16,6 +17,16 @@ import { RegisterRiderApplicationDto } from './dto/rider-application.dto';
 const PROFILE_INCLUDE = { user: true, vehicles: true, documents: true, payoutMethod: true } as const;
 
 const PLATE_REQUIRED_VEHICLE_TYPES: VehicleType[] = [VehicleType.MOTORCYCLE, VehicleType.CAR];
+const MINIMUM_RIDER_AGE = 18;
+
+function calculateAge(birthDate: Date, now: Date): number {
+  let age = now.getFullYear() - birthDate.getFullYear();
+  const hasHadBirthdayThisYear =
+    now.getMonth() > birthDate.getMonth() ||
+    (now.getMonth() === birthDate.getMonth() && now.getDate() >= birthDate.getDate());
+  if (!hasHadBirthdayThisYear) age -= 1;
+  return age;
+}
 
 /**
  * §6/9/10: self-service surface a Rider uses on themselves — onboarding basics, availability,
@@ -60,6 +71,12 @@ export class RiderProfileService {
     if (dto.payoutMethod === RiderPayoutMethodType.MOBILE_WALLET && (!dto.walletProvider || !dto.walletNumber)) {
       throw new BadRequestException('walletProvider and walletNumber are required for a mobile wallet payout');
     }
+    if (dto.idType === BusinessIdType.RUC && !dto.legalName?.trim()) {
+      throw new BadRequestException('legalName (razón social) is required when idType is RUC');
+    }
+    if (calculateAge(new Date(dto.birthDate), new Date()) < MINIMUM_RIDER_AGE) {
+      throw new BadRequestException('You must be at least 18 years old to apply as a rider');
+    }
 
     const existing = await this.prisma.rider.findUnique({ where: { userId } });
     if (existing && (existing.accountStatus === RiderAccountStatus.ACTIVE || existing.accountStatus === RiderAccountStatus.SUSPENDED)) {
@@ -83,6 +100,8 @@ export class RiderProfileService {
 
         const riderData = {
           city: dto.city,
+          idType: dto.idType,
+          legalName: dto.idType === BusinessIdType.RUC ? dto.legalName : null,
           birthDate,
           nationalIdNumber: dto.nationalIdNumber,
           address: dto.address,
@@ -109,7 +128,9 @@ export class RiderProfileService {
           },
         });
 
-        await tx.riderDocument.deleteMany({ where: { riderId: rider.id, type: RiderDocumentType.ID } });
+        await tx.riderDocument.deleteMany({
+          where: { riderId: rider.id, type: { in: [RiderDocumentType.ID, RiderDocumentType.SELFIE] } },
+        });
         await tx.riderDocument.createMany({
           data: [
             {
@@ -125,6 +146,11 @@ export class RiderProfileService {
               side: RiderDocumentSide.BACK,
               documentNumber: dto.nationalIdNumber,
               fileUrl: dto.idPhotoBackUrl,
+            },
+            {
+              riderId: rider.id,
+              type: RiderDocumentType.SELFIE,
+              fileUrl: dto.selfiePhotoUrl,
             },
           ],
         });

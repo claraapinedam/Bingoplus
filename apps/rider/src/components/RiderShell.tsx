@@ -39,6 +39,17 @@ export default function RiderShell({ children }: { children: React.ReactNode }) 
     apiFetch<number>('/me/notifications/unread-count').then(setUnreadNotifications).catch(() => undefined);
   }, [router, pathname]);
 
+  // Approved-but-not-yet-signed riders never reach the rest of the app — same redirect pattern
+  // as DashboardShell (Business) → /contract, just gated on accountStatus instead of Business.status.
+  useEffect(() => {
+    if (!ready || pathname === '/contract') return;
+    apiFetch<{ accountStatus: string }>('/rider/profile')
+      .then((profile) => {
+        if (profile.accountStatus === 'APPROVED') router.replace('/contract');
+      })
+      .catch(() => undefined);
+  }, [ready, pathname, router]);
+
   if (!ready) return null;
 
   return (

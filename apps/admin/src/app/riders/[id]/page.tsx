@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import AdminShell from '@/components/AdminShell';
 import DeliveriesTab from '@/components/rider-tabs/DeliveriesTab';
+import ReviewsList from '@/components/ReviewsList';
+import BackButton from '@/components/BackButton';
+import IconButton from '@/components/IconButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface Vehicle {
@@ -44,6 +47,8 @@ interface RiderDetail {
   accountStatus: string;
   availabilityStatus: string;
   city: string | null;
+  idType: 'RUC' | 'CEDULA' | null;
+  legalName: string | null;
   birthDate: string | null;
   nationalIdNumber: string | null;
   address: string | null;
@@ -59,9 +64,23 @@ interface RiderDetail {
   payoutMethod: RiderPayoutMethod | null;
 }
 
+interface RiderContract {
+  id: string;
+  status: 'PENDING_SIGNATURE' | 'SIGNED' | 'SUPERSEDED';
+  idType: 'RUC' | 'CEDULA';
+  legalName: string;
+  taxId: string;
+  bingoCommissionPercent: string | number;
+  riderTaxWithholdingPercent: string | number;
+  signedAt: string | null;
+  pdfUrl: string | null;
+  createdAt: string;
+}
+
 const TABS = [
   { value: 'overview', label: 'Resumen' },
   { value: 'deliveries', label: 'Entregas' },
+  { value: 'reviews', label: 'Reseñas' },
 ];
 
 export default function AdminRiderDetailPage() {
@@ -71,8 +90,10 @@ export default function AdminRiderDetailPage() {
   const tab = searchParams.get('tab') ?? 'overview';
 
   const [rider, setRider] = useState<RiderDetail | null | undefined>(undefined);
+  const [contract, setContract] = useState<RiderContract | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [busyDocId, setBusyDocId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -81,6 +102,9 @@ export default function AdminRiderDetailPage() {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar el rider.');
       setRider(null);
     }
+    apiFetch<RiderContract | null>(`/admin/riders/${params.id}/contract`)
+      .then(setContract)
+      .catch(() => setContract(null));
   }, [params.id]);
 
   useEffect(() => {
@@ -117,6 +141,19 @@ export default function AdminRiderDetailPage() {
     }
   }
 
+  async function runDocumentAction(documentId: string, action: 'verify' | 'reject') {
+    setBusyDocId(documentId);
+    setError(null);
+    try {
+      await apiFetch(`/admin/riders/${params.id}/documents/${documentId}/${action}`, { method: 'PATCH', body: JSON.stringify({}) });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'La acción falló.');
+    } finally {
+      setBusyDocId(null);
+    }
+  }
+
   if (rider === undefined) {
     return (
       <AdminShell>
@@ -134,18 +171,56 @@ export default function AdminRiderDetailPage() {
 
   return (
     <AdminShell>
-      <button className="bingo-button secondary" style={{ marginBottom: 16, padding: '8px 14px', fontSize: 13 }} onClick={() => router.back()}>
-        ← Volver
-      </button>
+      <BackButton onClick={() => router.back()} />
 
-      <h1 className="bingo-page-title">
+      <h1 className="bingo-page-title" style={{ marginBottom: 12 }}>
         {rider.user.firstName} {rider.user.lastName}
       </h1>
-      <p className="bingo-page-subtitle">
-        {rider.user.email} · {rider.user.phone ?? 'sin teléfono'} ·{' '}
-        <span className={`bingo-badge badge-${rider.accountStatus.toLowerCase()}`}>{rider.accountStatus}</span>{' '}
-        <span className={`bingo-badge badge-${rider.availabilityStatus.toLowerCase()}`}>{rider.availabilityStatus}</span>
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
+        <span>
+          {rider.user.email} · {rider.user.phone ?? 'sin teléfono'} ·{' '}
+          <span className={`bingo-badge badge-${rider.accountStatus.toLowerCase()}`}>{rider.accountStatus}</span>{' '}
+          <span className={`bingo-badge badge-${rider.availabilityStatus.toLowerCase()}`}>{rider.availabilityStatus}</span>
+        </span>
+        {rider.accountStatus === 'PENDING_APPROVAL' && (
+          <>
+            <button className="bingo-button small" disabled={busy} onClick={() => runAction('approve')}>
+              Aprobar
+            </button>
+            <button className="bingo-button danger small" disabled={busy} onClick={() => runStatusAction('REJECTED')}>
+              Rechazar
+            </button>
+          </>
+        )}
+        {rider.accountStatus === 'APPROVED' && (
+          <button className="bingo-button small" disabled={busy} onClick={() => runStatusAction('ACTIVE')} title="Se generó un contrato — esperando que el rider lo firme desde su app.">
+            Activar sin firma
+          </button>
+        )}
+        {rider.accountStatus === 'SUSPENDED' && (
+          <button className="bingo-button small" disabled={busy} onClick={() => runAction('reactivate')}>
+            Reactivar
+          </button>
+        )}
+        {rider.accountStatus === 'INACTIVE' && (
+          <button className="bingo-button small" disabled={busy} onClick={() => runStatusAction('ACTIVE')}>
+            Reactivar
+          </button>
+        )}
+        {rider.accountStatus === 'ACTIVE' && (
+          <button className="bingo-button danger small" disabled={busy} onClick={() => runAction('suspend')}>
+            Suspender
+          </button>
+        )}
+      </div>
+      {rider.accountStatus === 'APPROVED' && (
+        <p style={{ fontSize: 12, color: '#7f8ea3', marginTop: -8, marginBottom: 16 }}>
+          Se generó un contrato — esperando que el rider lo firme desde su app.
+        </p>
+      )}
+      {rider.accountStatus === 'REJECTED' && (
+        <p style={{ fontSize: 12, color: '#7f8ea3', marginTop: -8, marginBottom: 16 }}>Esta solicitud fue rechazada.</p>
+      )}
 
       {error && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>
@@ -216,39 +291,30 @@ export default function AdminRiderDetailPage() {
             )}
           </div>
 
-          <div className="bingo-card">
-            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Acciones de cuenta</h2>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {rider.accountStatus === 'PENDING_APPROVAL' && (
-                <>
-                  <button className="bingo-button" disabled={busy} onClick={() => runAction('approve')}>
-                    Aprobar
-                  </button>
-                  <button className="bingo-button danger" disabled={busy} onClick={() => runStatusAction('REJECTED')}>
-                    Rechazar
-                  </button>
-                </>
-              )}
-              {rider.accountStatus === 'SUSPENDED' && (
-                <button className="bingo-button" disabled={busy} onClick={() => runAction('reactivate')}>
-                  Reactivar
-                </button>
-              )}
-              {rider.accountStatus === 'INACTIVE' && (
-                <button className="bingo-button" disabled={busy} onClick={() => runStatusAction('ACTIVE')}>
-                  Reactivar
-                </button>
-              )}
-              {rider.accountStatus === 'ACTIVE' && (
-                <button className="bingo-button danger" disabled={busy} onClick={() => runAction('suspend')}>
-                  Suspender
-                </button>
-              )}
-              {rider.accountStatus === 'REJECTED' && (
-                <p style={{ fontSize: 13, color: '#7f8ea3', margin: 0 }}>Esta solicitud fue rechazada.</p>
+          {contract && (
+            <div className="bingo-card">
+              <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 10px' }}>Contrato</h2>
+              <div style={{ fontSize: 13, marginBottom: 6 }}>
+                Estado: <span className={`bingo-badge badge-${contract.status.toLowerCase()}`}>{contract.status}</span>
+              </div>
+              <div style={{ fontSize: 13, marginBottom: 6 }}>
+                {contract.idType === 'RUC' ? `${contract.legalName} — RUC ${contract.taxId}` : `${contract.legalName} — Cédula ${contract.taxId}`}
+              </div>
+              <div style={{ fontSize: 13, marginBottom: 6 }}>
+                Comisión BINGO+: <strong>{Number(contract.bingoCommissionPercent).toFixed(2)}%</strong> · Retención de impuesto:{' '}
+                <strong>{Number(contract.riderTaxWithholdingPercent).toFixed(2)}%</strong>
+              </div>
+              <div style={{ fontSize: 12, color: '#7f8ea3' }}>
+                Congelado al generarse el contrato el {new Date(contract.createdAt).toLocaleDateString('es-EC')}.
+                {contract.signedAt && ` Firmado el ${new Date(contract.signedAt).toLocaleDateString('es-EC')}.`}
+              </div>
+              {contract.pdfUrl && (
+                <a href={contract.pdfUrl} target="_blank" rel="noreferrer" className="bingo-button secondary small" style={{ marginTop: 10, display: 'inline-block' }}>
+                  Ver PDF
+                </a>
               )}
             </div>
-          </div>
+          )}
 
           <div className="bingo-card" style={{ gridColumn: 'span 2' }}>
             <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Vehículos</h2>
@@ -295,28 +361,32 @@ export default function AdminRiderDetailPage() {
                 <thead>
                   <tr>
                     <th>Tipo</th>
-                    <th>Lado</th>
-                    <th>Número</th>
                     <th>Estado</th>
-                    <th>Vence</th>
                     <th>Archivo</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rider.documents.map((d) => (
                     <tr key={d.id}>
-                      <td>{d.type}</td>
-                      <td>{d.side === 'FRONT' ? 'Delantera' : d.side === 'BACK' ? 'Trasera' : '—'}</td>
-                      <td>{d.documentNumber ?? '—'}</td>
+                      <td>{d.type}{d.side === 'FRONT' ? ' — Delantera' : d.side === 'BACK' ? ' — Trasera' : ''}</td>
                       <td>
                         <span className={`bingo-badge badge-${d.status.toLowerCase()}`}>{d.status}</span>
                       </td>
-                      <td>{d.expirationDate ? new Date(d.expirationDate).toLocaleDateString('es-EC') : '—'}</td>
                       <td>
-                        <a href={d.fileUrl} target="_blank" rel="noreferrer">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={d.fileUrl} alt={`${d.type} ${d.side ?? ''}`} style={{ width: 64, height: 40, objectFit: 'cover', borderRadius: 4 }} />
+                        <a href={d.fileUrl} target="_blank" rel="noreferrer" className="bingo-button secondary small">
+                          {d.type === 'CONTRACT' ? '📄 Ver PDF' : '🖼️ Ver imagen'}
                         </a>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {d.status === 'PENDING' && (
+                            <>
+                              <IconButton icon="approve" label="Verificar" disabled={busyDocId === d.id} onClick={() => runDocumentAction(d.id, 'verify')} />
+                              <IconButton icon="reject" label="Rechazar" disabled={busyDocId === d.id} onClick={() => runDocumentAction(d.id, 'reject')} />
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -328,6 +398,7 @@ export default function AdminRiderDetailPage() {
       )}
 
       {tab === 'deliveries' && <DeliveriesTab riderId={rider.id} />}
+      {tab === 'reviews' && <ReviewsList targetType="RIDER" targetId={rider.id} />}
     </AdminShell>
   );
 }

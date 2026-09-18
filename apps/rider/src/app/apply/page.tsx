@@ -63,9 +63,8 @@ export default function ApplyPage() {
   return (
     <div className="bingo-content" style={{ paddingTop: 24, paddingBottom: 40 }}>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <div className="bingo-logo" style={{ color: 'var(--bingo-navy)', fontSize: 24 }}>
-          BINGO<span className="plus" style={{ color: 'var(--bingo-teal)' }}>+</span> Rider
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/Bingoplusrider.png" alt="BINGO+ Rider" style={{ height: 64, width: 'auto' }} />
         <p style={{ fontSize: 13, color: '#7f8ea3', margin: '8px 0 0' }}>
           Completa tu solicitud para convertirte en rider. Un miembro del equipo la revisará antes de aprobarla.
         </p>

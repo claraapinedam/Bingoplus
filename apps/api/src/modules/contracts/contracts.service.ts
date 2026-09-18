@@ -235,8 +235,8 @@ export class ContractsService {
    * never invented numbers. Also returns those same figures as plain values, frozen onto the
    * contract row itself (see the schema comment on BusinessContract) rather than left as
    * something only readable by parsing this prose back apart. Deliberately never touches
-   * Business.deliveryFeeUsd — that's what the business itself charges its own customers for
-   * delivery, unrelated to what it owes BINGO+. */
+   * delivery fare figures — those are Admin-configured platform-wide (DeliveryFareConfig),
+   * not something a business negotiates or owes BINGO+ for individually. */
   private async buildFeeSnapshot(businessId: string): Promise<{
     commissionRatePercent: number | null;
     membershipPlanName: string | null;
