@@ -4,9 +4,17 @@ import { ChangeEvent, FormEvent, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import HorizontalChipRow from '@/components/HorizontalChipRow';
+import ImageCropModal from '@/components/ImageCropModal';
 import { apiFetch, uploadFile, ApiError } from '@/lib/api';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
+
+// Matches how the photo is later displayed full-width on the place's detail banner — the
+// 64x64/48x48 list thumbnails then just object-fit:cover the center square out of this, which
+// looks fine since there's no gap to letterbox either way.
+const PHOTO_ASPECT_RATIO = 16 / 9;
+const PHOTO_OUTPUT_WIDTH = 960;
 
 type Category = 'RESTAURANT' | 'OUTDOOR_SPACE' | 'OTHER';
 
@@ -26,6 +34,7 @@ export default function NewPetFriendlyPlacePage() {
   const [longitude, setLongitude] = useState<number | undefined>(undefined);
   const [photoUrl, setPhotoUrl] = useState('');
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,14 +55,22 @@ export default function NewPetFriendlyPlacePage() {
     setLongitude(place.geometry.location.lng());
   }
 
-  async function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
+  function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setError(null);
-    setPhotoPreview(URL.createObjectURL(file));
+    setCropFile(file);
+    // Reset so picking the exact same file again still fires onChange.
+    e.target.value = '';
+  }
+
+  async function handleCropConfirm(blob: Blob) {
+    setCropFile(null);
+    const croppedFile = new File([blob], 'pet-friendly-place.jpg', { type: 'image/jpeg' });
+    setPhotoPreview(URL.createObjectURL(croppedFile));
     setUploading(true);
     try {
-      const { url } = await uploadFile(file);
+      const { url } = await uploadFile(croppedFile);
       setPhotoUrl(url);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo subir la foto.');
@@ -113,6 +130,7 @@ export default function NewPetFriendlyPlacePage() {
   return (
     <CustomerShell>
       <div className="bingo-content" style={{ paddingTop: 20 }}>
+        <BackButton onClick={() => router.back()} />
         <h2 style={{ margin: '0 0 4px' }}>Agregar un lugar pet friendly</h2>
         <p style={{ fontSize: 13, color: '#7f8ea3', margin: '0 0 20px' }}>
           Comparte un lugar donde puedas ir con tu mascota — un restaurante, un parque, o cualquier espacio que las reciba bien. Lo revisaremos antes de publicarlo.
@@ -204,6 +222,16 @@ export default function NewPetFriendlyPlacePage() {
           </button>
         </form>
       </div>
+
+      {cropFile && (
+        <ImageCropModal
+          file={cropFile}
+          aspectRatio={PHOTO_ASPECT_RATIO}
+          outputWidth={PHOTO_OUTPUT_WIDTH}
+          onConfirm={handleCropConfirm}
+          onCancel={() => setCropFile(null)}
+        />
+      )}
     </CustomerShell>
   );
 }
