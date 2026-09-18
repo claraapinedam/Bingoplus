@@ -13,7 +13,13 @@ async function bootstrap() {
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
-  app.use(helmet());
+  // Every uploaded photo/PDF (business logos, pet-friendly-place photos, signed contracts, …) is
+  // served from this API and embedded as an <img>/<a> in a different app on a different port
+  // (admin/business/customer/rider each run on their own port) — helmet's default
+  // Cross-Origin-Resource-Policy: same-origin silently blocks the browser from loading those
+  // (curl and the JSON API calls are unaffected, since CORP only governs no-cors resource loads
+  // like <img>, not XHR/fetch, which is what app.enableCors() below actually governs).
+  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
   const corsOrigin = config.get<string>('CORS_ORIGIN', '');
   app.enableCors({
