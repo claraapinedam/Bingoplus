@@ -122,4 +122,42 @@ describe('PetFriendlyPlacesService', () => {
       expect(where.status).toBe(PetFriendlyPlaceStatus.APPROVED);
     });
   });
+
+  describe('suspend', () => {
+    it('only suspends places that are APPROVED', async () => {
+      prisma.petFriendlyPlace.findUnique.mockResolvedValue({ id: 'p1', status: PetFriendlyPlaceStatus.PENDING });
+      await expect(service.suspend('p1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('pulls an approved place out of the public directory', async () => {
+      prisma.petFriendlyPlace.findUnique.mockResolvedValue({ id: 'p1', status: PetFriendlyPlaceStatus.APPROVED });
+      prisma.petFriendlyPlace.update.mockResolvedValue({ id: 'p1', status: PetFriendlyPlaceStatus.SUSPENDED });
+
+      await service.suspend('p1');
+
+      expect(prisma.petFriendlyPlace.update).toHaveBeenCalledWith({
+        where: { id: 'p1' },
+        data: { status: PetFriendlyPlaceStatus.SUSPENDED },
+      });
+    });
+  });
+
+  describe('reactivate', () => {
+    it('only reactivates places that are SUSPENDED', async () => {
+      prisma.petFriendlyPlace.findUnique.mockResolvedValue({ id: 'p1', status: PetFriendlyPlaceStatus.APPROVED });
+      await expect(service.reactivate('p1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('puts a suspended place back into the public directory', async () => {
+      prisma.petFriendlyPlace.findUnique.mockResolvedValue({ id: 'p1', status: PetFriendlyPlaceStatus.SUSPENDED });
+      prisma.petFriendlyPlace.update.mockResolvedValue({ id: 'p1', status: PetFriendlyPlaceStatus.APPROVED });
+
+      await service.reactivate('p1');
+
+      expect(prisma.petFriendlyPlace.update).toHaveBeenCalledWith({
+        where: { id: 'p1' },
+        data: { status: PetFriendlyPlaceStatus.APPROVED },
+      });
+    });
+  });
 });

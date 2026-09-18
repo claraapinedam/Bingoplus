@@ -11,9 +11,10 @@ interface PetFriendlyPlace {
   name: string;
   category: 'RESTAURANT' | 'OUTDOOR_SPACE' | 'OTHER';
   address: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
   photoUrl: string | null;
   description: string | null;
+  rejectionReason: string | null;
   createdAt: string;
   submittedBy: { firstName: string; lastName: string; id: string };
 }
@@ -24,16 +25,16 @@ const CATEGORY_LABELS: Record<string, string> = {
   OTHER: 'Otro',
 };
 
-const LIVE_STATUSES = ['APPROVED', 'SUSPENDED'];
+const NOT_YET_LIVE = ['PENDING', 'REJECTED'];
 
 const STATUS_TABS = [
-  { value: '', label: 'Todos' },
-  { value: 'APPROVED', label: 'Aprobados' },
-  { value: 'SUSPENDED', label: 'Suspendidos' },
+  { value: '', label: 'Todas' },
+  { value: 'PENDING', label: 'Pendientes' },
+  { value: 'REJECTED', label: 'Rechazadas' },
 ];
 
-export default function PetFriendlyPlacesPage() {
-  const [status, setStatus] = useState('');
+export default function PetFriendlyPlaceRequestsPage() {
+  const [status, setStatus] = useState('PENDING');
   const [places, setPlaces] = useState<PetFriendlyPlace[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -43,17 +44,17 @@ export default function PetFriendlyPlacesPage() {
     setError(null);
     try {
       if (status) {
-        const result = await apiFetchPage<PetFriendlyPlace>(`/admin/pet-friendly-places?status=${status}&pageSize=200`);
+        const result = await apiFetchPage<PetFriendlyPlace>(`/admin/pet-friendly-places?status=${status}&pageSize=100`);
         setPlaces(result.data);
         setTotal(result.meta.total);
       } else {
         const result = await apiFetchPage<PetFriendlyPlace>(`/admin/pet-friendly-places?pageSize=200`);
-        const filtered = result.data.filter((p) => LIVE_STATUSES.includes(p.status));
+        const filtered = result.data.filter((p) => NOT_YET_LIVE.includes(p.status));
         setPlaces(filtered);
         setTotal(filtered.length);
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo cargar los lugares.');
+      setError(err instanceof ApiError ? err.message : 'No se pudo cargar las solicitudes.');
     }
   }, [status]);
 
@@ -61,10 +62,23 @@ export default function PetFriendlyPlacesPage() {
     load();
   }, [load]);
 
-  async function runAction(id: string, action: 'suspend' | 'reactivate') {
+  async function approve(id: string) {
     setActingOn(id);
     try {
-      await apiFetch(`/admin/pet-friendly-places/${id}/${action}`, { method: 'PATCH', body: JSON.stringify({}) });
+      await apiFetch(`/admin/pet-friendly-places/${id}/approve`, { method: 'PATCH', body: JSON.stringify({}) });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'La acción falló.');
+    } finally {
+      setActingOn(null);
+    }
+  }
+
+  async function reject(id: string) {
+    const reason = window.prompt('Motivo del rechazo (opcional):') ?? undefined;
+    setActingOn(id);
+    try {
+      await apiFetch(`/admin/pet-friendly-places/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'La acción falló.');
@@ -75,7 +89,7 @@ export default function PetFriendlyPlacesPage() {
 
   return (
     <AdminShell>
-      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Espacios Pet Friendly</h1>
+      <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Nuevos espacios pet friendly</h1>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {STATUS_TABS.map((t) => (
@@ -100,7 +114,7 @@ export default function PetFriendlyPlacesPage() {
         {places === null ? (
           <p>Cargando…</p>
         ) : places.length === 0 ? (
-          <p>No hay lugares en este filtro.</p>
+          <p>No hay solicitudes en este filtro.</p>
         ) : (
           <table className="bingo-table">
             <thead>
@@ -120,7 +134,12 @@ export default function PetFriendlyPlacesPage() {
                   <td>
                     <PlaceImage src={p.photoUrl} alt={p.name} width={48} height={48} />
                   </td>
-                  <td>{p.name}</td>
+                  <td>
+                    {p.name}
+                    {p.status === 'REJECTED' && p.rejectionReason && (
+                      <div style={{ fontSize: 11, color: 'var(--bingo-error)' }}>Motivo: {p.rejectionReason}</div>
+                    )}
+                  </td>
                   <td>{CATEGORY_LABELS[p.category]}</td>
                   <td style={{ maxWidth: 220 }}>{p.address}</td>
                   <td>
@@ -132,11 +151,11 @@ export default function PetFriendlyPlacesPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                       <IconButton icon="view" label="Ver" href={`/pet-friendly-places/${p.id}`} />
-                      {p.status === 'APPROVED' && (
-                        <IconButton icon="reject" label="Suspender" disabled={actingOn === p.id} onClick={() => runAction(p.id, 'suspend')} />
-                      )}
-                      {p.status === 'SUSPENDED' && (
-                        <IconButton icon="approve" label="Reactivar" disabled={actingOn === p.id} onClick={() => runAction(p.id, 'reactivate')} />
+                      {p.status === 'PENDING' && (
+                        <>
+                          <IconButton icon="approve" label="Aprobar" disabled={actingOn === p.id} onClick={() => approve(p.id)} />
+                          <IconButton icon="reject" label="Rechazar" disabled={actingOn === p.id} onClick={() => reject(p.id)} />
+                        </>
                       )}
                     </div>
                   </td>

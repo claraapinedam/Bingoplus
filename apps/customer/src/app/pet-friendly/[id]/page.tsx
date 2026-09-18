@@ -3,7 +3,9 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import RatingStars from '@/components/RatingStars';
+import PetFriendlyPhoto from '@/components/PetFriendlyPhoto';
 import { apiFetch, ApiError, getAccessToken } from '@/lib/api';
 
 interface PetFriendlyPlaceDetail {
@@ -31,6 +33,12 @@ const CATEGORY_LABELS: Record<string, string> = {
   RESTAURANT: 'Restaurante',
   OUTDOOR_SPACE: 'Espacio al aire libre',
   OTHER: 'Otro',
+};
+
+const CATEGORY_ICONS: Record<string, string> = {
+  RESTAURANT: '🍽️',
+  OUTDOOR_SPACE: '🌳',
+  OTHER: '📍',
 };
 
 export default function PetFriendlyPlaceDetailPage() {
@@ -117,14 +125,18 @@ export default function PetFriendlyPlaceDetailPage() {
   return (
     <CustomerShell>
       <div className="bingo-content" style={{ paddingTop: 16 }}>
-        <button className="bingo-button secondary small" style={{ width: 'auto', marginBottom: 14 }} onClick={() => router.back()}>
-          ← Volver
-        </button>
+        <BackButton onClick={() => router.back()} />
 
-        {place.photoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={place.photoUrl} alt={place.name} style={{ width: '100%', height: 180, objectFit: 'cover', borderRadius: 'var(--radius-lg)', marginBottom: 14 }} />
-        )}
+        <div style={{ marginBottom: 14 }}>
+          <PetFriendlyPhoto
+            src={place.photoUrl}
+            alt={place.name}
+            width="100%"
+            height={180}
+            borderRadius="var(--radius-lg)"
+            fallbackIcon={CATEGORY_ICONS[place.category]}
+          />
+        </div>
 
         <h1 style={{ margin: '0 0 4px', fontSize: 20 }}>{place.name}</h1>
         <div style={{ fontSize: 13, color: '#7f8ea3', marginBottom: 8 }}>{CATEGORY_LABELS[place.category]}</div>

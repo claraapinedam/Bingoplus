@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import { apiFetch, ApiError } from '@/lib/api';
 
@@ -37,9 +38,7 @@ export default function MyPetFriendlyPlacesPage() {
   return (
     <CustomerShell>
       <div className="bingo-content" style={{ paddingTop: 16 }}>
-        <button className="bingo-button secondary small" style={{ width: 'auto', marginBottom: 14 }} onClick={() => router.back()}>
-          ← Volver
-        </button>
+        <BackButton onClick={() => router.back()} />
         <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>Mis lugares enviados</h1>
         <p style={{ fontSize: 13, color: '#7f8ea3', margin: '0 0 16px' }}>Espacios pet friendly que has agregado al directorio.</p>
 

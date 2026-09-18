@@ -131,4 +131,23 @@ export class PetFriendlyPlacesService {
     });
     return updated;
   }
+
+  /** Pulls an already-published place out of the public directory (listApproved/getApproved both
+   * filter strictly on APPROVED) without discarding it like reject would — an admin call for a
+   * place that turned out to be a problem after going live, mirrors Business's approve/suspend tier. */
+  async suspend(id: string) {
+    const place = await this.getForAdmin(id);
+    if (place.status !== PetFriendlyPlaceStatus.APPROVED) {
+      throw new BadRequestException('Only approved places can be suspended');
+    }
+    return this.prisma.petFriendlyPlace.update({ where: { id }, data: { status: PetFriendlyPlaceStatus.SUSPENDED } });
+  }
+
+  async reactivate(id: string) {
+    const place = await this.getForAdmin(id);
+    if (place.status !== PetFriendlyPlaceStatus.SUSPENDED) {
+      throw new BadRequestException('Only suspended places can be reactivated');
+    }
+    return this.prisma.petFriendlyPlace.update({ where: { id }, data: { status: PetFriendlyPlaceStatus.APPROVED } });
+  }
 }

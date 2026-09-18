@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
 import CustomerShell from '@/components/CustomerShell';
+import HorizontalChipRow from '@/components/HorizontalChipRow';
 import { apiFetch, uploadFile, ApiError } from '@/lib/api';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 
@@ -127,7 +128,7 @@ export default function NewPetFriendlyPlacePage() {
 
           <div>
             <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Categoría *</label>
-            <div className="bingo-chip-row">
+            <HorizontalChipRow>
               {CATEGORY_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
@@ -138,7 +139,7 @@ export default function NewPetFriendlyPlacePage() {
                   {opt.icon} {opt.label}
                 </button>
               ))}
-            </div>
+            </HorizontalChipRow>
           </div>
 
           <div>

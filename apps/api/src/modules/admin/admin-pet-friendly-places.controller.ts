@@ -37,4 +37,16 @@ export class AdminPetFriendlyPlacesController {
   reject(@CurrentUser() admin: AuthenticatedUser, @Param('id') id: string, @Body() dto: RejectPetFriendlyPlaceDto) {
     return this.places.reject(admin.id, id, dto.reason);
   }
+
+  @Audit('pet_friendly_place.suspend', 'PetFriendlyPlace')
+  @Patch(':id/suspend')
+  suspend(@Param('id') id: string) {
+    return this.places.suspend(id);
+  }
+
+  @Audit('pet_friendly_place.reactivate', 'PetFriendlyPlace')
+  @Patch(':id/reactivate')
+  reactivate(@Param('id') id: string) {
+    return this.places.reactivate(id);
+  }
 }

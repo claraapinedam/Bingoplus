@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
+import HorizontalChipRow from '@/components/HorizontalChipRow';
+import PetFriendlyPhoto from '@/components/PetFriendlyPhoto';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface PetFriendlyPlace {
@@ -65,10 +68,9 @@ export default function PetFriendlyDirectoryPage() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Espacios Pet Friendly
-        </div>
-        <div className="bingo-header-sub">Lugares donde puedes ir con tu mascota, agregados por la comunidad</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
+        <div className="bingo-header-sub">Espacios Pet Friendly · Lugares donde puedes ir con tu mascota, agregados por la comunidad</div>
         <form className="bingo-search" onSubmit={(e) => e.preventDefault()}>
           <input placeholder="Buscar un lugar…" value={search} onChange={(e) => setSearch(e.target.value)} onBlur={load} />
         </form>
@@ -81,7 +83,9 @@ export default function PetFriendlyDirectoryPage() {
           </div>
         )}
 
-        <div className="bingo-chip-row" style={{ marginBottom: 14 }}>
+        <BackButton onClick={() => router.push('/directory')} label="Categorías" />
+
+        <HorizontalChipRow style={{ marginBottom: 14 }}>
           {CATEGORY_TABS.map((t) => (
             <button
               key={t.value}
@@ -91,7 +95,7 @@ export default function PetFriendlyDirectoryPage() {
               {t.label}
             </button>
           ))}
-        </div>
+        </HorizontalChipRow>
 
         <button className="bingo-button" style={{ marginBottom: 16 }} onClick={() => router.push('/pet-friendly/new')}>
           + Agregar un lugar
@@ -113,26 +117,7 @@ export default function PetFriendlyDirectoryPage() {
               className="bingo-card"
               style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'center' }}
             >
-              {p.photoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.photoUrl} alt={p.name} style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 10, flexShrink: 0 }} />
-              ) : (
-                <div
-                  style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 10,
-                    background: 'var(--bingo-soft-gray)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 28,
-                    flexShrink: 0,
-                  }}
-                >
-                  {CATEGORY_ICONS[p.category]}
-                </div>
-              )}
+              <PetFriendlyPhoto src={p.photoUrl} alt={p.name} width={64} height={64} borderRadius={10} fallbackIcon={CATEGORY_ICONS[p.category]} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
                 <div style={{ fontSize: 12, color: '#7f8ea3' }}>{CATEGORY_LABELS[p.category]}</div>
