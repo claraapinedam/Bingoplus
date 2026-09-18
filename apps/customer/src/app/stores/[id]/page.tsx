@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
 import ProductCard, { ProductCardData } from '@/components/ProductCard';
 import EmptyState from '@/components/EmptyState';
+import BackButton from '@/components/BackButton';
 import { apiFetch } from '@/lib/api';
 
 interface BusinessDetail {
@@ -65,6 +66,8 @@ export default function StoreDetailPage() {
   const [services, setServices] = useState<ServiceSummary[] | null>(null);
   const [promotions, setPromotions] = useState<PromotionSummary[]>([]);
   const [favorited, setFavorited] = useState(false);
+  const [coverBroken, setCoverBroken] = useState(false);
+  const [logoBroken, setLogoBroken] = useState(false);
 
   useEffect(() => {
     apiFetch<BusinessDetail>(`/public/businesses/${params.id}`)
@@ -123,15 +126,19 @@ export default function StoreDetailPage() {
           height: 120,
           background: 'linear-gradient(135deg, #172b4d, #16a085)',
           position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        <button
-          className="bingo-button secondary small"
-          style={{ position: 'absolute', top: 12, left: 12 }}
-          onClick={() => router.back()}
-        >
-          ← Volver
-        </button>
+        {business.coverImageUrl && !coverBroken && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={business.coverImageUrl}
+            alt=""
+            onError={() => setCoverBroken(true)}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        )}
+        <BackButton onClick={() => router.back()} light style={{ position: 'absolute', top: 12, left: 12, marginBottom: 0 }} />
         <button
           aria-label={favorited ? 'Quitar de favoritos' : 'Agregar a favoritos'}
           onClick={toggleFavorite}
@@ -166,9 +173,20 @@ export default function StoreDetailPage() {
             fontSize: 26,
             fontWeight: 800,
             color: 'var(--bingo-teal)',
+            overflow: 'hidden',
           }}
         >
-          {business.tradeName.charAt(0).toUpperCase()}
+          {business.logoUrl && !logoBroken ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={business.logoUrl}
+              alt={business.tradeName}
+              onError={() => setLogoBroken(true)}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : (
+            business.tradeName.charAt(0).toUpperCase()
+          )}
         </div>
 
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: '12px 0 4px' }}>{business.tradeName}</h1>

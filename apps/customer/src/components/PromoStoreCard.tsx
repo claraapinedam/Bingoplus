@@ -9,9 +9,6 @@ export interface PromoStoreCardData {
   reviewCount: number;
   deliveryEnabled: boolean;
   pickupEnabled: boolean;
-  /** Only set once the business owner configures it — never fabricated when DELIVERY is off. */
-  deliveryFeeUsd: string | number | null;
-  deliveryEstimateMinutes: number | null;
   /** Only present when the business has a real active BusinessCoupon — never a fabricated discount. */
   offer?: { title: string };
   moreOffersCount?: number;

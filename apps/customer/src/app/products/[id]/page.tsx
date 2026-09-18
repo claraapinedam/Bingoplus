@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface ProductDetail {
@@ -87,9 +88,7 @@ export default function ProductDetailPage() {
   return (
     <CustomerShell>
       <div style={{ padding: 16 }}>
-        <button className="bingo-button secondary small" onClick={() => router.back()}>
-          ← Volver
-        </button>
+        <BackButton onClick={() => router.back()} />
 
         <div
           style={{

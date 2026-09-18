@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
 import EmptyState from '@/components/EmptyState';
+import HorizontalChipRow from '@/components/HorizontalChipRow';
 import { apiFetch, ApiError } from '@/lib/api';
 import { API_ERROR_MESSAGES } from '@/lib/orderStatus';
 
@@ -39,7 +40,6 @@ interface ValidateResponse {
   subtotal: number;
   discount: number;
   taxes: number;
-  platformFee: number;
   serviceFee: number;
   deliveryFee: number;
   total: number;
@@ -161,10 +161,9 @@ export default function CheckoutPage() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Checkout
-        </div>
-        <div className="bingo-header-sub">{cart.business.tradeName}</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
+        <div className="bingo-header-sub">Checkout · {cart.business.tradeName}</div>
       </header>
 
       <div className="bingo-content">
@@ -173,7 +172,7 @@ export default function CheckoutPage() {
             <h2 className="bingo-section-title" style={{ marginTop: 0 }}>
               ¿Cómo lo quieres recibir?
             </h2>
-            <div className="bingo-chip-row">
+            <HorizontalChipRow>
               {capabilities.PICKUP && (
                 <button
                   className={`bingo-chip${fulfillmentType === 'PICKUP' ? ' active' : ''}`}
@@ -190,7 +189,7 @@ export default function CheckoutPage() {
                   🛵 Delivery
                 </button>
               )}
-            </div>
+            </HorizontalChipRow>
           </>
         )}
 
@@ -243,10 +242,7 @@ export default function CheckoutPage() {
               ['Subtotal', validation.subtotal],
               ['Descuento', -validation.discount],
               ['Impuestos', validation.taxes],
-              // platformFee y serviceFee son dos cargos configurables por separado en el backend
-              // (uno es la comisión de la plataforma, el otro un cargo de servicio aparte), pero
-              // al cliente no le sirve esa distinción interna — se muestran como un solo total.
-              ['Tarifa de servicio', validation.platformFee + validation.serviceFee],
+              ['Tarifa de servicio', validation.serviceFee],
               ['Envío', validation.deliveryFee],
             ].map(([label, value]) => (
               <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a' }}>

@@ -70,9 +70,9 @@ export default function CartPage() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Tu carrito
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
+        <div className="bingo-header-sub">Tu carrito</div>
       </header>
 
       <div className="bingo-content">

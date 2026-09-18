@@ -10,9 +10,6 @@ export default function StoreListCard({
   favorited?: boolean;
   onToggleFavorite?: (businessId: string) => void;
 }) {
-  const showDeliveryInfo =
-    business.deliveryEnabled && business.deliveryFeeUsd !== null && business.deliveryEstimateMinutes !== null;
-
   return (
     <a
       href={`/stores/${business.id}`}
@@ -111,18 +108,11 @@ export default function StoreListCard({
           }}
         >
           <span>
-            {showDeliveryInfo ? (
-              <>
-                🛵 Costo de envío: ${Number(business.deliveryFeeUsd).toFixed(2)} · {business.deliveryEstimateMinutes}{' '}
-                min
-              </>
-            ) : business.deliveryEnabled ? (
-              '🛵 Delivery disponible'
-            ) : business.pickupEnabled ? (
-              '🏪 Retiro en tienda'
-            ) : (
-              business.category.name
-            )}
+            {business.deliveryEnabled
+              ? '🛵 Delivery disponible'
+              : business.pickupEnabled
+                ? '🏪 Retiro en tienda'
+                : business.category.name}
           </span>
           <span style={{ flexShrink: 0 }}>
             ★ {business.ratingAvg.toFixed(1)} ({business.reviewCount}+)

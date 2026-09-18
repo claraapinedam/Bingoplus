@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import DirectoryListCard, { CATEGORY_ICONS, DirectoryListCardData } from '@/components/DirectoryListCard';
 import EmptyState from '@/components/EmptyState';
 import { apiFetch, ApiError, getUserLocation } from '@/lib/api';
@@ -90,11 +91,10 @@ function DirectoryContent() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Directorio
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
         <div className="bingo-header-sub">
-          Veterinarias, hoteles, groomers y más — no todos venden productos
+          Directorio · Veterinarias, hoteles, groomers y más
         </div>
         <form className="bingo-search" onSubmit={(e) => e.preventDefault()}>
           <input
@@ -137,22 +137,19 @@ function DirectoryContent() {
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <button
-                className="bingo-button secondary small"
-                style={{ width: 'auto' }}
+            <div style={{ marginBottom: 14 }}>
+              <BackButton
                 onClick={() => {
                   setCategorySlug('');
                   setSearch('');
                 }}
-              >
-                ← Categorías
-              </button>
+                label="Categorías"
+              />
               {categorySlug && (
-                <span style={{ fontWeight: 800, fontSize: 15 }}>
+                <div style={{ fontWeight: 800, fontSize: 15, marginTop: -8 }}>
                   {CATEGORY_ICONS[categories.find((c) => c.slug === categorySlug)?.icon ?? ''] ?? '🏢'}{' '}
                   {categories.find((c) => c.slug === categorySlug)?.name}
-                </span>
+                </div>
               )}
             </div>
 

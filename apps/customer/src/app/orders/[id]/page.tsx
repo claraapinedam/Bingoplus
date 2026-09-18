@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import RatingStars from '@/components/RatingStars';
 import { apiFetch, ApiError } from '@/lib/api';
@@ -32,7 +33,6 @@ interface OrderDetail {
   subtotal: string | number;
   discount: string | number;
   tax: string | number;
-  platformFee: string | number;
   serviceFee: string | number;
   deliveryFee: string | number;
   total: string | number;
@@ -156,17 +156,10 @@ export default function OrderDetailPage() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <button
-          className="bingo-button secondary small"
-          style={{ marginBottom: 10 }}
-          onClick={() => router.push('/orders')}
-        >
-          ← Mis pedidos
-        </button>
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          {order.orderNumber}
-        </div>
-        <div className="bingo-header-sub">{order.business.tradeName}</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" style={{ display: 'block', marginBottom: 10 }} />
+        <BackButton onClick={() => router.push('/orders')} label="Mis pedidos" light />
+        <div className="bingo-header-sub">{order.orderNumber} · {order.business.tradeName}</div>
       </header>
 
       <div className="bingo-content">
@@ -250,9 +243,7 @@ export default function OrderDetailPage() {
             ['Subtotal', Number(order.subtotal)],
             ['Descuento', -Number(order.discount)],
             ['Impuestos', Number(order.tax)],
-            // platformFee/serviceFee son dos cargos configurables por separado en el backend —
-            // al cliente se le muestran combinados, el desglose real queda en la orden.
-            ['Tarifa de servicio', Number(order.platformFee) + Number(order.serviceFee)],
+            ['Tarifa de servicio', Number(order.serviceFee)],
             ['Envío', Number(order.deliveryFee)],
           ].map(([label, value]) => (
             <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a' }}>

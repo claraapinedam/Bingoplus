@@ -5,6 +5,7 @@ import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
 import { ECUADOR_PROVINCES } from '@/lib/ecuadorProvinces';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 import SearchableSelect from './SearchableSelect';
+import HorizontalChipRow from './HorizontalChipRow';
 
 export interface AddressFormValues {
   label: string;
@@ -229,7 +230,7 @@ export default function AddressForm({
         <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6 }}>
           ¿Qué nombre le damos a esta dirección?
         </label>
-        <div className="bingo-chip-row">
+        <HorizontalChipRow>
           {LABEL_PRESETS.map((preset) => (
             <button
               key={preset}
@@ -250,7 +251,7 @@ export default function AddressForm({
           >
             Otro
           </button>
-        </div>
+        </HorizontalChipRow>
         {usingCustomLabel && (
           <input
             className="bingo-input"

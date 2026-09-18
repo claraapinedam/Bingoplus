@@ -1,3 +1,5 @@
+import HorizontalChipRow from './HorizontalChipRow';
+
 const SPECIES_ICONS: Record<string, string> = {
   dog: '🐶',
   cat: '🐱',
@@ -25,7 +27,7 @@ export default function SpeciesChips({
   onSelect: (slug: string) => void;
 }) {
   return (
-    <div className="bingo-chip-row">
+    <HorizontalChipRow>
       <button className={`bingo-chip${active === '' ? ' active' : ''}`} onClick={() => onSelect('')}>
         Todos
       </button>
@@ -38,6 +40,6 @@ export default function SpeciesChips({
           {SPECIES_ICONS[s.slug] ?? '🐾'} {s.name}
         </button>
       ))}
-    </div>
+    </HorizontalChipRow>
   );
 }

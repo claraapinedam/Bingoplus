@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import HorizontalChipRow from '@/components/HorizontalChipRow';
+import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import { apiFetch } from '@/lib/api';
 
@@ -48,22 +50,20 @@ export default function BookingsPage() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <button className="bingo-button secondary small" style={{ marginBottom: 10 }} onClick={() => router.back()}>
-          ← Volver
-        </button>
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Mis reservas
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" style={{ display: 'block', marginBottom: 10 }} />
+        <BackButton onClick={() => router.back()} light />
+        <div className="bingo-header-sub">Mis reservas</div>
       </header>
 
       <div className="bingo-content">
-        <div className="bingo-chip-row" style={{ marginBottom: 12 }}>
+        <HorizontalChipRow style={{ marginBottom: 12 }}>
           {TABS.map((t) => (
             <button key={t.value} className={`bingo-chip${tab === t.value ? ' active' : ''}`} onClick={() => setTab(t.value)}>
               {t.label}
             </button>
           ))}
-        </div>
+        </HorizontalChipRow>
 
         {bookings === null ? (
           <p style={{ color: '#7f8ea3', fontSize: 13 }}>Cargando…</p>

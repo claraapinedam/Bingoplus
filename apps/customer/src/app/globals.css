@@ -63,6 +63,11 @@ img {
   color: var(--bingo-teal);
 }
 
+.bingo-logo-img {
+  height: 34px;
+  width: auto;
+}
+
 .bingo-header-sub {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.75);
@@ -98,6 +103,12 @@ img {
   gap: 8px;
   overflow-x: auto;
   padding-bottom: 4px;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge */
+}
+
+.bingo-chip-row::-webkit-scrollbar {
+  display: none; /* Chrome/Safari — scroll still works via touch/drag, just no visible track */
 }
 
 .bingo-h-scroll {

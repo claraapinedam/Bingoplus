@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import AddressForm, { AddressFormValues } from '@/components/AddressForm';
 import { apiFetch, ApiError } from '@/lib/api';
 
@@ -41,16 +42,10 @@ function NewAddressContent() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <button
-          className="bingo-button secondary small"
-          style={{ marginBottom: 10 }}
-          onClick={() => router.back()}
-        >
-          ← Volver
-        </button>
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Agregar dirección
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" style={{ display: 'block', marginBottom: 10 }} />
+        <BackButton onClick={() => router.back()} light />
+        <div className="bingo-header-sub">Agregar dirección</div>
       </header>
 
       <div className="bingo-content">

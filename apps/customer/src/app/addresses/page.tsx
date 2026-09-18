@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import { apiFetch, ApiError } from '@/lib/api';
 
@@ -92,13 +93,12 @@ function AddressesContent() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <button className="bingo-button secondary small" style={{ marginBottom: 10 }} onClick={() => router.back()}>
-          ← Volver
-        </button>
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Mis direcciones
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" style={{ display: 'block', marginBottom: 10 }} />
+        <BackButton onClick={() => router.back()} light />
+        <div className="bingo-header-sub">
+          {returnTo ? 'Toca una dirección para usarla en tu pedido' : 'Mis direcciones'}
         </div>
-        {returnTo && <div className="bingo-header-sub">Toca una dirección para usarla en tu pedido</div>}
       </header>
 
       <div className="bingo-content">

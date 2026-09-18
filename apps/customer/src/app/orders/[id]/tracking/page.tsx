@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import MapView from '@/components/MapView';
 import { apiFetch } from '@/lib/api';
@@ -184,13 +185,12 @@ export default function DeliveryTrackingPage() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <button className="bingo-button secondary small" style={{ marginBottom: 10 }} onClick={() => router.back()}>
-          ← Volver
-        </button>
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Seguimiento de tu pedido
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" style={{ display: 'block', marginBottom: 10 }} />
+        <BackButton onClick={() => router.back()} light />
+        <div className="bingo-header-sub">
+          {connected ? 'Seguimiento de tu pedido' : `Seguimiento de tu pedido · Actualizando cada ${POLL_INTERVAL_MS / 1000}s…`}
         </div>
-        {!connected && <div className="bingo-header-sub">Actualizando cada {POLL_INTERVAL_MS / 1000}s…</div>}
       </header>
 
       <div className="bingo-content">

@@ -28,9 +28,9 @@ export default function ProfilePage() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Perfil
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
+        <div className="bingo-header-sub">Perfil</div>
       </header>
 
       <div className="bingo-content">

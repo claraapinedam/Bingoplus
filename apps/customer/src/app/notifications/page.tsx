@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import { apiFetch } from '@/lib/api';
 
@@ -46,13 +47,11 @@ export default function NotificationsPage() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <button className="bingo-button secondary small" style={{ marginBottom: 10 }} onClick={() => router.back()}>
-          ← Volver
-        </button>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="bingo-logo" style={{ fontSize: 18 }}>
-            Notificaciones
-          </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" style={{ display: 'block', marginBottom: 10 }} />
+        <BackButton onClick={() => router.back()} light />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+          <div className="bingo-header-sub" style={{ margin: 0 }}>Notificaciones</div>
           {unreadCount > 0 && (
             <button className="bingo-button secondary small" onClick={markAllRead}>
               Marcar todo leído

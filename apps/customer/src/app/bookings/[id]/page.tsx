@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import { apiFetch, ApiError } from '@/lib/api';
 
@@ -81,12 +82,10 @@ export default function BookingDetailPage() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <button className="bingo-button secondary small" style={{ marginBottom: 10 }} onClick={() => router.back()}>
-          ← Volver
-        </button>
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          {booking.service.name}
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" style={{ display: 'block', marginBottom: 10 }} />
+        <BackButton onClick={() => router.back()} light />
+        <div className="bingo-header-sub">{booking.service.name}</div>
       </header>
 
       <div className="bingo-content">

@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
+import HorizontalChipRow from '@/components/HorizontalChipRow';
 import StoreListCard from '@/components/StoreListCard';
 import { PromoStoreCardData } from '@/components/PromoStoreCard';
 import SpeciesChips, { Species } from '@/components/SpeciesChips';
@@ -85,11 +86,10 @@ function StoresContent() {
   return (
     <CustomerShell>
       <header className="bingo-header">
-        <div className="bingo-logo" style={{ fontSize: 18 }}>
-          Tiendas
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
         <div className="bingo-header-sub">
-          {location ? 'Ordenadas por relevancia y cercanía' : 'Ordenadas para tus mascotas'}
+          Tiendas · {location ? 'Ordenadas por relevancia y cercanía' : 'Ordenadas para tus mascotas'}
         </div>
         <form className="bingo-search" onSubmit={(e) => e.preventDefault()}>
           <input
@@ -105,7 +105,7 @@ function StoresContent() {
         <SpeciesChips species={species} active={speciesSlug} onSelect={setSpeciesSlug} />
 
         <div style={{ marginTop: 10 }}>
-          <div className="bingo-chip-row">
+          <HorizontalChipRow>
             <button
               className={`bingo-chip${productCategorySlug === '' ? ' active' : ''}`}
               onClick={() => setProductCategorySlug('')}
@@ -121,7 +121,7 @@ function StoresContent() {
                 {c.name}
               </button>
             ))}
-          </div>
+          </HorizontalChipRow>
         </div>
 
         {error && <div className="bingo-error-banner" style={{ marginTop: 12 }}>{error}</div>}
