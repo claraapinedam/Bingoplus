@@ -7,20 +7,32 @@ import { EmailProvider, SendEmailInput, SendEmailResult } from './email-provider
 export class ResendEmailProvider extends EmailProvider {
   readonly name = 'resend';
   private readonly logger = new Logger('ResendEmailProvider');
-  private readonly client: Resend;
+  // Lazy on purpose — EmailModule always registers this class as a provider (so its factory can
+  // choose between this and SandboxEmailProvider), which means Nest constructs it on every boot
+  // regardless of which one the factory ends up using. Building the Resend client eagerly here
+  // used to call `new Resend(undefined)` — which throws — on every environment that hasn't set
+  // RESEND_API_KEY, crashing the whole app at startup instead of just falling back to sandbox.
+  private client: Resend | null = null;
   private readonly fromAddress: string;
   private readonly fromName: string;
 
   constructor(private readonly config: ConfigService) {
     super();
-    this.client = new Resend(this.config.get<string>('RESEND_API_KEY'));
     // Resend's own sandbox sender — works with zero domain setup, exactly what "temporal" calls for.
     this.fromAddress = this.config.get<string>('EMAIL_FROM_ADDRESS') || 'onboarding@resend.dev';
     this.fromName = this.config.get<string>('EMAIL_FROM_NAME') || 'BINGO+';
   }
 
+  private getClient(): Resend {
+    if (!this.client) {
+      const apiKey = this.config.getOrThrow<string>('RESEND_API_KEY');
+      this.client = new Resend(apiKey);
+    }
+    return this.client;
+  }
+
   async send(input: SendEmailInput): Promise<SendEmailResult> {
-    const result = await this.client.emails.send({
+    const result = await this.getClient().emails.send({
       from: `${this.fromName} <${this.fromAddress}>`,
       to: input.to,
       subject: input.subject,
