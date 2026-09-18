@@ -372,8 +372,6 @@ async function seedBusinesses(owners: { id: string }[]) {
         status: seed.status,
         ratingAvg: 3.5 + (i % 5) * 0.3,
         reviewCount: 5 + i,
-        deliveryFeeUsd: deliveryEnabled ? 1 + (i % 4) * 0.25 : undefined,
-        deliveryEstimateMinutes: deliveryEnabled ? 20 + (i % 3) * 5 : undefined,
         businessUsers: { create: { userId: owner.id, role: BusinessUserRole.OWNER } },
       },
     });

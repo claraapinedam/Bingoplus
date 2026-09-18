@@ -10,6 +10,7 @@ import {
   RiderEarningStatus,
   RiderEarningType,
 } from '@prisma/client';
+import { resolveDateRange } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryEligibilityService } from './delivery-eligibility.service';
 import { DeliveryStateMachine } from './delivery-state-machine';
@@ -20,6 +21,7 @@ import { DeliverySyncService } from './delivery-sync.service';
 import { MapService } from '../maps/map.service';
 import { NotificationService } from '../notifications/notification.service';
 import { DeliveryGateway } from './delivery.gateway';
+import { DeliveryFareConfigService } from './delivery-fare-config.service';
 
 interface AddressSnapshot {
   line1?: string;
@@ -59,6 +61,7 @@ export class DeliveryService {
     private readonly maps: MapService,
     private readonly notifications: NotificationService,
     private readonly gateway: DeliveryGateway,
+    private readonly fareConfig: DeliveryFareConfigService,
   ) {}
 
   // ── Creation (§14/24) ──────────────────────────────────────────────────
@@ -249,6 +252,16 @@ export class DeliveryService {
     this.stateMachine.assertTransition(delivery.status, DeliveryStatus.DELIVERED);
     await this.proof.verify(deliveryId, otpCode);
 
+    // Reads the *current* DeliveryFareConfig, same "latest row wins" convention as every other
+    // append-only config in this codebase — not snapshotted at fare-quote time, since a rate
+    // change is expected to apply going forward, not retroactively re-litigate an already-quoted
+    // fare's split.
+    const fareConfig = await this.fareConfig.get();
+    const grossAmount = new Prisma.Decimal(delivery.deliveryFee);
+    const commissionAmount = grossAmount.mul(fareConfig.bingoCommissionPercent);
+    const taxWithheldAmount = grossAmount.minus(commissionAmount).mul(fareConfig.riderTaxWithholdingPercent);
+    const netAmount = grossAmount.minus(commissionAmount).minus(taxWithheldAmount);
+
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.delivery.updateMany({
         where: { id: deliveryId, status: DeliveryStatus.ARRIVED_AT_CUSTOMER },
@@ -268,8 +281,10 @@ export class DeliveryService {
         data: {
           riderId,
           deliveryId,
-          grossAmount: delivery.deliveryFee,
-          netAmount: delivery.deliveryFee,
+          grossAmount,
+          commissionAmount,
+          taxWithheldAmount,
+          netAmount,
           type: RiderEarningType.DELIVERY_FEE,
           status: RiderEarningStatus.PENDING,
         },
@@ -378,12 +393,17 @@ export class DeliveryService {
     return delivery;
   }
 
-  listForAdmin(params: { status?: DeliveryStatus; riderId?: string; userId?: string }) {
+  listForAdmin(params: { status?: DeliveryStatus; riderId?: string; userId?: string; from?: string; to?: string }) {
+    // Absent from/to means genuinely unbounded here (an operational list, not an analytics view
+    // that always resolves to *some* period) — resolveDateRange only gets called when at least one
+    // bound was actually given, reusing its date-only-vs-exact-hour parsing either way.
+    const range = params.from || params.to ? resolveDateRange({ preset: 'custom', from: params.from, to: params.to }) : null;
     return this.prisma.delivery.findMany({
       where: {
         ...(params.status ? { status: params.status } : {}),
         ...(params.riderId ? { riderId: params.riderId } : {}),
         ...(params.userId ? { order: { userId: params.userId } } : {}),
+        ...(range ? { createdAt: { gte: range.from, lte: range.to } } : {}),
       },
       include: ADMIN_DELIVERY_INCLUDE,
       orderBy: { createdAt: 'desc' },

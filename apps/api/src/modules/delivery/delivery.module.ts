@@ -4,6 +4,7 @@ import { OrdersModule } from '../orders/orders.module';
 import { MapModule } from '../maps/map.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { BusinessCapabilitiesModule } from '../business-capabilities/business-capabilities.module';
+import { DeliveryFareModule } from './delivery-fare.module';
 import { DeliveryEligibilityService } from './delivery-eligibility.service';
 import { DeliveryStateMachine } from './delivery-state-machine';
 import { DispatchService } from './dispatch.service';
@@ -19,7 +20,7 @@ import { OrderTrackingController, DeliveryTrackingController } from './customer-
 import { BusinessDeliveryController } from './business-delivery.controller';
 
 @Module({
-  imports: [OrdersModule, MapModule, NotificationsModule, BusinessCapabilitiesModule, JwtModule.register({})],
+  imports: [OrdersModule, MapModule, NotificationsModule, BusinessCapabilitiesModule, DeliveryFareModule, JwtModule.register({})],
   controllers: [RiderDeliveryController, OrderTrackingController, DeliveryTrackingController, BusinessDeliveryController],
   providers: [
     DeliveryEligibilityService,

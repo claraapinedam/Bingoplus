@@ -68,8 +68,6 @@ export class FavoritesService {
           reviewCount: b.reviewCount,
           deliveryEnabled: capabilityMaps.get(b.id)![BusinessCapabilityType.DELIVERY],
           pickupEnabled: capabilityMaps.get(b.id)![BusinessCapabilityType.PICKUP],
-          deliveryFeeUsd: b.deliveryFeeUsd,
-          deliveryEstimateMinutes: b.deliveryEstimateMinutes,
           distanceKm: null as number | null,
           isOpenNow,
           matchedSpecies: [] as string[],

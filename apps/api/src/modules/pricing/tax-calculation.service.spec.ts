@@ -6,11 +6,9 @@ describe('TaxCalculationService', () => {
   let service: TaxCalculationService;
 
   const config: PricingConfigValues = {
-    platformFeePercent: 0,
     serviceFeePercent: 0,
     serviceFeeFixed: 0,
     defaultTaxPercent: 0.15,
-    defaultDeliveryFee: 0,
   };
 
   beforeEach(() => {

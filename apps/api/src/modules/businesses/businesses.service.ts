@@ -185,8 +185,6 @@ export class BusinessesService {
         reviewCount: b.reviewCount,
         deliveryEnabled: capabilityMaps.get(b.id)![BusinessCapabilityType.DELIVERY],
         pickupEnabled: capabilityMaps.get(b.id)![BusinessCapabilityType.PICKUP],
-        deliveryFeeUsd: b.deliveryFeeUsd,
-        deliveryEstimateMinutes: b.deliveryEstimateMinutes,
         distanceKm: r.distanceKm,
         isOpenNow: r.isOpenNow,
         relevanceScore: r.relevanceScore,
@@ -457,7 +455,9 @@ export class BusinessesService {
 
   /**
    * Real count/sum of completed Orders per business (0 for everyone until Phase 3's checkout
-   * module starts creating orders — an honest empty state, never a placeholder number).
+   * module starts creating orders — an honest empty state, never a placeholder number). Sums
+   * `subtotal` (net of discount, pre-tax/fees) rather than `total` — BINGO+'s commission is a
+   * percentage of the sale itself, never of the tax or customer-facing fee lines stacked on top.
    */
   private async countSalesByBusiness(
     businessIds: string[],
@@ -467,10 +467,10 @@ export class BusinessesService {
       by: ['businessId'],
       where: { businessId: { in: businessIds }, status: { not: 'CANCELLED' } },
       _count: { _all: true },
-      _sum: { total: true },
+      _sum: { subtotal: true },
     });
     return new Map(
-      grouped.map((g) => [g.businessId, { count: g._count._all, total: Number(g._sum.total ?? 0) }]),
+      grouped.map((g) => [g.businessId, { count: g._count._all, total: Number(g._sum.subtotal ?? 0) }]),
     );
   }
 
@@ -600,6 +600,22 @@ export class BusinessesService {
       where: { key: DEFAULT_COMMISSION_SETTING_KEY },
     });
     return typeof setting?.value === 'number' ? setting.value : 0.15;
+  }
+
+  /** Admin-facing read of the same value approve() falls back to when no manual commissionRate
+   * is given — this is the "Negocios" side of Precios y comisiones, distinct from Commission.rate
+   * (frozen per-business once a contract is signed) and from anything customer-facing. */
+  getDefaultCommissionRateForAdmin() {
+    return this.getDefaultCommissionRate();
+  }
+
+  async setDefaultCommissionRate(rate: number, updatedBy?: string): Promise<number> {
+    await this.prisma.platformSetting.upsert({
+      where: { key: DEFAULT_COMMISSION_SETTING_KEY },
+      update: { value: rate, updatedBy },
+      create: { key: DEFAULT_COMMISSION_SETTING_KEY, value: rate, updatedBy },
+    });
+    return rate;
   }
 
   private async grantBusinessOwnerRole(userId: string) {

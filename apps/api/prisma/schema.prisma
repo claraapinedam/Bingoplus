@@ -271,43 +271,38 @@ enum BusinessIdType {
 }
 
 model Business {
-  id                      String                                 @id @default(cuid())
-  ownerId                 String
-  categoryId              String
-  tradeName               String
+  id                 String                                 @id @default(cuid())
+  ownerId            String
+  categoryId         String
+  tradeName          String
   // RUC: legalName is the "Razón Social". CEDULA: legalName is just the person's own name —
   // representativeName is only meaningful (and collected) for RUC, where a company signs through
   // a named legal representative rather than being the natural person itself.
-  idType                  BusinessIdType                         @default(RUC)
-  legalName               String
-  representativeName      String?
-  taxId                   String
-  email                   String
-  phone                   String
-  description             String?
-  logoUrl                 String?
-  coverImageUrl           String?
-  addressLine             String
-  city                    String
-  latitude                Float?
-  longitude               Float?
-  location                Unsupported("geography(Point, 4326)")?
-  openingHours            Json?
+  idType             BusinessIdType                         @default(RUC)
+  legalName          String
+  representativeName String?
+  taxId              String
+  email              String
+  phone              String
+  description        String?
+  logoUrl            String?
+  coverImageUrl      String?
+  addressLine        String
+  city               String
+  latitude           Float?
+  longitude          Float?
+  location           Unsupported("geography(Point, 4326)")?
+  openingHours       Json?
   // FASE 9 §3 — IANA zone (e.g. "America/Guayaquil"), never inferred. Defaulted rather than
   // nullable so every date computed against this business (availability, bookings, reminders,
   // promotions) always has an unambiguous zone instead of silently falling back to server time.
-  timezone                String                                 @default("America/Guayaquil")
-  status                  BusinessStatus                         @default(PENDING)
-  ratingAvg               Float                                  @default(0)
-  reviewCount             Int                                    @default(0)
-  // Only meaningful when the DELIVERY capability is enabled — null otherwise. Set by the
-  // business owner (never fabricated by the UI), so a card can honestly show a real fee/time
-  // or omit the line entirely instead of a placeholder number.
-  deliveryFeeUsd          Decimal?                               @db.Decimal(6, 2)
-  deliveryEstimateMinutes Int?
-  deletedAt               DateTime?
-  createdAt               DateTime                               @default(now())
-  updatedAt               DateTime                               @updatedAt
+  timezone           String                                 @default("America/Guayaquil")
+  status             BusinessStatus                         @default(PENDING)
+  ratingAvg          Float                                  @default(0)
+  reviewCount        Int                                    @default(0)
+  deletedAt          DateTime?
+  createdAt          DateTime                               @default(now())
+  updatedAt          DateTime                               @updatedAt
 
   // `ownerId` above is the denormalized legal/primary owner (kept for quick reads and the
   // onboarding record); actual access control reads from `businessUsers` (BusinessUser), which
@@ -658,9 +653,8 @@ model Order {
   status                  OrderStatus     @default(CREATED)
   subtotal                Decimal         @db.Decimal(12, 2)
   discount                Decimal         @default(0) @db.Decimal(12, 2)
-  // Customer-facing fee lines (§9/24) — distinct from Business.commissions, which is what
-  // BINGO+ takes from the business, not what the customer is charged.
-  platformFee             Decimal         @default(0) @db.Decimal(12, 2)
+  // Customer-facing fee lines (§9/24) — distinct from Commission/BusinessContract, which is what
+  // BINGO+ takes from the business's own payout, never an extra amount charged to the customer.
   serviceFee              Decimal         @default(0) @db.Decimal(12, 2)
   deliveryFee             Decimal         @default(0) @db.Decimal(12, 2)
   // "subtotalIva" / "subtotalIva0" in Ecuador SRI/Kushki terms — the split of `subtotal` (net of
@@ -848,15 +842,43 @@ model WebhookEvent {
 
 // Single-row, admin-editable fee configuration (§9/37) — never hardcoded. Append-only history
 // like MarketplaceRankingConfig: the latest row wins, so a fee change is auditable over time.
+// Customer-facing checkout charges only — the business's own commission never lives here (see
+// Commission/BusinessContract, set per-business at approval time) and delivery is priced by
+// DeliveryFareConfig below, not a flat fee.
 model PricingConfiguration {
-  id                 String   @id @default(cuid())
-  platformFeePercent Decimal  @default(0) @db.Decimal(5, 4)
-  serviceFeePercent  Decimal  @default(0) @db.Decimal(5, 4)
-  serviceFeeFixed    Decimal  @default(0) @db.Decimal(12, 2)
-  defaultTaxPercent  Decimal  @default(0) @db.Decimal(5, 4)
-  defaultDeliveryFee Decimal  @default(0) @db.Decimal(12, 2)
-  updatedBy          String?
-  createdAt          DateTime @default(now())
+  id                String   @id @default(cuid())
+  serviceFeePercent Decimal  @default(0) @db.Decimal(5, 4)
+  serviceFeeFixed   Decimal  @default(0) @db.Decimal(12, 2)
+  defaultTaxPercent Decimal  @default(0) @db.Decimal(5, 4)
+  updatedBy         String?
+  createdAt         DateTime @default(now())
+}
+
+// Admin-editable delivery fare formula (append-only, latest wins — same shape as
+// PricingConfiguration/RiderDispatchConfig): delivery is an agreement between BINGO+ and the
+// Rider, never something a business sets (see Business — it has no deliveryFeeUsd field). The
+// fare floor is whichever minimum applies for the time of day, then the greater of that floor or
+// the distance/time-based fare, times the live demand surge multiplier. From that same fare,
+// BINGO+ keeps its cut and withholds the rider's tax — see RiderEarning.commissionAmount/
+// taxWithheldAmount, computed at delivery completion using whatever this config's latest row says.
+model DeliveryFareConfig {
+  id                         String   @id @default(cuid())
+  minFareDay                 Decimal  @default(0) @db.Decimal(12, 2)
+  minFareNight               Decimal  @default(0) @db.Decimal(12, 2)
+  // Local hour (business timezone, 0-23) the night rate starts — e.g. 20 = 8pm.
+  nightStartHour             Int      @default(20)
+  // Local hour (business timezone, 0-23) the night rate ends — e.g. 6 = 6am.
+  nightEndHour               Int      @default(6)
+  perKmRate                  Decimal  @default(0) @db.Decimal(12, 2)
+  perMinuteRate              Decimal  @default(0) @db.Decimal(12, 2)
+  // Ratio of deliveries awaiting a rider to available riders at/above which surge applies.
+  surgeThreshold             Decimal  @default(2) @db.Decimal(6, 2)
+  // Multiplier applied to the whole fare once surgeThreshold is met — 1 = no surge.
+  surgeMultiplier            Decimal  @default(1) @db.Decimal(6, 2)
+  bingoCommissionPercent     Decimal  @default(0) @db.Decimal(5, 4)
+  riderTaxWithholdingPercent Decimal  @default(0) @db.Decimal(5, 4)
+  updatedBy                  String?
+  createdAt                  DateTime @default(now())
 }
 
 // ───────────────────────────── Riders & delivery (Phase 4) ─────────────────────────────
@@ -866,6 +888,9 @@ model PricingConfiguration {
 // (the Phase 2 placeholder `RiderStatus` mixed both and is replaced by this pair).
 enum RiderAccountStatus {
   PENDING_APPROVAL
+  // Admin approved the application and a RiderContract was generated — same gate as Business's
+  // APPROVED: not ACTIVE (can't go online/receive deliveries) until the rider actually signs it.
+  APPROVED
   ACTIVE
   SUSPENDED
   REJECTED
@@ -887,6 +912,11 @@ model Rider {
   // later refinement; proximity itself is computed from currentLocation, not from this string.
   city                  String?
   // Application basics — collected once, at apply time (see RiderProfileService.applyAsRider).
+  // Reuses Business's RUC/CEDULA distinction (BusinessIdType) — same two identification types,
+  // no reason for a parallel enum. legalName is the "razón social" and is only ever collected
+  // (or shown) for RUC; a CEDULA rider's name is just their own User.firstName/lastName, read-only.
+  idType                BusinessIdType?
+  legalName             String?
   birthDate             DateTime?
   nationalIdNumber      String?
   address               String?
@@ -913,9 +943,40 @@ model Rider {
   payouts           Payout[]
   locations         RiderLocation[]
   assignmentHistory DeliveryAssignmentHistory[]
+  contracts         RiderContract[]
 
   @@index([accountStatus])
   @@index([availabilityStatus])
+}
+
+// Created automatically the moment Admin approves a rider application (RidersService.approve) —
+// mirrors BusinessContract exactly: nothing goes ACTIVE (able to receive deliveries) until this is
+// signed. Snapshots the signer identity and the platform's current delivery-fare commission/tax
+// terms at creation time, never re-read live once written — the same "frozen photo" reasoning as
+// BusinessContract.commissionRatePercent, just sourced from DeliveryFareConfig instead of Commission.
+model RiderContract {
+  id                         String         @id @default(cuid())
+  riderId                    String
+  status                     ContractStatus @default(PENDING_SIGNATURE)
+  idType                     BusinessIdType
+  // Razón social for RUC, or the rider's own User.firstName+lastName for CEDULA — always
+  // populated, exactly like BusinessContract.legalName, since the PDF signer line needs it either way.
+  legalName                  String
+  taxId                      String
+  // Frozen at contract-generation time from DeliveryFareConfig — see the model-level comment.
+  bingoCommissionPercent     Decimal        @db.Decimal(5, 2)
+  riderTaxWithholdingPercent Decimal        @db.Decimal(5, 2)
+  contractText               String
+  signatureDataUrl           String?
+  signedAt                   DateTime?
+  signedIp                   String?
+  pdfUrl                     String?
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+
+  rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([riderId])
 }
 
 enum VehicleStatus {
@@ -949,9 +1010,11 @@ model Vehicle {
 
 enum RiderDocumentType {
   ID
+  SELFIE
   LICENSE
   INSURANCE
   VEHICLE_REGISTRATION
+  CONTRACT
 }
 
 // Own status enum rather than reusing the shared `DocumentStatus` (BusinessDocument) — riders
@@ -1213,16 +1276,21 @@ enum RiderEarningStatus {
 }
 
 model RiderEarning {
-  id          String             @id @default(cuid())
-  riderId     String
-  deliveryId  String?
-  grossAmount Decimal            @db.Decimal(12, 2)
-  adjustments Decimal            @default(0) @db.Decimal(12, 2)
-  netAmount   Decimal            @db.Decimal(12, 2)
-  currency    String             @default("USD")
-  type        RiderEarningType
-  status      RiderEarningStatus @default(PENDING)
-  createdAt   DateTime           @default(now())
+  id                String             @id @default(cuid())
+  riderId           String
+  deliveryId        String?
+  grossAmount       Decimal            @db.Decimal(12, 2)
+  // The two deductions DeliveryFareConfig defines, broken out explicitly (not folded into
+  // `adjustments`, which is for other manual adjustments like tips/bonuses/penalties) so the
+  // rider can see exactly what BINGO+ kept vs. what was withheld for tax.
+  commissionAmount  Decimal            @default(0) @db.Decimal(12, 2)
+  taxWithheldAmount Decimal            @default(0) @db.Decimal(12, 2)
+  adjustments       Decimal            @default(0) @db.Decimal(12, 2)
+  netAmount         Decimal            @db.Decimal(12, 2)
+  currency          String             @default("USD")
+  type              RiderEarningType
+  status            RiderEarningStatus @default(PENDING)
+  createdAt         DateTime           @default(now())
 
   rider    Rider     @relation(fields: [riderId], references: [id], onDelete: Cascade)
   delivery Delivery? @relation(fields: [deliveryId], references: [id])
@@ -1386,6 +1454,7 @@ enum PetFriendlyPlaceStatus {
   PENDING
   APPROVED
   REJECTED
+  SUSPENDED
 }
 
 model PetFriendlyPlace {

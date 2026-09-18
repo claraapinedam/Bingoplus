@@ -46,6 +46,25 @@ describe('OrdersService', () => {
       expect(prisma.order.findMany.mock.calls[0][0].where).toMatchObject({ businessId: 'b1' });
     });
 
+    it('listForAdmin leaves createdAt unbounded when no from/to is given', async () => {
+      await service.listForAdmin({});
+      expect(prisma.order.findMany.mock.calls[0][0].where.createdAt).toBeUndefined();
+    });
+
+    it('listForAdmin narrows to a date range when from/to are given', async () => {
+      await service.listForAdmin({ from: '2026-01-01', to: '2026-01-31' });
+      const { createdAt } = prisma.order.findMany.mock.calls[0][0].where;
+      expect(createdAt.gte.toISOString()).toBe(new Date(2026, 0, 1, 0, 0, 0, 0).toISOString());
+      expect(createdAt.lte.toISOString()).toBe(new Date(2026, 0, 31, 23, 59, 59, 999).toISOString());
+    });
+
+    it('listForAdmin respects an exact hour range when a full datetime is given', async () => {
+      await service.listForAdmin({ from: '2026-01-01T14:00', to: '2026-01-01T18:00' });
+      const { createdAt } = prisma.order.findMany.mock.calls[0][0].where;
+      expect(createdAt.gte.toISOString()).toBe(new Date(2026, 0, 1, 14, 0, 0, 0).toISOString());
+      expect(createdAt.lte.toISOString()).toBe(new Date(2026, 0, 1, 18, 0, 0, 0).toISOString());
+    });
+
     it('getForAdmin 404s on an unknown order — same as every other getForX', async () => {
       prisma.order.findUnique.mockResolvedValue(null);
       await expect(service.getForAdmin('ghost')).rejects.toBeInstanceOf(NotFoundException);

@@ -27,7 +27,7 @@ describe('BusinessesService', () => {
       userRole: { upsert: jest.fn() },
       commission: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn().mockResolvedValue(null) },
       order: { groupBy: jest.fn().mockResolvedValue([]) },
-      platformSetting: { findUnique: jest.fn() },
+      platformSetting: { findUnique: jest.fn(), upsert: jest.fn() },
       $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     };
     capabilities = {
@@ -342,7 +342,7 @@ describe('BusinessesService', () => {
   describe('listCommissionsForAdmin (§26) — real GMV × current rate, never a fabricated figure', () => {
     it('computes estimated revenue from the real sales total and the latest commission rate', async () => {
       prisma.business.findMany.mockResolvedValue([{ id: 'b1', tradeName: 'Biz', status: BusinessStatus.ACTIVE }]);
-      prisma.order.groupBy.mockResolvedValue([{ businessId: 'b1', _count: { _all: 3 }, _sum: { total: 100 } }]);
+      prisma.order.groupBy.mockResolvedValue([{ businessId: 'b1', _count: { _all: 3 }, _sum: { subtotal: 100 } }]);
       prisma.commission.findMany.mockResolvedValue([{ businessId: 'b1', rate: 0.15, effectiveFrom: new Date() }]);
 
       const [result] = await service.listCommissionsForAdmin();
@@ -374,7 +374,7 @@ describe('BusinessesService', () => {
   describe('getCommissionSummary — same real GMV × current-rate math, scoped to one business', () => {
     it('computes estimated revenue for a single business without pulling the whole platform list', async () => {
       prisma.business.findUnique.mockResolvedValue({ id: 'b1', tradeName: 'Biz', status: BusinessStatus.ACTIVE });
-      prisma.order.groupBy.mockResolvedValue([{ businessId: 'b1', _count: { _all: 2 }, _sum: { total: 50 } }]);
+      prisma.order.groupBy.mockResolvedValue([{ businessId: 'b1', _count: { _all: 2 }, _sum: { subtotal: 50 } }]);
       prisma.commission.findFirst.mockResolvedValue({ businessId: 'b1', rate: 0.15, effectiveFrom: new Date() });
 
       const result = await service.getCommissionSummary('b1');
@@ -392,6 +392,27 @@ describe('BusinessesService', () => {
 
       expect(result.commissionRate).toBeNull();
       expect(result.estimatedRevenue).toBeNull();
+    });
+  });
+
+  describe('default commission rate — Admin-facing (Precios y comisiones > Negocios)', () => {
+    it('reads the same PlatformSetting key approve() falls back to', async () => {
+      prisma.platformSetting.findUnique.mockResolvedValue({ value: 0.18 });
+
+      const rate = await service.getDefaultCommissionRateForAdmin();
+
+      expect(rate).toBe(0.18);
+      expect(prisma.platformSetting.findUnique).toHaveBeenCalledWith({ where: { key: 'default_commission_rate' } });
+    });
+
+    it('upserts the rate, auditable via updatedBy', async () => {
+      await service.setDefaultCommissionRate(0.22, 'admin-1');
+
+      expect(prisma.platformSetting.upsert).toHaveBeenCalledWith({
+        where: { key: 'default_commission_rate' },
+        update: { value: 0.22, updatedBy: 'admin-1' },
+        create: { key: 'default_commission_rate', value: 0.22, updatedBy: 'admin-1' },
+      });
     });
   });
 });

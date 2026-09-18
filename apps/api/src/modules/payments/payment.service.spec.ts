@@ -158,5 +158,21 @@ describe('PaymentService', () => {
         { booking: { businessId: 'biz-1' } },
       ]);
     });
+
+    it('listForAdmin leaves createdAt unbounded when no from/to is given', async () => {
+      prisma.payment.count.mockResolvedValue(0);
+      prisma.payment.findMany.mockResolvedValue([]);
+      await service.listForAdmin({});
+      expect(prisma.payment.count.mock.calls[0][0].where.createdAt).toBeUndefined();
+    });
+
+    it('listForAdmin narrows to a date range when from/to are given', async () => {
+      prisma.payment.count.mockResolvedValue(0);
+      prisma.payment.findMany.mockResolvedValue([]);
+      await service.listForAdmin({ from: '2026-01-01', to: '2026-01-31' });
+      const { createdAt } = prisma.payment.count.mock.calls[0][0].where;
+      expect(createdAt.gte.toISOString()).toBe(new Date(2026, 0, 1, 0, 0, 0, 0).toISOString());
+      expect(createdAt.lte.toISOString()).toBe(new Date(2026, 0, 31, 23, 59, 59, 999).toISOString());
+    });
   });
 });

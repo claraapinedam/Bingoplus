@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PaymentStatus, Prisma, TransactionType } from '@prisma/client';
-import { resolvePagination } from '@bingoplus/utils';
+import { resolveDateRange, resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PAYMENT_PROVIDER_TOKEN, PaymentProvider } from './providers/payment-provider.interface';
 
@@ -180,10 +180,13 @@ export class PaymentService {
     status?: PaymentStatus;
     search?: string;
     businessId?: string;
+    from?: string;
+    to?: string;
     page?: number;
     pageSize?: number;
   }) {
     const { skip, take, page, pageSize } = resolvePagination(query);
+    const range = query.from || query.to ? resolveDateRange({ preset: 'custom', from: query.from, to: query.to }) : null;
     // FASE 9 §1: a Payment now belongs to either an Order or a Booking — businessId/search must
     // match through whichever relation is actually populated, never silently hide Booking
     // payments just because the filter logic only knew about Order.
@@ -214,6 +217,7 @@ export class PaymentService {
     const hasFilter = Object.keys(orderWhere).length > 0;
     const where: Prisma.PaymentWhereInput = {
       ...(query.status ? { status: query.status } : {}),
+      ...(range ? { createdAt: { gte: range.from, lte: range.to } } : {}),
       ...(hasFilter ? { OR: [{ order: orderWhere }, { booking: bookingWhere }] } : {}),
     };
     const [total, payments] = await this.prisma.$transaction([

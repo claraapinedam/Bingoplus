@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { BusinessCapabilityType, BusinessStatus, FulfillmentType, OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
-import { PriceCalculationService, PriceableCartItem } from '../pricing/price-calculation.service';
+import { PriceCalculationService, PriceableCartItem, DeliveryFareContext } from '../pricing/price-calculation.service';
 import { StockService } from '../pricing/stock.service';
 import { PaymentService } from '../payments/payment.service';
 import { OrderStateMachine } from '../orders/order-state-machine';
@@ -46,7 +46,7 @@ export class CheckoutService {
       business.id,
       items,
       dto.fulfillmentType,
-      business.deliveryFeeUsd,
+      this.buildDeliveryFareContext(business, address),
       this.defaultCurrency,
     );
 
@@ -70,7 +70,6 @@ export class CheckoutService {
       taxableSubtotal: breakdown.taxableSubtotal.toNumber(),
       zeroTaxSubtotal: breakdown.zeroTaxSubtotal.toNumber(),
       taxes: breakdown.tax.toNumber(),
-      platformFee: breakdown.platformFee.toNumber(),
       serviceFee: breakdown.serviceFee.toNumber(),
       deliveryFee: breakdown.deliveryFee.toNumber(),
       total: breakdown.total.toNumber(),
@@ -109,7 +108,7 @@ export class CheckoutService {
         business.id,
         items,
         dto.fulfillmentType,
-        business.deliveryFeeUsd,
+        this.buildDeliveryFareContext(business, address),
         this.defaultCurrency,
       );
 
@@ -133,7 +132,6 @@ export class CheckoutService {
           status: OrderStatus.PAYMENT_PENDING,
           subtotal: breakdown.subtotal,
           discount: breakdown.discount,
-          platformFee: breakdown.platformFee,
           serviceFee: breakdown.serviceFee,
           deliveryFee: breakdown.deliveryFee,
           taxableSubtotal: breakdown.taxableSubtotal,
@@ -313,6 +311,20 @@ export class CheckoutService {
     }
 
     return { cart, business, address };
+  }
+
+  /** DeliveryFareCalculationService needs real coordinates on both ends, not a business-set flat
+   * fee — either can legitimately be missing (business never geocoded, address has no lat/lng
+   * yet), in which case the fare quote just degrades to the flat minimum, same as a Maps outage. */
+  private buildDeliveryFareContext(
+    business: { latitude: number | null; longitude: number | null; timezone: string },
+    address: { latitude: number | null; longitude: number | null } | null,
+  ): DeliveryFareContext {
+    return {
+      pickup: business.latitude != null && business.longitude != null ? { latitude: business.latitude, longitude: business.longitude } : null,
+      dropoff: address?.latitude != null && address?.longitude != null ? { latitude: address.latitude, longitude: address.longitude } : null,
+      timezone: business.timezone,
+    };
   }
 
   private toPriceableItems(cart: Prisma.CartGetPayload<{ include: typeof CART_INCLUDE }>): PriceableCartItem[] {

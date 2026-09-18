@@ -126,11 +126,6 @@ describe('BINGO+ API — FASE 4 Delivery (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ capability: 'DELIVERY', enabled: true })
       .expect(200);
-    await request(app.getHttpServer())
-      .patch(`/api/v1/me/business/${id}`)
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ deliveryFeeUsd: 2 })
-      .expect(200);
     return id;
   }
 

@@ -3,6 +3,8 @@ import { FulfillmentType, Prisma, ProductTaxCategory } from '@prisma/client';
 import { PricingConfigService } from './pricing-config.service';
 import { TaxCalculationService } from './tax-calculation.service';
 import { DiscountService } from './discount.service';
+import { DeliveryFareCalculationService } from '../delivery/delivery-fare-calculation.service';
+import { Coordinates } from '../maps/providers/map-provider.interface';
 
 export interface PriceableCartItem {
   productId: string;
@@ -32,17 +34,28 @@ export interface PriceBreakdown {
   /** Aka "subtotalIva0" — see TaxCalculationService. */
   zeroTaxSubtotal: Prisma.Decimal;
   tax: Prisma.Decimal;
-  platformFee: Prisma.Decimal;
   serviceFee: Prisma.Decimal;
   deliveryFee: Prisma.Decimal;
   total: Prisma.Decimal;
   currency: string;
 }
 
+/** Pickup/dropoff coordinates + the business's IANA timezone for computing a DELIVERY order's
+ * fare — irrelevant (and never read) for a PICKUP order. */
+export interface DeliveryFareContext {
+  pickup: Coordinates | null;
+  dropoff: Coordinates | null;
+  timezone: string;
+}
+
 /**
  * The single source of truth for what a Marketplace order costs (§9). Always recomputes from
  * live product prices and the current PricingConfiguration — a client-supplied subtotal/total is
  * never trusted, here or anywhere downstream (§65).
+ *
+ * There is deliberately no platform commission line here — what BINGO+ keeps from a sale is
+ * Commission.rate, discounted from the business's own payout (see the signed BusinessContract),
+ * never an extra amount charged on top of the customer's total.
  */
 @Injectable()
 export class PriceCalculationService {
@@ -50,13 +63,14 @@ export class PriceCalculationService {
     private readonly pricingConfig: PricingConfigService,
     private readonly tax: TaxCalculationService,
     private readonly discount: DiscountService,
+    private readonly deliveryFare: DeliveryFareCalculationService,
   ) {}
 
   async calculate(
     businessId: string,
     items: PriceableCartItem[],
     fulfillmentType: FulfillmentType,
-    businessDeliveryFee: Prisma.Decimal | null,
+    deliveryContext: DeliveryFareContext | null,
     currency = 'USD',
   ): Promise<PriceBreakdown> {
     const config = await this.pricingConfig.get();
@@ -72,14 +86,17 @@ export class PriceCalculationService {
     const { discountAmount } = await this.discount.calculate(businessId, items, subtotal);
     const { taxableSubtotal, zeroTaxSubtotal, tax: taxAmount } = this.tax.calculate(lineItems, discountAmount, config);
 
-    const platformFee = subtotal.mul(config.platformFeePercent);
     const serviceFee = subtotal.mul(config.serviceFeePercent).plus(config.serviceFeeFixed);
     const deliveryFee =
-      fulfillmentType === FulfillmentType.DELIVERY
-        ? (businessDeliveryFee ?? new Prisma.Decimal(config.defaultDeliveryFee))
+      fulfillmentType === FulfillmentType.DELIVERY && deliveryContext
+        ? new Prisma.Decimal(
+            (
+              await this.deliveryFare.calculate(deliveryContext.pickup, deliveryContext.dropoff, deliveryContext.timezone)
+            ).fee,
+          )
         : new Prisma.Decimal(0);
 
-    const total = subtotal.minus(discountAmount).plus(taxAmount).plus(platformFee).plus(serviceFee).plus(deliveryFee);
+    const total = subtotal.minus(discountAmount).plus(taxAmount).plus(serviceFee).plus(deliveryFee);
 
     return {
       items: lineItems,
@@ -88,7 +105,6 @@ export class PriceCalculationService {
       taxableSubtotal,
       zeroTaxSubtotal,
       tax: taxAmount,
-      platformFee,
       serviceFee,
       deliveryFee,
       total,

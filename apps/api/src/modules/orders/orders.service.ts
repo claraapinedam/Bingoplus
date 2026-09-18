@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { FulfillmentType, OrderStatus } from '@prisma/client';
-import { resolvePagination } from '@bingoplus/utils';
+import { resolveDateRange, resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { OrderStateMachine } from './order-state-machine';
@@ -71,11 +71,21 @@ export class OrdersService {
 
   // ── Admin-facing (FASE 6 §12) — global read-only supervision, no second state machine ─────
 
-  async listForAdmin(query: { status?: OrderStatus; businessId?: string; search?: string; page?: number; pageSize?: number }) {
+  async listForAdmin(query: {
+    status?: OrderStatus;
+    businessId?: string;
+    search?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
     const { skip, take, page, pageSize } = resolvePagination(query);
+    const range = query.from || query.to ? resolveDateRange({ preset: 'custom', from: query.from, to: query.to }) : null;
     const where = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.businessId ? { businessId: query.businessId } : {}),
+      ...(range ? { createdAt: { gte: range.from, lte: range.to } } : {}),
       ...(query.search
         ? {
             OR: [

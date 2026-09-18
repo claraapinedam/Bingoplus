@@ -18,6 +18,7 @@ import { PromotionsModule } from '../promotions/promotions.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { PetFriendlyPlacesModule } from '../pet-friendly-places/pet-friendly-places.module';
 import { ContractsModule } from '../contracts/contracts.module';
+import { DeliveryFareModule } from '../delivery/delivery-fare.module';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminCustomersController } from './admin-customers.controller';
 import { AdminBusinessesController } from './admin-businesses.controller';
@@ -58,6 +59,7 @@ import { AdminPetFriendlyPlacesController } from './admin-pet-friendly-places.co
     AnalyticsModule,
     PetFriendlyPlacesModule,
     ContractsModule,
+    DeliveryFareModule,
   ],
   controllers: [
     AdminUsersController,

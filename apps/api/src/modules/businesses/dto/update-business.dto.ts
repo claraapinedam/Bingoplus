@@ -1,9 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 // Delivery/pickup moved to BusinessCapability (PATCH /me/business/:id/capabilities) — they're
 // operational toggles, not core business record fields, per the capabilities-vs-category
-// separation (RULE 2/3).
+// separation (RULE 2/3). Delivery is priced by DeliveryFareConfig (Admin-owned, an agreement with
+// the Rider) — a business never sets its own delivery fee/estimate.
 export class UpdateBusinessDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -30,16 +31,4 @@ export class UpdateBusinessDto {
   })
   @IsOptional()
   openingHours?: Record<string, { open: string; close: string }>;
-
-  @ApiPropertyOptional({ description: 'Only meaningful once the DELIVERY capability is enabled' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  deliveryFeeUsd?: number;
-
-  @ApiPropertyOptional({ description: 'Only meaningful once the DELIVERY capability is enabled' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  deliveryEstimateMinutes?: number;
 }

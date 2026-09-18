@@ -164,8 +164,6 @@ export class CouponsService {
         reviewCount: b.reviewCount,
         deliveryEnabled: capabilityMaps.get(id)![BusinessCapabilityType.DELIVERY],
         pickupEnabled: capabilityMaps.get(id)![BusinessCapabilityType.PICKUP],
-        deliveryFeeUsd: b.deliveryFeeUsd,
-        deliveryEstimateMinutes: b.deliveryEstimateMinutes,
         offer: { title: primary.title, discountType: primary.discountType, discountValue: primary.discountValue },
         moreOffersCount: rest.length,
       };

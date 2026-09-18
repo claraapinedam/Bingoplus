@@ -9,6 +9,10 @@ import { BusinessRankingService } from '../ranking/business-ranking.service';
 import { RankingWeightsDto } from './dto/ranking-weights.dto';
 import { PricingConfigService } from '../pricing/pricing-config.service';
 import { SetPricingConfigDto } from '../pricing/dto/set-pricing-config.dto';
+import { DeliveryFareConfigService } from '../delivery/delivery-fare-config.service';
+import { SetDeliveryFareConfigDto } from '../delivery/dto/set-delivery-fare-config.dto';
+import { BusinessesService } from '../businesses/businesses.service';
+import { SetDefaultCommissionRateDto } from './dto/set-default-commission-rate.dto';
 
 /**
  * Marketplace ranking configuration — kept out of code per the project rule that these weights
@@ -22,6 +26,8 @@ export class AdminSettingsController {
   constructor(
     private readonly ranking: BusinessRankingService,
     private readonly pricingConfig: PricingConfigService,
+    private readonly deliveryFareConfig: DeliveryFareConfigService,
+    private readonly businesses: BusinessesService,
   ) {}
 
   @Get('ranking-weights')
@@ -49,5 +55,35 @@ export class AdminSettingsController {
   @Patch('pricing')
   setPricing(@CurrentUser() admin: AuthenticatedUser, @Body() dto: SetPricingConfigDto) {
     return this.pricingConfig.set(dto, admin.id);
+  }
+
+  /** Delivery is an agreement BINGO+ makes with the Rider, not something a business sets — see
+   * DeliveryFareCalculationService. */
+  @Get('delivery-fare')
+  getDeliveryFare() {
+    return this.deliveryFareConfig.get();
+  }
+
+  @Audit('settings.delivery-fare.update', 'DeliveryFareConfig')
+  @Patch('delivery-fare')
+  setDeliveryFare(@CurrentUser() admin: AuthenticatedUser, @Body() dto: SetDeliveryFareConfigDto) {
+    if (dto.nightStartHour === dto.nightEndHour) {
+      throw new BadRequestException('nightStartHour and nightEndHour cannot be the same hour');
+    }
+    return this.deliveryFareConfig.set(dto, admin.id);
+  }
+
+  /** The business's own commission is Commission.rate, frozen per-business once its contract is
+   * signed (see BusinessesService.approve) — this is only the fallback rate used when approving
+   * without an explicit override. */
+  @Get('default-commission-rate')
+  async getDefaultCommissionRate() {
+    return { rate: await this.businesses.getDefaultCommissionRateForAdmin() };
+  }
+
+  @Audit('settings.default-commission-rate.update', 'PlatformSetting')
+  @Patch('default-commission-rate')
+  async setDefaultCommissionRate(@CurrentUser() admin: AuthenticatedUser, @Body() dto: SetDefaultCommissionRateDto) {
+    return { rate: await this.businesses.setDefaultCommissionRate(dto.rate, admin.id) };
   }
 }
