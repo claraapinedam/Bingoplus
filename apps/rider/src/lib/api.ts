@@ -153,8 +153,11 @@ export async function register(input: { email: string; password: string; firstNa
 }
 
 /** Uploads a single file (e.g. an ID photo) and returns the URL to pass back in the application
- * DTO — deliberately bypasses apiFetch's JSON Content-Type default, multipart sets its own. */
-export async function uploadFile(file: File): Promise<{ url: string }> {
+ * DTO — deliberately bypasses apiFetch's JSON Content-Type default, multipart sets its own.
+ * Retries once against a refreshed token on 401, same as apiFetch — the rider application is a
+ * long multi-step form (ID data, address autocomplete, then photos), long enough that the
+ * 15-minute access token can genuinely expire before the applicant reaches the upload step. */
+export async function uploadFile(file: File, _isRetry = false): Promise<{ url: string }> {
   const token = getAccessToken();
   const form = new FormData();
   form.append('file', file);
@@ -163,6 +166,19 @@ export async function uploadFile(file: File): Promise<{ url: string }> {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: form,
   });
+
+  if (res.status === 401 && !_isRetry) {
+    const refreshed = await refreshSession();
+    if (refreshed) {
+      return uploadFile(file, true);
+    }
+    clearTokens();
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+    throw new ApiError(401, 'SESSION_EXPIRED', 'Tu sesión expiró. Inicia sesión de nuevo.');
+  }
+
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new ApiError(res.status, body?.error?.code ?? 'UPLOAD_FAILED', body?.error?.message ?? 'No se pudo subir el archivo.');
