@@ -61,7 +61,7 @@ export class BookingsService {
 
   async getAvailableSlots(serviceId: string, dateStr: string) {
     const service = await this.prisma.service.findFirst({
-      where: { id: serviceId, active: true },
+      where: { id: serviceId, active: true, deletedAt: null },
       include: { business: { select: { openingHours: true, status: true } } },
     });
     if (!service) throw new NotFoundException('Service not found');
@@ -144,7 +144,7 @@ export class BookingsService {
       where: { id: dto.serviceId },
       include: { species: { include: { species: true } }, business: true },
     });
-    if (!service || !service.active) throw new NotFoundException('Service not found');
+    if (!service || !service.active || service.deletedAt) throw new NotFoundException('Service not found');
     if (service.business.status !== BusinessStatus.ACTIVE) {
       throw new BadRequestException('This business is not currently accepting bookings');
     }

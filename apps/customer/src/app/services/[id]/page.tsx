@@ -13,6 +13,8 @@ const SERVICE_TYPE_LABELS: Record<string, string> = {
   DAYCARE: 'Guardería',
   BOARDING: 'Hospedaje',
   DOG_WALKING: 'Paseador',
+  TRAINING: 'Adiestramiento',
+  OTHER: 'Otro',
 };
 
 interface ServiceDetail {

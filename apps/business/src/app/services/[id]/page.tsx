@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import DashboardShell, { useBusiness } from '@/components/DashboardShell';
+import DashboardShell from '@/components/DashboardShell';
 import EmptyState from '@/components/EmptyState';
 import ServiceForm, { ServiceFormValues } from '@/components/ServiceForm';
 import { apiFetch, ApiError, getActiveBusinessId } from '@/lib/api';
@@ -28,7 +28,6 @@ interface Service {
 function ServiceDetailContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { business } = useBusiness();
   const businessId = getActiveBusinessId();
   const [service, setService] = useState<Service | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
@@ -79,6 +78,20 @@ function ServiceDetailContent() {
     }
   }
 
+  async function remove() {
+    if (!businessId) return;
+    if (!window.confirm('¿Eliminar este servicio? Las reservas ya realizadas se conservan, pero no se podrán crear reservas nuevas para este servicio.')) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/business/${businessId}/services/${params.id}`, { method: 'DELETE' });
+      router.push('/services');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo eliminar el servicio.');
+      setBusy(false);
+    }
+  }
+
   if (service === undefined) {
     return <p style={{ color: '#7f8ea3', fontSize: 13 }}>Cargando…</p>;
   }
@@ -100,9 +113,14 @@ function ServiceDetailContent() {
             </span>
           </div>
         </div>
-        <button className="bingo-button secondary" style={{ width: 'auto' }} disabled={busy} onClick={toggleActive}>
-          {service.active ? 'Desactivar' : 'Activar'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="bingo-button secondary" style={{ width: 'auto' }} disabled={busy} onClick={toggleActive}>
+            {service.active ? 'Desactivar' : 'Activar'}
+          </button>
+          <button className="bingo-button danger" style={{ width: 'auto' }} disabled={busy} onClick={remove}>
+            Eliminar
+          </button>
+        </div>
       </header>
 
       {error && <div className="bingo-error-banner" style={{ marginBottom: 14, maxWidth: 640 }}>{error}</div>}
@@ -126,7 +144,6 @@ function ServiceDetailContent() {
         submitting={saving}
         submitLabel="Guardar cambios"
         onSubmit={handleSubmit}
-        homeServiceEnabled={business.capabilities.HOME_SERVICE}
       />
     </>
   );

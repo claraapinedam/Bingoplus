@@ -238,7 +238,7 @@ export class BusinessesService {
   private async resolveHasPhysicalLocation(businessId: string, capabilities: CapabilityMap): Promise<boolean> {
     if (capabilities.SELLS_PRODUCTS || capabilities.PICKUP || !capabilities.HOME_SERVICE) return true;
     const onPremisesService = await this.prisma.service.findFirst({
-      where: { businessId, active: true, locationType: { not: ServiceLocationType.AT_CUSTOMER_HOME } },
+      where: { businessId, active: true, deletedAt: null, locationType: { not: ServiceLocationType.AT_CUSTOMER_HOME } },
       select: { id: true },
     });
     return onPremisesService !== null;
@@ -460,7 +460,9 @@ export class BusinessesService {
    * The business owner/manager can only toggle their own *operational* capabilities — whether
    * they sell products at all (SELLS_PRODUCTS) or appear in the Directory (DIRECTORY_LISTING)
    * are platform-eligibility decisions reserved for Admin (mirrors the approve/reject/suspend
-   * tier of control), not a business-side self-service toggle.
+   * tier of control), not a business-side self-service toggle. HOME_SERVICE isn't here either —
+   * it's derived automatically by ServicesService.resolveLocationType the first time a service is
+   * set to AT_CUSTOMER_HOME/BOTH, never toggled directly.
    */
   async setOperationalCapability(businessId: string, capability: BusinessCapabilityType, enabled: boolean) {
     const OPERATIONAL: BusinessCapabilityType[] = [
@@ -469,7 +471,6 @@ export class BusinessesService {
       BusinessCapabilityType.COUPONS,
       BusinessCapabilityType.PICKUP,
       BusinessCapabilityType.DELIVERY,
-      BusinessCapabilityType.HOME_SERVICE,
     ];
     if (!OPERATIONAL.includes(capability)) {
       throw new BadRequestException(

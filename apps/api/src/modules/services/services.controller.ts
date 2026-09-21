@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { BusinessCapabilityType } from '@prisma/client';
 import { Public } from '../../common/decorators/public.decorator';
@@ -69,5 +69,11 @@ export class BusinessServicesController {
   @Patch(':id/deactivate')
   deactivate(@Param('businessId') businessId: string, @Param('id') id: string) {
     return this.servicesService.deactivate(businessId, id);
+  }
+
+  @Audit('service.delete', 'Service')
+  @Delete(':id')
+  remove(@Param('businessId') businessId: string, @Param('id') id: string) {
+    return this.servicesService.remove(businessId, id);
   }
 }

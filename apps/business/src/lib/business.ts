@@ -15,20 +15,15 @@ export type CapabilityMap = Record<
 /** Capabilities the business itself may toggle (PATCH /business/:id/capabilities) — SELLS_PRODUCTS
  * and DIRECTORY_LISTING are platform-eligibility decisions reserved for Admin, matching exactly
  * what BusinessesService.setOperationalCapability enforces server-side. Mirrored here only to
- * decide what Settings shows as editable vs read-only — the real enforcement is the backend 400. */
-export const OPERATIONAL_CAPABILITIES: (keyof CapabilityMap)[] = [
-  'SERVICES',
-  'BOOKINGS',
-  'COUPONS',
-  'HOME_SERVICE',
-  'PICKUP',
-  'DELIVERY',
-];
+ * decide what Settings shows as editable vs read-only — the real enforcement is the backend 400.
+ * HOME_SERVICE isn't here either — it's derived automatically the first time a service is set to
+ * "a domicilio"/"ambas" (see ServiceForm), never a manual switch, so Settings has nothing to show. */
+export const OPERATIONAL_CAPABILITIES: (keyof CapabilityMap)[] = ['SERVICES', 'BOOKINGS', 'COUPONS', 'PICKUP', 'DELIVERY'];
 
-/** SERVICES/BOOKINGS/COUPONS/HOME_SERVICE only apply to a Directory-listed business — hidden
- * entirely (not just disabled) while DIRECTORY_LISTING is off, mirroring
+/** SERVICES/BOOKINGS/COUPONS only apply to a Directory-listed business — hidden entirely (not
+ * just disabled) while DIRECTORY_LISTING is off, mirroring
  * BusinessesService.setOperationalCapability's server-side 400 for the same case. */
-export const DIRECTORY_DEPENDENT_CAPABILITIES: (keyof CapabilityMap)[] = ['SERVICES', 'BOOKINGS', 'COUPONS', 'HOME_SERVICE'];
+export const DIRECTORY_DEPENDENT_CAPABILITIES: (keyof CapabilityMap)[] = ['SERVICES', 'BOOKINGS', 'COUPONS'];
 
 /** PICKUP/DELIVERY are fulfillment options for products — hidden while SELLS_PRODUCTS is off. */
 export const PRODUCTS_DEPENDENT_CAPABILITIES: (keyof CapabilityMap)[] = ['PICKUP', 'DELIVERY'];

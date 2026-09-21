@@ -355,10 +355,9 @@ describe('BusinessesService', () => {
       expect(capabilities.set).not.toHaveBeenCalled();
     });
 
-    it('rejects turning on HOME_SERVICE while DIRECTORY_LISTING is off', async () => {
-      capabilities.getMap.mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: false });
-
+    it('rejects HOME_SERVICE outright — it is admin/derived-only, never owner-settable directly', async () => {
       await expect(service.setOperationalCapability('b1', 'HOME_SERVICE' as any, true)).rejects.toBeInstanceOf(BadRequestException);
+      expect(capabilities.getMap).not.toHaveBeenCalled();
     });
 
     it('allows turning on BOOKINGS once DIRECTORY_LISTING is on', async () => {

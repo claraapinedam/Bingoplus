@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { BusinessCapabilityType, BusinessStatus, Prisma, ServiceLocationType, ServiceType } from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 
 /** DAYCARE/BOARDING are booked by date range (see BookingsService), never a time slot — they must
@@ -20,13 +21,17 @@ export const DEFAULT_SERVICE_CAPACITY = 1;
 
 @Injectable()
 export class ServicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly capabilities: BusinessCapabilitiesService,
+  ) {}
 
   // ── Public (customer-facing) ─────────────────────────────────────────────
 
   async listPublic(query: ListPublicServicesQueryDto) {
     const where: Prisma.ServiceWhereInput = {
       active: true,
+      deletedAt: null,
       business: {
         status: BusinessStatus.ACTIVE,
         deletedAt: null,
@@ -51,6 +56,7 @@ export class ServicesService {
       where: {
         id: serviceId,
         active: true,
+        deletedAt: null,
         business: {
           status: BusinessStatus.ACTIVE,
           deletedAt: null,
@@ -91,6 +97,7 @@ export class ServicesService {
   async listForAdmin(query: ListAdminServicesQueryDto) {
     const { skip, take, page, pageSize } = resolvePagination(query);
     const where: Prisma.ServiceWhereInput = {
+      deletedAt: null,
       ...(query.businessId ? { businessId: query.businessId } : {}),
       ...(query.type ? { type: query.type } : {}),
       ...(query.search ? { name: { contains: query.search, mode: 'insensitive' } } : {}),
@@ -123,6 +130,7 @@ export class ServicesService {
     const { skip, take, page, pageSize } = resolvePagination(query);
     const where: Prisma.ServiceWhereInput = {
       businessId,
+      deletedAt: null,
       ...(query.active !== undefined ? { active: query.active } : {}),
       ...(query.search ? { name: { contains: query.search, mode: 'insensitive' } } : {}),
     };
@@ -197,21 +205,16 @@ export class ServicesService {
     });
   }
 
-  /** AT_CUSTOMER_HOME/BOTH require the business to have HOME_SERVICE enabled — a business without
-   * it only ever renders services AT_BUSINESS, mirroring the owner-facing UI hiding the field. */
+  /** Freely choosable on every service — no capability prerequisite. The first time a business
+   * uses AT_CUSTOMER_HOME/BOTH, this auto-enables HOME_SERVICE so it stays an accurate, derived
+   * signal (consumed by BusinessesService.resolveHasPhysicalLocation to decide whether "Cómo
+   * llegar" makes sense to show) rather than something the owner has to remember to turn on first. */
   private async resolveLocationType(
     businessId: string,
     requested?: ServiceLocationType,
   ): Promise<ServiceLocationType> {
     if (!requested || requested === ServiceLocationType.AT_BUSINESS) return ServiceLocationType.AT_BUSINESS;
-    const homeService = await this.prisma.businessCapability.findUnique({
-      where: { businessId_capability: { businessId, capability: BusinessCapabilityType.HOME_SERVICE } },
-    });
-    if (!homeService?.enabled) {
-      throw new BadRequestException(
-        '"locationType" can only be AT_CUSTOMER_HOME/BOTH while the "servicio a domicilio" capability is enabled',
-      );
-    }
+    await this.capabilities.set(businessId, BusinessCapabilityType.HOME_SERVICE, true);
     return requested;
   }
 
@@ -250,7 +253,16 @@ export class ServicesService {
 
   async assertOwnedService(businessId: string, serviceId: string) {
     const service = await this.prisma.service.findUnique({ where: { id: serviceId } });
-    if (!service || service.businessId !== businessId) throw new NotFoundException('Service not found');
+    if (!service || service.businessId !== businessId || service.deletedAt) {
+      throw new NotFoundException('Service not found');
+    }
     return service;
+  }
+
+  /** Soft delete, same pattern as CatalogService.remove — a hard delete would violate the FK from
+   * any past Booking still pointing at this service. */
+  async remove(businessId: string, serviceId: string) {
+    await this.assertOwnedService(businessId, serviceId);
+    await this.prisma.service.update({ where: { id: serviceId }, data: { deletedAt: new Date() } });
   }
 }

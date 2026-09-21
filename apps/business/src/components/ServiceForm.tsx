@@ -47,7 +47,6 @@ export interface ServiceFormValues {
   minAgeMonths: number | undefined;
   maxAgeMonths: number | undefined;
   speciesSlugs: string[];
-  /** Only settable while the business has "Servicio a domicilio" enabled — otherwise always AT_BUSINESS. */
   locationType: 'AT_BUSINESS' | 'AT_CUSTOMER_HOME' | 'BOTH';
 }
 
@@ -63,6 +62,8 @@ const SERVICE_TYPES = [
   { value: 'DAYCARE', label: 'Guardería' },
   { value: 'BOARDING', label: 'Hospedaje' },
   { value: 'DOG_WALKING', label: 'Paseador' },
+  { value: 'TRAINING', label: 'Adiestramiento' },
+  { value: 'OTHER', label: 'Otro' },
 ];
 
 interface Species {
@@ -77,14 +78,11 @@ export default function ServiceForm({
   submitting,
   submitLabel,
   onSubmit,
-  homeServiceEnabled = false,
 }: {
   initial?: Partial<ServiceFormValues>;
   submitting: boolean;
   submitLabel: string;
   onSubmit: (values: ServiceFormValues) => void;
-  /** Whether the business has "Servicio a domicilio" active — gates the location-type field below. */
-  homeServiceEnabled?: boolean;
 }) {
   const [species, setSpecies] = useState<Species[]>([]);
   const [type, setType] = useState(initial?.type ?? 'VETERINARY');
@@ -136,7 +134,7 @@ export default function ServiceForm({
       minAgeMonths: minAgeMonths ? Number(minAgeMonths) : undefined,
       maxAgeMonths: maxAgeMonths ? Number(maxAgeMonths) : undefined,
       speciesSlugs,
-      locationType: homeServiceEnabled ? locationType : 'AT_BUSINESS',
+      locationType,
     });
   }
 
@@ -214,23 +212,21 @@ export default function ServiceForm({
         </div>
       )}
 
-      {homeServiceEnabled && (
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6 }}>¿Dónde se presta este servicio?</label>
-          <div className="bingo-chip-row">
-            {LOCATION_TYPES.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`bingo-chip${locationType === opt.value ? ' active' : ''}`}
-                onClick={() => setLocationType(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+      <div>
+        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6 }}>¿Dónde se presta este servicio?</label>
+        <div className="bingo-chip-row">
+          {LOCATION_TYPES.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`bingo-chip${locationType === opt.value ? ' active' : ''}`}
+              onClick={() => setLocationType(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
       <div className="dashboard-form-grid">
         <div>

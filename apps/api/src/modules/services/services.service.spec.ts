@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 describe('ServicesService', () => {
   let service: ServicesService;
   let prisma: any;
+  let capabilities: any;
 
   beforeEach(() => {
     prisma = {
@@ -21,7 +22,8 @@ describe('ServicesService', () => {
       businessCapability: { findUnique: jest.fn() },
       $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     };
-    service = new ServicesService(prisma as unknown as PrismaService);
+    capabilities = { set: jest.fn().mockResolvedValue({ id: 'cap1' }) };
+    service = new ServicesService(prisma as unknown as PrismaService, capabilities);
   });
 
   describe('create', () => {
@@ -71,32 +73,32 @@ describe('ServicesService', () => {
     });
   });
 
-  describe('create — locationType, gated by the HOME_SERVICE capability', () => {
-    it('defaults to AT_BUSINESS without even checking the capability', async () => {
+  describe('create — locationType, freely choosable, auto-derives HOME_SERVICE', () => {
+    it('defaults to AT_BUSINESS without touching the capability', async () => {
       prisma.service.create.mockResolvedValue({ id: 'svc-1' });
       await service.create('biz-1', { type: 'GROOMING', name: 'Baño', price: 10, durationMinutes: 30 } as any);
-      expect(prisma.businessCapability.findUnique).not.toHaveBeenCalled();
+      expect(capabilities.set).not.toHaveBeenCalled();
       expect(prisma.service.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ locationType: 'AT_BUSINESS' }) }),
       );
     });
 
-    it('rejects AT_CUSTOMER_HOME when the business does not have HOME_SERVICE enabled', async () => {
-      prisma.businessCapability.findUnique.mockResolvedValue({ enabled: false });
-      await expect(
-        service.create('biz-1', {
-          type: 'GROOMING',
-          name: 'Baño a domicilio',
-          price: 10,
-          durationMinutes: 30,
-          locationType: 'AT_CUSTOMER_HOME',
-        } as any),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.service.create).not.toHaveBeenCalled();
+    it('accepts AT_CUSTOMER_HOME with no prerequisite and auto-enables HOME_SERVICE', async () => {
+      prisma.service.create.mockResolvedValue({ id: 'svc-1' });
+      await service.create('biz-1', {
+        type: 'GROOMING',
+        name: 'Baño a domicilio',
+        price: 10,
+        durationMinutes: 30,
+        locationType: 'AT_CUSTOMER_HOME',
+      } as any);
+      expect(capabilities.set).toHaveBeenCalledWith('biz-1', 'HOME_SERVICE', true);
+      expect(prisma.service.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ locationType: 'AT_CUSTOMER_HOME' }) }),
+      );
     });
 
-    it('accepts BOTH once the business has HOME_SERVICE enabled', async () => {
-      prisma.businessCapability.findUnique.mockResolvedValue({ enabled: true });
+    it('accepts BOTH the same way, also auto-enabling HOME_SERVICE', async () => {
       prisma.service.create.mockResolvedValue({ id: 'svc-1' });
       await service.create('biz-1', {
         type: 'GROOMING',
@@ -105,6 +107,7 @@ describe('ServicesService', () => {
         durationMinutes: 30,
         locationType: 'BOTH',
       } as any);
+      expect(capabilities.set).toHaveBeenCalledWith('biz-1', 'HOME_SERVICE', true);
       expect(prisma.service.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ locationType: 'BOTH' }) }),
       );
@@ -122,11 +125,33 @@ describe('ServicesService', () => {
       await expect(service.assertOwnedService('biz-1', 'ghost')).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it('assertOwnedService 404s on an already soft-deleted service', async () => {
+      prisma.service.findUnique.mockResolvedValue({ id: 'svc-1', businessId: 'biz-1', deletedAt: new Date() });
+      await expect(service.assertOwnedService('biz-1', 'svc-1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
     it('activate/deactivate only touch the owning business service', async () => {
       prisma.service.findUnique.mockResolvedValue({ id: 'svc-1', businessId: 'biz-1' });
       prisma.service.update.mockResolvedValue({ id: 'svc-1', active: false });
       await service.deactivate('biz-1', 'svc-1');
       expect(prisma.service.update).toHaveBeenCalledWith({ where: { id: 'svc-1' }, data: { active: false } });
+    });
+  });
+
+  describe('remove — soft delete', () => {
+    it('sets deletedAt instead of hard-deleting, so past bookings still resolve a real row', async () => {
+      prisma.service.findUnique.mockResolvedValue({ id: 'svc-1', businessId: 'biz-1' });
+      await service.remove('biz-1', 'svc-1');
+      expect(prisma.service.update).toHaveBeenCalledWith({
+        where: { id: 'svc-1' },
+        data: { deletedAt: expect.any(Date) },
+      });
+    });
+
+    it('404s deleting a service that belongs to a different business', async () => {
+      prisma.service.findUnique.mockResolvedValue({ id: 'svc-1', businessId: 'other-biz' });
+      await expect(service.remove('biz-1', 'svc-1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.service.update).not.toHaveBeenCalled();
     });
   });
 

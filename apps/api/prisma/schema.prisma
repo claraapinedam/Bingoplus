@@ -1363,13 +1363,18 @@ enum ServiceType {
   BOARDING
   GROOMING
   DOG_WALKING
+  // Added alongside the "Adiestradores"/"Otros Pet services" Directory categories, which had no
+  // fitting ServiceType before this — a trainer or another kind of pet-service business couldn't
+  // create a bookable service that actually described what they do.
+  TRAINING
+  OTHER
 }
 
-// Where the service is actually rendered. Only meaningful — and only editable in the business
-// app — while the owning business has the HOME_SERVICE capability enabled; otherwise every
-// service is implicitly AT_BUSINESS. BOTH lets a customer pick per-booking. Drives whether
-// "Cómo llegar" makes sense to show on the customer-facing service/business page (a business
-// whose active services are all AT_CUSTOMER_HOME has no premises worth visiting).
+// Where the service is actually rendered — freely choosable on every service, no capability
+// prerequisite. BOTH lets a customer pick per-booking. Drives whether "Cómo llegar" makes sense
+// to show on the customer-facing service/business page (a business whose active services are all
+// AT_CUSTOMER_HOME has no premises worth visiting) — see ServicesService.resolveLocationType,
+// which auto-enables HOME_SERVICE the first time a business uses AT_CUSTOMER_HOME/BOTH.
 enum ServiceLocationType {
   AT_BUSINESS
   AT_CUSTOMER_HOME
@@ -1405,6 +1410,10 @@ model Service {
   ratingAvg       Float               @default(0)
   reviewCount     Int                 @default(0)
   active          Boolean             @default(true)
+  // Soft delete, same pattern as Product/Business — a hard delete would violate the FK from any
+  // past Booking still pointing at this service (bookings must keep reading a real service row
+  // forever, even a "deleted" one). Excluded from every business/public/admin list and get.
+  deletedAt       DateTime?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
