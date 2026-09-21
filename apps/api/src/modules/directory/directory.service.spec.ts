@@ -14,7 +14,7 @@ function makeBusiness(overrides: Partial<any> = {}) {
     openingHours: null,
     ratingAvg: 4,
     reviewCount: 10,
-    category: { id: 'c1', name: 'Veterinarios', slug: 'veterinarios', icon: null },
+    categories: [{ category: { id: 'c1', name: 'Veterinarios', slug: 'veterinarios', icon: null } }],
     membership: { plan: { benefits: {} } },
     ...overrides,
   };
@@ -33,10 +33,10 @@ describe('DirectoryService', () => {
     service = new DirectoryService(prisma as unknown as PrismaService);
   });
 
-  it('excludes "tiendas" and "delivery" categories at the query level — the same partition the apply form uses', async () => {
+  it('excludes retail-only businesses ("tiendas"/"delivery") at the query level — the same partition the apply form uses', async () => {
     await service.list({});
     const where = prisma.business.findMany.mock.calls[0][0].where;
-    expect(where.category).toEqual({ slug: { notIn: ['tiendas', 'delivery'] } });
+    expect(where.categories).toEqual({ some: { category: { slug: { notIn: ['tiendas', 'delivery'] } } } });
     expect(where.status).toBe(BusinessStatus.ACTIVE);
   });
 

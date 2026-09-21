@@ -12,14 +12,21 @@ describe('BusinessesService', () => {
 
   const baseApplyDto = {
     tradeName: 'T', idType: 'RUC', legalName: 'T SA', representativeName: 'Rep Name', taxId: '1',
-    email: 'e@e.com', phone: '099', categorySlug: 'tiendas', addressLine: 'Av 1', city: 'Quito',
+    email: 'e@e.com', phone: '099', categorySlugs: ['tiendas'], addressLine: 'Av 1', city: 'Quito',
     speciesSlugs: ['perro'],
   };
+  // Directory-only tests override sellsProducts to false but inherit categorySlugs from above —
+  // "tiendas" is only valid when sellsProducts is true (see resolveCategoryIds), so those need a
+  // real Directory-type category instead.
+  const directoryCategory = { categorySlugs: ['veterinarios'] };
 
   beforeEach(() => {
     prisma = {
       business: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
-      businessCategory: { findUnique: jest.fn().mockResolvedValue({ id: 'cat1', slug: 'tiendas' }) },
+      // Static, not filtered by the `where` argument (same convention as petSpecies.findMany below) —
+      // matches baseApplyDto's default categorySlugs; directory-only tests override it to return
+      // 'veterinarios' instead right before calling apply.
+      businessCategory: { findMany: jest.fn().mockResolvedValue([{ id: 'cat1', slug: 'tiendas' }]) },
       petSpecies: { findMany: jest.fn().mockResolvedValue([{ id: 's1', slug: 'perro' }]) },
       membershipPlan: { findUnique: jest.fn() },
       businessMembership: { create: jest.fn() },
@@ -64,7 +71,8 @@ describe('BusinessesService', () => {
 
     it('a business that declines the directory gets no membership either', async () => {
       prisma.business.create.mockResolvedValue({ id: 'b1' });
-      await service.apply('u1', { ...baseApplyDto, sellsProducts: false, directoryListing: false } as any);
+      prisma.businessCategory.findMany.mockResolvedValue([{ id: 'cat2', slug: 'veterinarios' }]);
+      await service.apply('u1', { ...baseApplyDto, ...directoryCategory, sellsProducts: false, directoryListing: false } as any);
 
       expect(capabilities.grantOnboardingDefaults).toHaveBeenCalledWith(
         'b1',
@@ -118,8 +126,9 @@ describe('BusinessesService', () => {
     it('creates a TRIAL membership on the chosen plan for a directory-only business', async () => {
       prisma.membershipPlan.findUnique.mockResolvedValue({ id: 'p1', status: MembershipPlanStatus.ACTIVE, trialDays: 14 });
       prisma.business.create.mockResolvedValue({ id: 'b1' });
+      prisma.businessCategory.findMany.mockResolvedValue([{ id: 'cat2', slug: 'veterinarios' }]);
 
-      await service.apply('u1', { ...baseApplyDto, sellsProducts: false, directoryListing: true, membershipPlanId: 'p1' } as any);
+      await service.apply('u1', { ...baseApplyDto, ...directoryCategory, sellsProducts: false, directoryListing: true, membershipPlanId: 'p1' } as any);
 
       expect(prisma.businessMembership.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ businessId: 'b1', planId: 'p1', status: BusinessMembershipStatus.TRIAL }) }),
@@ -131,9 +140,11 @@ describe('BusinessesService', () => {
       prisma.membershipPlan.findUnique.mockResolvedValue({ id: 'p1', status: MembershipPlanStatus.ACTIVE, trialDays: 14 });
       prisma.business.create.mockResolvedValue({ id: 'b1' });
       memberships.redeemAdminCoupon.mockRejectedValue(new BadRequestException('This coupon is not active'));
+      prisma.businessCategory.findMany.mockResolvedValue([{ id: 'cat2', slug: 'veterinarios' }]);
 
       const result = await service.apply('u1', {
         ...baseApplyDto,
+        ...directoryCategory,
         sellsProducts: false,
         directoryListing: true,
         membershipPlanId: 'p1',
@@ -148,9 +159,11 @@ describe('BusinessesService', () => {
       prisma.membershipPlan.findUnique.mockResolvedValue({ id: 'p1', status: MembershipPlanStatus.ACTIVE, trialDays: 14 });
       prisma.business.create.mockResolvedValue({ id: 'b1' });
       memberships.redeemAdminCoupon.mockResolvedValue({ id: 'redemption1' });
+      prisma.businessCategory.findMany.mockResolvedValue([{ id: 'cat2', slug: 'veterinarios' }]);
 
       const result = await service.apply('u1', {
         ...baseApplyDto,
+        ...directoryCategory,
         sellsProducts: false,
         directoryListing: true,
         membershipPlanId: 'p1',

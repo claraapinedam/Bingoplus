@@ -262,7 +262,7 @@ model BusinessCategory {
   slug String  @unique
   icon String?
 
-  businesses Business[]
+  businesses BusinessCategoryLink[]
 }
 
 enum BusinessIdType {
@@ -273,7 +273,6 @@ enum BusinessIdType {
 model Business {
   id                 String                                 @id @default(cuid())
   ownerId            String
-  categoryId         String
   tradeName          String
   // RUC: legalName is the "Razón Social". CEDULA: legalName is just the person's own name —
   // representativeName is only meaningful (and collected) for RUC, where a company signs through
@@ -309,7 +308,10 @@ model Business {
   // is the real source of truth and also covers BUSINESS_MANAGER staff — see
   // docs/08-roles-permissions.md and BusinessOwnershipGuard.
   owner              User                 @relation("BusinessOwner", fields: [ownerId], references: [id])
-  category           BusinessCategory     @relation(fields: [categoryId], references: [id])
+  // Multi-select (§ "¿Qué quieres hacer en BINGO+?" restricts which categories are offerable: only
+  // "tiendas" when selling products alone, any non-product category for Directory-only, or a mix
+  // of both when the business does both) — see BusinessesService.apply's category validation.
+  categories         BusinessCategoryLink[]
   documents          BusinessDocument[]
   contracts          BusinessContract[]
   // Declared at onboarding ("¿A qué mascotas aplica tu negocio?") — the species-match signal for
@@ -332,7 +334,6 @@ model Business {
   availabilityBlocks AvailabilityBlock[]
 
   @@index([ownerId])
-  @@index([categoryId])
   @@index([status])
 }
 
@@ -345,6 +346,18 @@ model BusinessSpecies {
 
   @@id([businessId, speciesId])
   @@index([speciesId])
+}
+
+// Business<->BusinessCategory, same shape as BusinessSpecies above.
+model BusinessCategoryLink {
+  businessId String
+  categoryId String
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category BusinessCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([businessId, categoryId])
+  @@index([categoryId])
 }
 
 enum ContractStatus {

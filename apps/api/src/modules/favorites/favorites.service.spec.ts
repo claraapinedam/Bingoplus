@@ -61,7 +61,7 @@ describe('FavoritesService', () => {
           tradeName: 'Pet World',
           logoUrl: null,
           city: 'Quito',
-          category: { id: 'c1', name: 'Tiendas', slug: 'tiendas' },
+          categories: [{ category: { id: 'c1', name: 'Tiendas', slug: 'tiendas' } }],
           ratingAvg: 4.5,
           reviewCount: 10,
         },
@@ -85,8 +85,8 @@ describe('FavoritesService', () => {
         { targetId: 'older', createdAt: new Date('2026-01-01') },
       ]);
       prisma.business.findMany.mockResolvedValue([
-        { id: 'older', tradeName: 'Older', logoUrl: null, city: 'Quito', category: { id: 'c', name: 'X', slug: 'x' }, ratingAvg: 4, reviewCount: 1 },
-        { id: 'newer', tradeName: 'Newer', logoUrl: null, city: 'Quito', category: { id: 'c', name: 'X', slug: 'x' }, ratingAvg: 4, reviewCount: 1 },
+        { id: 'older', tradeName: 'Older', logoUrl: null, city: 'Quito', categories: [{ category: { id: 'c', name: 'X', slug: 'x' } }], ratingAvg: 4, reviewCount: 1 },
+        { id: 'newer', tradeName: 'Newer', logoUrl: null, city: 'Quito', categories: [{ category: { id: 'c', name: 'X', slug: 'x' } }], ratingAvg: 4, reviewCount: 1 },
       ]);
       capabilities.getMapForMany.mockResolvedValue(
         new Map([

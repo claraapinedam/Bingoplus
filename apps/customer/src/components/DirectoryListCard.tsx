@@ -6,7 +6,7 @@ export interface DirectoryListCardData {
   logoUrl: string | null;
   coverImageUrl: string | null;
   city: string;
-  category: { name: string; icon: string | null };
+  categories: { name: string; icon: string | null }[];
   ratingAvg: number;
   reviewCount: number;
   distanceKm: number | null;
@@ -28,6 +28,8 @@ export const CATEGORY_ICONS: Record<string, string> = {
   footprints: '🐾',
   paw: '🐾',
   truck: '🚚',
+  'graduation-cap': '🎓',
+  sparkles: '✨',
 };
 
 export default function DirectoryListCard({
@@ -105,7 +107,7 @@ export default function DirectoryListCard({
               // eslint-disable-next-line @next/next/no-img-element
               <img src={business.logoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
-              CATEGORY_ICONS[business.category.icon ?? ''] ?? '🏢'
+              CATEGORY_ICONS[business.categories[0]?.icon ?? ''] ?? '🏢'
             )}
           </div>
           <div style={{ flex: 1, minWidth: 0, fontWeight: 800, fontSize: 15 }}>{business.tradeName}</div>
@@ -143,7 +145,7 @@ export default function DirectoryListCard({
             ) : business.isOpenNow === false ? (
               <span style={{ color: 'var(--bingo-error)' }}>Cerrado</span>
             ) : (
-              business.category.name
+              business.categories.map((c) => c.name).join(' · ')
             )}
           </span>
           <span style={{ flexShrink: 0 }}>

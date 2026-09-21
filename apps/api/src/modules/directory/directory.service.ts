@@ -5,11 +5,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ListDirectoryQueryDto } from './dto/list-directory-query.dto';
 import { getActiveOffersMap } from '../coupons/active-offers.util';
 
-/** "Tiendas" and "Delivery" are the two retail-type BusinessCategory slugs — the same partition
- * BusinessApplyForm uses to decide which categories are even offerable for each onboarding goal.
- * A business in one of these categories has nothing directory-worthy to show; it belongs
- * exclusively in Marketplace ("Tiendas" search), never here — even if it also opted into
- * DIRECTORY_LISTING with a paid plan (e.g. a "Tiendas"-category business that picked "Ambos"). */
+/** "Tiendas" and "Delivery" (retired, kept here only for any business that already has it — see
+ * seed-helpers.ts) are the two retail-type BusinessCategory slugs — same partition
+ * BusinessApplyForm uses to decide which categories are offerable for each onboarding goal. A
+ * business whose categories are ALL retail-type has nothing directory-worthy to show; it belongs
+ * exclusively in Marketplace ("Tiendas" search). Since categories are multi-select, a business
+ * that picked "Ambos" can legitimately have "tiendas" ALONGSIDE a real directory category (e.g.
+ * "veterinarios") — it still shows here via that other category, only a retail-only business is
+ * excluded. */
 const NON_DIRECTORY_CATEGORY_SLUGS = ['tiendas', 'delivery'];
 const GOOD_STANDING: BusinessMembershipStatus[] = [BusinessMembershipStatus.TRIAL, BusinessMembershipStatus.ACTIVE];
 
@@ -39,11 +42,11 @@ export class DirectoryService {
         membership: {
           status: { in: GOOD_STANDING },
         },
-        category: { slug: { notIn: NON_DIRECTORY_CATEGORY_SLUGS } },
-        ...(category ? { categoryId: category.id } : {}),
+        categories: { some: { category: { slug: { notIn: NON_DIRECTORY_CATEGORY_SLUGS } } } },
+        ...(category ? { categories: { some: { categoryId: category.id } } } : {}),
         ...(query.search ? { tradeName: { contains: query.search, mode: 'insensitive' } } : {}),
       },
-      include: { category: true, membership: { include: { plan: true } } },
+      include: { categories: { include: { category: true } }, membership: { include: { plan: true } } },
     });
 
     const offersMap = await getActiveOffersMap(this.prisma, businesses.map((b) => b.id));
@@ -61,7 +64,7 @@ export class DirectoryService {
         logoUrl: b.logoUrl,
         coverImageUrl: b.coverImageUrl,
         city: b.city,
-        category: { id: b.category.id, name: b.category.name, slug: b.category.slug, icon: b.category.icon },
+        categories: b.categories.map((c) => ({ id: c.category.id, name: c.category.name, slug: c.category.slug, icon: c.category.icon })),
         ratingAvg: b.ratingAvg,
         reviewCount: b.reviewCount,
         distanceKm,

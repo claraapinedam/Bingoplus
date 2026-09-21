@@ -112,7 +112,7 @@ export default function StoreListCard({
               ? '🛵 Delivery disponible'
               : business.pickupEnabled
                 ? '🏪 Retiro en tienda'
-                : business.category.name}
+                : business.categories.map((c) => c.name).join(' · ')}
           </span>
           <span style={{ flexShrink: 0 }}>
             ★ {business.ratingAvg.toFixed(1)} ({business.reviewCount}+)

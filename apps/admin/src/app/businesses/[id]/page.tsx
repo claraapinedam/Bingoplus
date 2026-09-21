@@ -58,7 +58,7 @@ interface Business {
   phone: string;
   city: string;
   status: string;
-  category?: { name: string };
+  categories?: { name: string }[];
   species: { id: string; name: string }[];
   capabilities: Record<CapabilityType, boolean>;
 }

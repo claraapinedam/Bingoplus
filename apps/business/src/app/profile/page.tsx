@@ -91,7 +91,7 @@ function ProfileContent() {
           <br />
           Teléfono: {business.phone} · Email: {business.email}
           <br />
-          Categoría: {business.category.name}
+          Categorías: {business.categories.map((c) => c.name).join(', ')}
         </div>
         <div style={{ fontSize: 11, color: '#9aa5b1', marginTop: 8 }}>
           Estos datos solo puede modificarlos un administrador de BINGO+.

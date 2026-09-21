@@ -23,6 +23,12 @@ import { ContractsService } from '../contracts/contracts.service';
 
 const DEFAULT_COMMISSION_SETTING_KEY = 'default_commission_rate';
 
+// The one retail category — see resolveCategoryIds. "delivery" used to be a second retail
+// category alongside this one; retired (never offerable to a new application again, though
+// existing businesses that already have it keep it, see seed-helpers.ts's seedCategories comment).
+const PRODUCT_CATEGORY_SLUG = 'tiendas';
+const RETIRED_CATEGORY_SLUGS = ['delivery'];
+
 /** Best-effort message extraction from a caught HttpException, regardless of whether it used the
  * plain-string form or the {error:{code,message}} structured form — apply()'s coupon redemption
  * step deliberately doesn't care which, it just needs something honest to hand back to the caller. */
@@ -88,7 +94,7 @@ export class BusinessesService {
         capabilities: {
           some: { capability: BusinessCapabilityType.SELLS_PRODUCTS, enabled: true },
         },
-        ...(category ? { categoryId: category.id } : {}),
+        ...(category ? { categories: { some: { categoryId: category.id } } } : {}),
         ...(query.search ? { tradeName: { contains: query.search, mode: 'insensitive' } } : {}),
         ...(speciesFilter
           ? {
@@ -119,7 +125,7 @@ export class BusinessesService {
           : {}),
       },
       include: {
-        category: true,
+        categories: { include: { category: true } },
         species: { select: { speciesId: true } },
         products: {
           where: { status: ProductStatus.ACTIVE, deletedAt: null },
@@ -180,7 +186,7 @@ export class BusinessesService {
         coverImageUrl: b.coverImageUrl,
         description: b.description,
         city: b.city,
-        category: { id: b.category.id, name: b.category.name, slug: b.category.slug },
+        categories: b.categories.map((c) => ({ id: c.category.id, name: c.category.name, slug: c.category.slug })),
         ratingAvg: b.ratingAvg,
         reviewCount: b.reviewCount,
         deliveryEnabled: capabilityMaps.get(b.id)![BusinessCapabilityType.DELIVERY],
@@ -198,15 +204,16 @@ export class BusinessesService {
   async getPublicBusiness(businessId: string) {
     const business = await this.prisma.business.findFirst({
       where: { id: businessId, status: BusinessStatus.ACTIVE, deletedAt: null },
-      include: { category: true },
+      include: { categories: { include: { category: true } } },
     });
     if (!business) throw new NotFoundException('Business not found');
+    const { categories, ...rest } = business;
     const capabilityMap = await this.capabilities.getMap(businessId);
     // "COUPON VISIBILITY RULE": computed once, server-side — the frontend must never derive
     // "Ver cupón" visibility itself from capabilities alone (COUPONS=true with zero active
     // coupons must NOT show the CTA).
     const couponSummary = await this.coupons.getCouponSummary(businessId);
-    return { ...business, capabilities: capabilityMap, couponSummary };
+    return { ...rest, categories: categories.map((c) => c.category), capabilities: capabilityMap, couponSummary };
   }
 
   /** Resolves PetSpecies slugs to ids, rejecting anything unknown — mirrors CatalogService's own
@@ -221,6 +228,37 @@ export class BusinessesService {
     return species.map((s) => s.id);
   }
 
+  /** Resolves BusinessCategory slugs to ids and enforces which ones are actually offerable for the
+   * chosen goal — mirrors BusinessApplyForm's own categoriesForGoal restriction, never trusted from
+   * the client alone. "tiendas" is the one retail category (see PRODUCT_CATEGORY_SLUGS comment on
+   * the frontend for why "delivery" was retired): required whenever selling products, and the ONLY
+   * category allowed for a products-only business (Directory-only categories don't apply to it); a
+   * Directory-only business must pick at least one non-"tiendas" category instead. */
+  private async resolveCategoryIds(slugs: string[], sellsProducts: boolean, directoryListing: boolean): Promise<string[]> {
+    const categories = await this.prisma.businessCategory.findMany({ where: { slug: { in: slugs } } });
+    const unknown = slugs.filter((slug) => !categories.some((c) => c.slug === slug));
+    if (unknown.length > 0) {
+      throw new BadRequestException(`Unknown business category: ${unknown.join(', ')}`);
+    }
+    const retired = slugs.filter((slug) => RETIRED_CATEGORY_SLUGS.includes(slug));
+    if (retired.length > 0) {
+      throw new BadRequestException(`No longer offered for new applications: ${retired.join(', ')}`);
+    }
+
+    if (sellsProducts) {
+      if (!slugs.includes(PRODUCT_CATEGORY_SLUG)) {
+        throw new BadRequestException('"tiendas" is required when sellsProducts is true');
+      }
+      if (!directoryListing && slugs.some((slug) => slug !== PRODUCT_CATEGORY_SLUG)) {
+        throw new BadRequestException('Only "tiendas" is allowed when selling products without Directory presence');
+      }
+    } else if (slugs.includes(PRODUCT_CATEGORY_SLUG)) {
+      throw new BadRequestException('"tiendas" is only allowed when sellsProducts is true');
+    }
+
+    return categories.map((c) => c.id);
+  }
+
   private async getUserPetSpeciesIds(userId: string): Promise<string[]> {
     const pets = await this.prisma.pet.findMany({
       where: { ownerId: userId, deletedAt: null },
@@ -230,13 +268,6 @@ export class BusinessesService {
   }
 
   async apply(ownerId: string, dto: ApplyBusinessDto) {
-    const category = await this.prisma.businessCategory.findUnique({
-      where: { slug: dto.categorySlug },
-    });
-    if (!category) {
-      throw new BadRequestException(`Unknown business category "${dto.categorySlug}"`);
-    }
-
     // RUC signs through a named legal representative (a company can't literally hold a pen);
     // CEDULA IS the person, legalName already carries their name, no separate field needed.
     if (dto.idType === 'RUC' && !dto.representativeName?.trim()) {
@@ -266,11 +297,12 @@ export class BusinessesService {
     }
 
     const speciesIds = await this.resolveSpeciesIds(dto.speciesSlugs);
+    const categoryIds = await this.resolveCategoryIds(dto.categorySlugs, dto.sellsProducts, directoryListing);
 
     const business = await this.prisma.business.create({
       data: {
         ownerId,
-        categoryId: category.id,
+        categories: { create: categoryIds.map((categoryId) => ({ categoryId })) },
         tradeName: dto.tradeName,
         idType: dto.idType,
         legalName: dto.legalName,
@@ -333,12 +365,12 @@ export class BusinessesService {
   async getOne(businessId: string) {
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
-      include: { category: true, documents: true, species: { include: { species: true } } },
+      include: { categories: { include: { category: true } }, documents: true, species: { include: { species: true } } },
     });
     if (!business) throw new NotFoundException('Business not found');
     const capabilities = await this.capabilities.getMap(businessId);
-    const { species, ...rest } = business;
-    return { ...rest, species: (species ?? []).map((s) => s.species), capabilities };
+    const { species, categories, ...rest } = business;
+    return { ...rest, species: (species ?? []).map((s) => s.species), categories: (categories ?? []).map((c) => c.category), capabilities };
   }
 
   update(businessId: string, dto: UpdateBusinessDto) {
@@ -437,18 +469,22 @@ export class BusinessesService {
         skip,
         take,
         orderBy: { createdAt: 'desc' },
-        include: { category: true },
+        include: { categories: { include: { category: true } } },
       }),
     ]);
 
     const salesByBusiness = await this.countSalesByBusiness(businesses.map((b) => b.id));
 
     return {
-      data: businesses.map((b) => ({
-        ...b,
-        salesCount: salesByBusiness.get(b.id)?.count ?? 0,
-        salesTotal: salesByBusiness.get(b.id)?.total ?? 0,
-      })),
+      data: businesses.map((b) => {
+        const { categories, ...rest } = b;
+        return {
+          ...rest,
+          categories: categories.map((c) => c.category),
+          salesCount: salesByBusiness.get(b.id)?.count ?? 0,
+          salesTotal: salesByBusiness.get(b.id)?.total ?? 0,
+        };
+      }),
       meta: { page, pageSize, total },
     };
   }

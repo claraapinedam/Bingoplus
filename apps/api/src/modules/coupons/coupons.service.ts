@@ -135,7 +135,7 @@ export class CouponsService {
     const coupons = await this.prisma.businessCoupon.findMany({
       where: { status: BusinessCouponStatus.ACTIVE, startDate: { lte: now }, expirationDate: { gte: now } },
       orderBy: { createdAt: 'asc' },
-      include: { business: { include: { category: true } } },
+      include: { business: { include: { categories: { include: { category: true } } } } },
     });
 
     const byBusiness = new Map<string, { business: (typeof coupons)[number]['business']; coupons: typeof coupons }>();
@@ -159,7 +159,7 @@ export class CouponsService {
         logoUrl: b.logoUrl,
         coverImageUrl: b.coverImageUrl,
         city: b.city,
-        category: { id: b.category.id, name: b.category.name, slug: b.category.slug },
+        categories: b.categories.map((c) => ({ id: c.category.id, name: c.category.name, slug: c.category.slug })),
         ratingAvg: b.ratingAvg,
         reviewCount: b.reviewCount,
         deliveryEnabled: capabilityMaps.get(id)![BusinessCapabilityType.DELIVERY],

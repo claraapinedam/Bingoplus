@@ -26,7 +26,7 @@ export interface BusinessProfile {
   status: string;
   ratingAvg: number;
   reviewCount: number;
-  category: { id: string; name: string; slug: string };
+  categories: { id: string; name: string; slug: string }[];
   capabilities: CapabilityMap;
 }
 

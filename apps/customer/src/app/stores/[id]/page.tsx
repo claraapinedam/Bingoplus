@@ -18,7 +18,7 @@ interface BusinessDetail {
   addressLine: string;
   ratingAvg: number;
   reviewCount: number;
-  category: { name: string };
+  categories: { name: string }[];
   capabilities: Record<string, boolean>;
   openingHours: Record<string, { open: string; close: string }> | null;
 }
@@ -191,7 +191,7 @@ export default function StoreDetailPage() {
 
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: '12px 0 4px' }}>{business.tradeName}</h1>
         <div style={{ fontSize: 13, color: '#7f8ea3' }}>
-          {business.category.name} · {business.addressLine}, {business.city}
+          {business.categories.map((c) => c.name).join(' · ')} · {business.addressLine}, {business.city}
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10, fontSize: 13 }}>

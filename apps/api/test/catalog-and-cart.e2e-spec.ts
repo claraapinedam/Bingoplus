@@ -95,7 +95,7 @@ describe('BINGO+ API — Phase 2 critical path (e2e)', () => {
           taxId: `179000${Math.random().toString().slice(2, 10)}`,
           email: `${tradeName.replace(/\s/g, '').toLowerCase()}@example-bingoplus.test`,
           phone: '+593999000000',
-          categorySlug: businessCategorySlug,
+          categorySlugs: [businessCategorySlug],
           addressLine: 'Av. Test 1',
           city: 'Quito',
           sellsProducts: true,

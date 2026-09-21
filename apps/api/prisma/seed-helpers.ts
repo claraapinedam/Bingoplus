@@ -49,11 +49,16 @@ export async function seedCategories(prisma: PrismaClient) {
     { name: 'Hospedajes', slug: 'hospedajes', icon: 'bed' },
     { name: 'Grooming', slug: 'grooming', icon: 'scissors' },
     { name: 'Paseadores', slug: 'paseadores', icon: 'footprints' },
-    { name: 'Delivery', slug: 'delivery', icon: 'truck' },
+    { name: 'Adiestradores', slug: 'adiestradores', icon: 'graduation-cap' },
+    { name: 'Otros Pet services', slug: 'otros-pet-services', icon: 'sparkles' },
   ];
   for (const c of businessCategories) {
     await prisma.businessCategory.upsert({ where: { slug: c.slug }, update: {}, create: c });
   }
+  // "Delivery" used to be its own category alongside "Tiendas" — redundant, since fulfillment
+  // (pickup/delivery) is already a per-business toggle in Settings. Retired from new applications
+  // (see BusinessApplyForm's PRODUCT_CATEGORY_SLUGS), but never deleted here — a business that
+  // already has it stays exactly as it is (no forced migration).
   // "Pet Friendly" used to be a business/membership category here — it's now the community-
   // submitted PetFriendlyPlace directory instead (see seedPetFriendlyPlaces), never a Business.
   // No seeded Business ever used this slug, so removing the stale row is safe in every environment.

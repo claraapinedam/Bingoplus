@@ -243,7 +243,7 @@ async function seedBusinesses(owners: { id: string }[]) {
     const business = await prisma.business.create({
       data: {
         ownerId: owner.id,
-        categoryId: byCategory(seed.categorySlug).id,
+        categories: { create: [{ categoryId: byCategory(seed.categorySlug).id }] },
         tradeName: seed.tradeName,
         legalName: `${seed.tradeName} S.A.S. (ficticio)`,
         taxId: `179000000${i}001`,

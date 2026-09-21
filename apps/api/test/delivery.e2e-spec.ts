@@ -102,7 +102,7 @@ describe('BINGO+ API — FASE 4 Delivery (e2e)', () => {
         taxId: `179${Math.random().toString().slice(2, 12)}`,
         email: `${tradeName.replace(/\s/g, '').toLowerCase()}.${suffix}@example-bingoplus.test`,
         phone: '+593999000000',
-        categorySlug: businessCategorySlug,
+        categorySlugs: [businessCategorySlug],
         addressLine: 'Av. Test 1',
         city: 'Quito',
         sellsProducts: true,

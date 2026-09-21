@@ -46,7 +46,7 @@ export class FavoritesService {
 
     const businesses = await this.prisma.business.findMany({
       where: { id: { in: favorites.map((f) => f.targetId) }, status: BusinessStatus.ACTIVE, deletedAt: null },
-      include: { category: true },
+      include: { categories: { include: { category: true } } },
     });
     const capabilityMaps = await this.capabilities.getMapForMany(businesses.map((b) => b.id));
     const offersMap = await getActiveOffersMap(this.prisma, businesses.map((b) => b.id));
@@ -63,7 +63,7 @@ export class FavoritesService {
           coverImageUrl: b.coverImageUrl,
           description: b.description,
           city: b.city,
-          category: { id: b.category.id, name: b.category.name, slug: b.category.slug },
+          categories: b.categories.map((c) => ({ id: c.category.id, name: c.category.name, slug: c.category.slug })),
           ratingAvg: b.ratingAvg,
           reviewCount: b.reviewCount,
           deliveryEnabled: capabilityMaps.get(b.id)![BusinessCapabilityType.DELIVERY],

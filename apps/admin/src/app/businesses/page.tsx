@@ -13,7 +13,7 @@ interface Business {
   status: string;
   email: string;
   phone: string;
-  category?: { name: string };
+  categories?: { name: string }[];
   ratingAvg: number;
   reviewCount: number;
   salesCount: number;
@@ -118,7 +118,7 @@ export default function BusinessesPage() {
               {businesses.map((b) => (
                 <tr key={b.id}>
                   <td>{b.tradeName}</td>
-                  <td>{b.category?.name ?? '—'}</td>
+                  <td>{b.categories?.map((c) => c.name).join(', ') || '—'}</td>
                   <td>{b.city}</td>
                   <td>
                     <RatingCell ratingAvg={b.ratingAvg} reviewCount={b.reviewCount} />

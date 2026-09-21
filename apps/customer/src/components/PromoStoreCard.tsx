@@ -4,7 +4,7 @@ export interface PromoStoreCardData {
   description: string | null;
   logoUrl: string | null;
   coverImageUrl: string | null;
-  category: { name: string };
+  categories: { name: string }[];
   ratingAvg: number;
   reviewCount: number;
   deliveryEnabled: boolean;
@@ -152,7 +152,7 @@ export default function PromoStoreCard({
                 textOverflow: 'ellipsis',
               }}
             >
-              {business.description ?? business.category.name}
+              {business.description ?? business.categories.map((c) => c.name).join(' · ')}
             </div>
           </div>
         </div>

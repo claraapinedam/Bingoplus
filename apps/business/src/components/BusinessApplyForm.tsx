@@ -28,7 +28,7 @@ export interface BusinessApplyValues {
   taxId: string;
   email: string;
   phone: string;
-  categorySlug: string;
+  categorySlugs: string[];
   speciesSlugs: string[];
   description: string;
   addressLine: string;
@@ -77,14 +77,16 @@ const GOAL_OPTIONS: { value: BusinessGoal; label: string }[] = [
   { value: 'BOTH', label: 'Ambos' },
 ];
 
-// "Tiendas"/"Delivery" are the two retail-type categories — a pure product-seller only makes
-// sense as one of those. Everything else is a service-type category, meaningful only once the
-// business is actually going into the Directory.
-const PRODUCT_CATEGORY_SLUGS = ['tiendas', 'delivery'];
+// "Tiendas" is the one retail-type category — a pure product-seller only belongs there ("Delivery"
+// used to be a second retail category; retired, since fulfillment is a per-business Settings
+// toggle, not a category). Everything else is a service-type category, meaningful once the
+// business is actually going into the Directory (multi-select there — a groomer that also walks
+// dogs can pick both, e.g. Grooming + Paseadores).
+const PRODUCT_CATEGORY_SLUG = 'tiendas';
 
 function categoriesForGoal(goal: BusinessGoal | null, categories: Category[]): Category[] {
-  if (goal === 'PRODUCTS') return categories.filter((c) => PRODUCT_CATEGORY_SLUGS.includes(c.slug));
-  if (goal === 'DIRECTORY') return categories.filter((c) => !PRODUCT_CATEGORY_SLUGS.includes(c.slug));
+  if (goal === 'PRODUCTS') return categories.filter((c) => c.slug === PRODUCT_CATEGORY_SLUG);
+  if (goal === 'DIRECTORY') return categories.filter((c) => c.slug !== PRODUCT_CATEGORY_SLUG);
   return categories;
 }
 
@@ -107,7 +109,7 @@ export default function BusinessApplyForm({
   const [taxId, setTaxId] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [categorySlug, setCategorySlug] = useState('');
+  const [categorySlugs, setCategorySlugs] = useState<string[]>([]);
   const [speciesSlugs, setSpeciesSlugs] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [addressLine, setAddressLine] = useState('');
@@ -155,7 +157,7 @@ export default function BusinessApplyForm({
     addressLine.trim() !== '' &&
     citySelected &&
     goal !== null &&
-    categorySlug !== '' &&
+    categorySlugs.length > 0 &&
     speciesSlugs.length > 0 &&
     (!wantsDirectory || membershipPlanId !== '') &&
     acceptedTerms &&
@@ -229,12 +231,20 @@ export default function BusinessApplyForm({
     setSpeciesSlugs((prev) => (prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]));
   }
 
-  // The set of valid categories changes with the goal — clear a selection that's no longer offered
-  // instead of silently submitting a category that doesn't match what was chosen.
+  function toggleCategory(slug: string) {
+    setCategorySlugs((prev) => (prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]));
+  }
+
+  // The set of valid categories changes with the goal — drop any selection that's no longer
+  // offered instead of silently submitting one that doesn't match what was chosen, then, for
+  // anyone selling products, auto-add "Tiendas" (the only category that goal allows, and always
+  // required alongside whatever else "Ambos" picks) so there's nothing to click for that part.
   useEffect(() => {
-    if (categorySlug && !categoriesForGoal(goal, categories).some((c) => c.slug === categorySlug)) {
-      setCategorySlug('');
-    }
+    const allowedSlugs = categoriesForGoal(goal, categories).map((c) => c.slug);
+    setCategorySlugs((prev) => {
+      const filtered = prev.filter((s) => allowedSlugs.includes(s));
+      return sellsProducts && !filtered.includes(PRODUCT_CATEGORY_SLUG) ? [...filtered, PRODUCT_CATEGORY_SLUG] : filtered;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goal]);
 
@@ -274,7 +284,7 @@ export default function BusinessApplyForm({
       taxId,
       email,
       phone,
-      categorySlug,
+      categorySlugs,
       speciesSlugs,
       description,
       addressLine,
@@ -469,17 +479,38 @@ export default function BusinessApplyForm({
         </div>
       </div>
 
-      {goal && (
+      {goal === 'PRODUCTS' && (
         <div>
-          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Categoría *</label>
-          <select className="bingo-input" required value={categorySlug} onChange={(e) => setCategorySlug(e.target.value)}>
-            <option value="">Elige una categoría…</option>
-            {availableCategories.map((c) => (
-              <option key={c.id} value={c.slug}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Categoría</label>
+          <p style={{ fontSize: 13, margin: 0 }}>🛍️ Tienda</p>
+        </div>
+      )}
+
+      {(goal === 'DIRECTORY' || goal === 'BOTH') && (
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Categorías *</label>
+          <p style={{ fontSize: 11, color: '#7f8ea3', margin: '0 0 8px' }}>
+            Elige todas las que apliquen — así apareces en cada espacio correspondiente del Directorio (o en Tienda, si
+            aplica).
+          </p>
+          <div className="bingo-chip-row centered">
+            {availableCategories.map((c) => {
+              const locked = sellsProducts && c.slug === PRODUCT_CATEGORY_SLUG;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  disabled={locked}
+                  className={`bingo-chip${categorySlugs.includes(c.slug) ? ' active' : ''}`}
+                  style={locked ? { cursor: 'default' } : undefined}
+                  onClick={() => toggleCategory(c.slug)}
+                >
+                  {c.slug === PRODUCT_CATEGORY_SLUG ? '🛍️' : ''} {c.name}
+                  {locked ? ' (requerida)' : ''}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

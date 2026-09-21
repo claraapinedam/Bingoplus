@@ -35,9 +35,16 @@ export class ApplyBusinessDto {
   @IsString()
   phone!: string;
 
-  @ApiProperty({ description: 'BusinessCategory slug, e.g. "tiendas", "veterinarios"' })
-  @IsString()
-  categorySlug!: string;
+  @ApiProperty({
+    type: [String],
+    description:
+      'BusinessCategory slugs (multi-select, e.g. ["veterinarios","grooming"]) — which ones are ' +
+      'valid depends on sellsProducts/directoryListing below, see BusinessesService.apply.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  categorySlugs!: string[];
 
   @ApiProperty({
     type: [String],
