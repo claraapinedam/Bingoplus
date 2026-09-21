@@ -46,6 +46,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Fallback copy for the rare case the backend didn't send a structured error.message (a raw
+ * infra-level failure — e.g. a cold start or a proxy hiccup — not one of our own thrown
+ * exceptions, which already come back in Spanish). Never shown alongside a real backend message. */
+function friendlyStatusMessage(status: number): string {
+  if (status === 404) return 'No pudimos encontrar lo que buscabas. Intenta de nuevo.';
+  if (status === 429) return 'Demasiados intentos. Espera un momento e intenta de nuevo.';
+  if (status >= 500) return 'Ocurrió un error en el servidor. Intenta de nuevo en unos minutos.';
+  return 'Ocurrió un error inesperado. Intenta de nuevo.';
+}
+
 // The access token is short-lived (15 min — see docs/10-security-architecture.md). Without this,
 // every request fails with 401 once it expires and the admin is stuck looking logged-in but
 // broken. Concurrent 401s share one in-flight refresh call instead of each racing the
@@ -79,14 +89,19 @@ async function refreshSession(): Promise<boolean> {
 
 async function apiFetchEnvelope(path: string, options: RequestInit = {}, _isRetry = false): Promise<any> {
   const token = getAccessToken();
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch {
+    throw new ApiError(0, 'NETWORK_ERROR', 'No se pudo conectar. Revisa tu conexión a internet e intenta de nuevo.');
+  }
 
   if (res.status === 401 && !_isRetry && path !== '/auth/login' && path !== '/auth/refresh') {
     const refreshed = await refreshSession();
@@ -106,7 +121,7 @@ async function apiFetchEnvelope(path: string, options: RequestInit = {}, _isRetr
     throw new ApiError(
       res.status,
       body?.error?.code ?? 'UNKNOWN_ERROR',
-      body?.error?.message ?? `Request failed with status ${res.status}`,
+      body?.error?.message ?? friendlyStatusMessage(res.status),
     );
   }
 

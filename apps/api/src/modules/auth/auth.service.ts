@@ -39,7 +39,7 @@ export class AuthService {
   async register(dto: RegisterDto) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) {
-      throw new ConflictException('An account with this email already exists');
+      throw new ConflictException('Ya existe una cuenta con este correo electrónico.');
     }
 
     const passwordHash = await argon2.hash(dto.password);
@@ -73,10 +73,10 @@ export class AuthService {
     });
 
     if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, dto.password))) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Correo o contraseña incorrectos.');
     }
     if (!user.isActive || user.deletedAt) {
-      throw new UnauthorizedException('This account is inactive');
+      throw new UnauthorizedException('Esta cuenta está inactiva. Contacta a soporte para más información.');
     }
 
     const roles = user.roles.map((r) => r.role.name);
@@ -90,7 +90,7 @@ export class AuthService {
     });
 
     if (!stored) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
+      throw new UnauthorizedException('Tu sesión expiró. Inicia sesión de nuevo.');
     }
 
     await this.prisma.refreshToken.update({
@@ -104,7 +104,7 @@ export class AuthService {
     });
 
     if (!user || !user.isActive || user.deletedAt) {
-      throw new UnauthorizedException('This account is inactive');
+      throw new UnauthorizedException('Esta cuenta está inactiva. Contacta a soporte para más información.');
     }
 
     const roles = user.roles.map((r) => r.role.name);
@@ -149,7 +149,7 @@ export class AuthService {
   async verifyEmail(email: string, code: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new BadRequestException('Invalid or expired verification code');
+      throw new BadRequestException('El código de verificación es incorrecto o expiró.');
     }
     if (user.isEmailVerified) {
       return;
@@ -160,12 +160,12 @@ export class AuthService {
       orderBy: { createdAt: 'desc' },
     });
     if (!otp || otp.attempts >= MAX_VERIFICATION_ATTEMPTS) {
-      throw new BadRequestException('Invalid or expired verification code');
+      throw new BadRequestException('El código de verificación es incorrecto o expiró.');
     }
 
     if (otp.codeHash !== this.hashToken(code)) {
       await this.prisma.otpCode.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
-      throw new BadRequestException('Invalid or expired verification code');
+      throw new BadRequestException('El código de verificación es incorrecto o expiró.');
     }
 
     await this.prisma.$transaction([
@@ -212,7 +212,7 @@ export class AuthService {
     });
 
     if (!stored) {
-      throw new BadRequestException('Invalid or expired reset token');
+      throw new BadRequestException('El enlace para restablecer tu contraseña es inválido o expiró.');
     }
 
     const passwordHash = await argon2.hash(newPassword);
@@ -263,7 +263,7 @@ export class AuthService {
     }
 
     if (!user.isActive || user.deletedAt) {
-      throw new UnauthorizedException('This account is inactive');
+      throw new UnauthorizedException('Esta cuenta está inactiva. Contacta a soporte para más información.');
     }
 
     const roles = user.roles.map((r) => r.role.name);

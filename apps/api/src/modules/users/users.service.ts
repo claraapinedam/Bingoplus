@@ -195,7 +195,7 @@ export class UsersService {
   async createStaffUser(dto: CreateStaffUserDto) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) {
-      throw new ConflictException('An account with this email already exists');
+      throw new ConflictException('Ya existe una cuenta con este correo electrónico.');
     }
 
     const role = await this.prisma.role.findUniqueOrThrow({ where: { name: dto.role } });
