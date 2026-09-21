@@ -259,6 +259,12 @@ img {
   position: sticky;
   top: 0;
   height: 100vh;
+  /* iOS Safari's 100vh is the viewport with browser chrome collapsed — while the address/tab bar
+     is showing (the common case), the real visible area is shorter, so the sidebar's bottom
+     (the "Cambiar negocio"/"Salir" footer) rendered below the fold, outside the reachable screen.
+     100dvh tracks the actual visible viewport instead; the 100vh line above is just the fallback
+     for browsers that don't support dvh yet. */
+  height: 100dvh;
 }
 
 .dashboard-sidebar-header {
@@ -494,6 +500,7 @@ img {
     left: 0;
     right: auto;
     height: 100vh;
+    height: 100dvh; /* see the desktop .dashboard-sidebar rule above for why */
     width: 260px;
     max-width: 80vw;
     flex-direction: column;
