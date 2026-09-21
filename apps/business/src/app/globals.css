@@ -481,19 +481,19 @@ img {
     flex: none;
   }
 
-  /* Off-canvas drawer, anchored to the right — hidden by default, slides in over the content
+  /* Off-canvas drawer, anchored to the left — hidden by default, slides in over the content
      instead of squeezing it (a fixed sidebar never fit well next to a phone-width main area). */
   .dashboard-sidebar {
     position: fixed;
     top: 0;
-    right: 0;
-    left: auto;
+    left: 0;
+    right: auto;
     height: 100vh;
     width: 260px;
     max-width: 80vw;
     flex-direction: column;
     overflow-x: hidden;
-    transform: translateX(100%);
+    transform: translateX(-100%);
     transition: transform 0.2s ease;
     z-index: 60;
   }
