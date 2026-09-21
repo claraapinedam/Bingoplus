@@ -91,10 +91,23 @@ export default function ContractTab({ businessId }: { businessId: string }) {
   }
 
   const [current, ...history] = contracts;
+  // The unsigned text is the same template for every business (editable in Configuración →
+  // Contratos) — showing it here per-business was redundant. Once signed it's THIS business's own
+  // record, so the full detail (including the frozen contractText) is worth keeping.
+  const signed = contracts.find((c) => c.status === 'SIGNED') ?? null;
 
   return (
     <div>
-      <ContractDetail contract={current} />
+      {signed ? (
+        <ContractDetail contract={signed} />
+      ) : (
+        <div className="bingo-card">
+          <p style={{ fontSize: 13, color: '#7f8ea3' }}>
+            Contrato pendiente de firma por el negocio (generado el {new Date(current.createdAt).toLocaleString('es-EC')}). La
+            plantilla que se envió se administra en Configuración → Contratos.
+          </p>
+        </div>
+      )}
 
       {history.length > 0 && (
         <div className="bingo-card" style={{ marginTop: 16 }}>

@@ -3,11 +3,12 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BusinessIdType, ContractStatus, RiderAccountStatus, RiderDocumentType } from '@prisma/client';
+import { BusinessIdType, ContractStatus, ContractTemplateType, RiderAccountStatus, RiderDocumentType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { UploadsService } from '../uploads/uploads.service';
 import { DeliveryFareConfigService } from '../delivery/delivery-fare-config.service';
+import { ContractTemplateService } from './contract-template.service';
 import { buildRiderContractPdf } from './pdf/rider-contract-pdf.builder';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class RiderContractsService {
     private readonly email: EmailService,
     private readonly uploads: UploadsService,
     private readonly fareConfig: DeliveryFareConfigService,
+    private readonly templates: ContractTemplateService,
   ) {}
 
   /**
@@ -44,6 +46,10 @@ export class RiderContractsService {
     const fare = await this.fareConfig.get();
     const bingoCommissionPercent = Math.round(fare.bingoCommissionPercent * 10000) / 100;
     const riderTaxWithholdingPercent = Math.round(fare.riderTaxWithholdingPercent * 10000) / 100;
+    const template = await this.templates.get(ContractTemplateType.RIDER);
+    const contractText = template
+      .replace('{{comision_bingo}}', bingoCommissionPercent.toFixed(2))
+      .replace('{{retencion_impuesto}}', riderTaxWithholdingPercent.toFixed(2));
 
     return this.prisma.riderContract.create({
       data: {
@@ -53,7 +59,7 @@ export class RiderContractsService {
         taxId: rider.nationalIdNumber,
         bingoCommissionPercent,
         riderTaxWithholdingPercent,
-        contractText: buildContractText(bingoCommissionPercent, riderTaxWithholdingPercent),
+        contractText,
       },
     });
   }
@@ -129,22 +135,6 @@ export class RiderContractsService {
     const apiPrefix = this.config.get<string>('API_PREFIX', 'api/v1');
     return `${apiOrigin}/${apiPrefix}${this.uploads.publicPath(filename)}`;
   }
-}
-
-/** Fictitious boilerplate clauses (placeholder pending real legal review), but the commission and
- * tax-withholding figures quoted are always the platform's actual, currently-configured
- * DeliveryFareConfig values — never invented numbers. Frozen onto the contract row itself at
- * generation time (see the schema comment on RiderContract), never recomputed later. */
-function buildContractText(bingoCommissionPercent: number, riderTaxWithholdingPercent: number): string {
-  return [
-    'CLÁUSULA PRIMERA — OBJETO. Mediante el presente contrato, BINGO+ concede al Rider acceso a su plataforma tecnológica para recibir y ejecutar entregas de pedidos a través de la aplicación BINGO+ Rider, en los términos y condiciones aquí establecidos.',
-    `CLÁUSULA SEGUNDA — TARIFAS, COMISIÓN Y RETENCIÓN. La tarifa de cada entrega la calcula BINGO+ según su fórmula vigente (tarifa mínima según franja horaria, distancia recorrida, tiempo y demanda). Sobre esa tarifa, BINGO+ retiene una comisión del ${bingoCommissionPercent.toFixed(2)}%. Sobre el monto restante, BINGO+ retiene además un ${riderTaxWithholdingPercent.toFixed(2)}% en concepto de impuestos, transfiriendo al Rider el valor neto resultante.`,
-    'CLÁUSULA TERCERA — OBLIGACIONES DEL RIDER. El Rider se compromete a mantener actualizada su información personal, de identificación y de vehículo, a ejecutar las entregas aceptadas dentro de tiempos razonables y con el debido cuidado de los productos transportados, y a cumplir con la normativa de tránsito aplicable.',
-    'CLÁUSULA CUARTA — OBLIGACIONES DE BINGO+. BINGO+ se compromete a mantener disponible la plataforma con niveles razonables de servicio, a transferir al Rider el valor neto de cada entrega completada conforme a los plazos establecidos, y a brindar soporte razonable durante la vigencia del contrato.',
-    'CLÁUSULA QUINTA — VIGENCIA Y TERMINACIÓN. El presente contrato entra en vigencia en la fecha de su firma digital y se mantendrá vigente hasta que cualquiera de las partes lo termine mediante notificación escrita con al menos 30 días de anticipación, sin perjuicio de las obligaciones ya generadas.',
-    'CLÁUSULA SEXTA — CONFIDENCIALIDAD Y DATOS PERSONALES. Ambas partes se obligan a mantener confidencialidad sobre la información comercial intercambiada y a tratar los datos personales de los usuarios conforme a la normativa de protección de datos aplicable.',
-    'CLÁUSULA SÉPTIMA — VALIDEZ DE LA FIRMA DIGITAL. Las partes reconocen y aceptan que la firma digital consignada en este documento, junto con el identificador único de contrato y la dirección IP registrada al momento de la firma, constituyen prueba suficiente de la manifestación de voluntad y aceptación de los términos aquí descritos.',
-  ].join('\n\n');
 }
 
 function decodeDataUrlPng(dataUrl: string): Buffer {

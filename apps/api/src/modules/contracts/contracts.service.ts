@@ -3,11 +3,12 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BusinessCapabilityType, BusinessStatus, ContractStatus, Prisma } from '@prisma/client';
+import { BusinessCapabilityType, BusinessStatus, ContractStatus, ContractTemplateType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { UploadsService } from '../uploads/uploads.service';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
+import { ContractTemplateService } from './contract-template.service';
 import { buildContractPdf } from './pdf/contract-pdf.builder';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class ContractsService {
     private readonly email: EmailService,
     private readonly uploads: UploadsService,
     private readonly capabilities: BusinessCapabilitiesService,
+    private readonly templates: ContractTemplateService,
   ) {}
 
   /**
@@ -266,15 +268,8 @@ export class ContractsService {
       ? `Adicionalmente, el Negocio pagará una membresía de ${membership.plan.currency} ${membership.plan.price} por período ${membership.plan.billingFrequency === 'MONTHLY' ? 'mensual' : 'anual'} por su presencia en el Directorio de BINGO+.`
       : '';
 
-    const contractText = [
-      'CLÁUSULA PRIMERA — OBJETO. Mediante el presente contrato, BINGO+ concede al Negocio acceso a su plataforma tecnológica para la promoción, venta y/o prestación de productos y servicios dirigidos a mascotas, en los términos y condiciones aquí establecidos.',
-      `CLÁUSULA SEGUNDA — TARIFAS Y COMISIONES. ${commissionLine} ${membershipLine}`.trim(),
-      'CLÁUSULA TERCERA — OBLIGACIONES DEL NEGOCIO. El Negocio se compromete a mantener información veraz y actualizada, cumplir con la normativa sanitaria y comercial aplicable, atender oportunamente los pedidos y reservas recibidos a través de BINGO+, y responder por la calidad de los productos y servicios ofrecidos.',
-      'CLÁUSULA CUARTA — OBLIGACIONES DE BINGO+. BINGO+ se compromete a mantener disponible la plataforma con niveles razonables de servicio, procesar los pagos correspondientes al Negocio conforme a los plazos establecidos, y brindar soporte técnico razonable durante la vigencia del contrato.',
-      'CLÁUSULA QUINTA — VIGENCIA Y TERMINACIÓN. El presente contrato entra en vigencia en la fecha de su firma digital y se mantendrá vigente hasta que cualquiera de las partes lo termine mediante notificación escrita con al menos 30 días de anticipación, sin perjuicio de las obligaciones ya generadas.',
-      'CLÁUSULA SEXTA — CONFIDENCIALIDAD Y DATOS PERSONALES. Ambas partes se obligan a mantener confidencialidad sobre la información comercial intercambiada y a tratar los datos personales de los usuarios conforme a la normativa de protección de datos aplicable.',
-      'CLÁUSULA SÉPTIMA — VALIDEZ DE LA FIRMA DIGITAL. Las partes reconocen y aceptan que la firma digital consignada en este documento, junto con el identificador único de contrato y la dirección IP registrada al momento de la firma, constituyen prueba suficiente de la manifestación de voluntad y aceptación de los términos aquí descritos.',
-    ].join('\n\n');
+    const template = await this.templates.get(ContractTemplateType.BUSINESS);
+    const contractText = template.replace('{{tarifas_comisiones}}', `${commissionLine} ${membershipLine}`.trim());
 
     return { commissionRatePercent, membershipPlanName, membershipPriceUsd, membershipBillingFrequency, contractText };
   }

@@ -45,6 +45,7 @@ const COLLAPSIBLE_MENUS = [
     matchPrefix: '/settings',
     items: [
       { href: '/settings', label: 'Variables' },
+      { href: '/contract-templates', label: 'Contratos' },
       { href: '/users', label: 'Usuarios' },
       { href: '/coupons', label: 'Cupones de Plataforma' },
       { href: '/membership-plans', label: 'Planes de Membresía' },
@@ -70,7 +71,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     () =>
       restricted
         ? COLLAPSIBLE_MENUS.map((menu) =>
-            menu.key === 'settings' ? { ...menu, items: menu.items.filter((item) => item.href !== '/settings') } : menu,
+            menu.key === 'settings'
+              ? { ...menu, items: menu.items.filter((item) => item.href !== '/settings' && item.href !== '/contract-templates') }
+              : menu,
           )
         : COLLAPSIBLE_MENUS,
     [restricted],

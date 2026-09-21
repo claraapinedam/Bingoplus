@@ -854,6 +854,27 @@ model PricingConfiguration {
   createdAt         DateTime @default(now())
 }
 
+enum ContractTemplateType {
+  BUSINESS
+  RIDER
+}
+
+// Admin-editable contract template text (append-only, latest wins — same shape as
+// PricingConfiguration). ContractsService/RiderContractsService read the latest row of the
+// matching type at contract-GENERATION time and substitute its {{...}} placeholder tokens with
+// that business/rider's actual live figures; the result is frozen onto the contract row itself
+// (BusinessContract.contractText/RiderContract.contractText), exactly like today — editing the
+// template here never changes a contract someone already signed.
+model ContractTemplate {
+  id        String               @id @default(cuid())
+  type      ContractTemplateType
+  content   String
+  updatedBy String?
+  createdAt DateTime             @default(now())
+
+  @@index([type, createdAt])
+}
+
 // Admin-editable delivery fare formula (append-only, latest wins — same shape as
 // PricingConfiguration/RiderDispatchConfig): delivery is an agreement between BINGO+ and the
 // Rider, never something a business sets (see Business — it has no deliveryFeeUsd field). The

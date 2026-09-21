@@ -1,6 +1,6 @@
-import { BadRequestException, Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseEnumPipe, Patch, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { RoleName } from '@prisma/client';
+import { ContractTemplateType, RoleName } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Audit } from '../../common/decorators/audit.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -13,6 +13,8 @@ import { DeliveryFareConfigService } from '../delivery/delivery-fare-config.serv
 import { SetDeliveryFareConfigDto } from '../delivery/dto/set-delivery-fare-config.dto';
 import { BusinessesService } from '../businesses/businesses.service';
 import { SetDefaultCommissionRateDto } from './dto/set-default-commission-rate.dto';
+import { ContractTemplateService } from '../contracts/contract-template.service';
+import { SetContractTemplateDto } from './dto/set-contract-template.dto';
 
 /**
  * Marketplace ranking configuration — kept out of code per the project rule that these weights
@@ -28,6 +30,7 @@ export class AdminSettingsController {
     private readonly pricingConfig: PricingConfigService,
     private readonly deliveryFareConfig: DeliveryFareConfigService,
     private readonly businesses: BusinessesService,
+    private readonly contractTemplates: ContractTemplateService,
   ) {}
 
   @Get('ranking-weights')
@@ -85,5 +88,24 @@ export class AdminSettingsController {
   @Patch('default-commission-rate')
   async setDefaultCommissionRate(@CurrentUser() admin: AuthenticatedUser, @Body() dto: SetDefaultCommissionRateDto) {
     return { rate: await this.businesses.setDefaultCommissionRate(dto.rate, admin.id) };
+  }
+
+  /** One editable template per type (BUSINESS/RIDER), used for every applicant going forward —
+   * see ContractsService.buildFeeSnapshot / RiderContractsService.createForApprovedRider, which
+   * read the latest row here and freeze the result onto that specific contract at generation time. */
+  @Get('contract-templates/:type')
+  getContractTemplate(@Param('type', new ParseEnumPipe(ContractTemplateType)) type: ContractTemplateType) {
+    return this.contractTemplates.get(type).then((content) => ({ type, content }));
+  }
+
+  @Audit('settings.contract-template.update', 'ContractTemplate')
+  @Patch('contract-templates/:type')
+  async setContractTemplate(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('type', new ParseEnumPipe(ContractTemplateType)) type: ContractTemplateType,
+    @Body() dto: SetContractTemplateDto,
+  ) {
+    const content = await this.contractTemplates.set(type, dto.content, admin.id);
+    return { type, content };
   }
 }

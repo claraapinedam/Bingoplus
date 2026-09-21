@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { UploadsService } from '../uploads/uploads.service';
 import { DeliveryFareConfigService } from '../delivery/delivery-fare-config.service';
+import { ContractTemplateService, DEFAULT_RIDER_CONTRACT_TEMPLATE } from './contract-template.service';
 
 // A real, minimal 1x1 transparent PNG — pdfkit's doc.image() needs actual valid PNG bytes to not throw.
 const VALID_PNG_DATA_URL =
@@ -27,6 +28,7 @@ describe('RiderContractsService', () => {
     fareConfig = { get: jest.fn().mockResolvedValue({ bingoCommissionPercent: 0.2, riderTaxWithholdingPercent: 0.08 }) };
     const config = { get: jest.fn((_key: string, fallback?: unknown) => fallback) } as unknown as ConfigService;
     const uploads = { directory: '/tmp/bingoplus-test-uploads', publicPath: (f: string) => `/uploads/${f}` } as unknown as UploadsService;
+    const templates = { get: jest.fn().mockResolvedValue(DEFAULT_RIDER_CONTRACT_TEMPLATE), set: jest.fn() };
 
     service = new RiderContractsService(
       prisma as unknown as PrismaService,
@@ -34,6 +36,7 @@ describe('RiderContractsService', () => {
       email as unknown as EmailService,
       uploads,
       fareConfig as unknown as DeliveryFareConfigService,
+      templates as unknown as ContractTemplateService,
     );
   });
 

@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { UploadsService } from '../uploads/uploads.service';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
+import { ContractTemplateService, DEFAULT_BUSINESS_CONTRACT_TEMPLATE } from './contract-template.service';
 
 // A real, minimal 1x1 transparent PNG — pdfkit's doc.image() needs actual valid PNG bytes to not throw.
 const VALID_PNG_DATA_URL =
@@ -32,6 +33,7 @@ describe('ContractsService', () => {
     };
     const config = { get: jest.fn((_key: string, fallback?: unknown) => fallback) } as unknown as ConfigService;
     const uploads = { directory: '/tmp/bingoplus-test-uploads', publicPath: (f: string) => `/uploads/${f}` } as unknown as UploadsService;
+    const templates = { get: jest.fn().mockResolvedValue(DEFAULT_BUSINESS_CONTRACT_TEMPLATE), set: jest.fn() };
 
     service = new ContractsService(
       prisma as unknown as PrismaService,
@@ -39,6 +41,7 @@ describe('ContractsService', () => {
       email as unknown as EmailService,
       uploads,
       capabilities as unknown as BusinessCapabilitiesService,
+      templates as unknown as ContractTemplateService,
     );
   });
 
