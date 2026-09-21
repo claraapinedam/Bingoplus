@@ -332,6 +332,7 @@ model Business {
   couponRedemptions  CouponRedemption[]
   promotions         Promotion[]
   availabilityBlocks AvailabilityBlock[]
+  commissionCouponRedemptions CommissionCouponRedemption[]
 
   @@index([ownerId])
   @@index([status])
@@ -978,6 +979,8 @@ model Rider {
   locations         RiderLocation[]
   assignmentHistory DeliveryAssignmentHistory[]
   contracts         RiderContract[]
+  commissionOverrides         RiderCommissionOverride[]
+  commissionCouponRedemptions CommissionCouponRedemption[]
 
   @@index([accountStatus])
   @@index([availabilityStatus])
@@ -1826,6 +1829,67 @@ model AdminCouponRedemption {
   @@index([membershipId])
 }
 
+// ───────────────────────────── Commission coupons (acquisition/retention) ───────────────────────
+//
+// Deliberately separate from AdminCoupon (which discounts membership billing) and from
+// BusinessCoupon/Promotion (customer-facing Marketplace discounts) — a CommissionCoupon lowers
+// what BINGO+ itself keeps from a business's sales or a rider's delivery fares, for a limited
+// time, as an incentive (e.g. "10% instead of 20% for riders this quarter"). Redeeming one never
+// mutates this row — it writes a normal, time-bound Commission row (business) or
+// RiderCommissionOverride row (rider); see those models for how the reduced rate actually takes
+// effect and automatically reverts once expired (no scheduled job involved).
+
+enum CommissionCouponTargetType {
+  BUSINESS
+  RIDER
+}
+
+model CommissionCoupon {
+  id                String                      @id @default(cuid())
+  code              String                      @unique
+  name              String
+  description       String?
+  targetType        CommissionCouponTargetType
+  // The reduced rate itself — e.g. 0.10 for "BINGO+ keeps 10%" — same Decimal(5,4) shape as
+  // Commission.rate / DeliveryFareConfig.bingoCommissionPercent, whichever this coupon targets.
+  commissionPercent Decimal                     @db.Decimal(5, 4)
+  startDate         DateTime
+  // Also the moment the discount itself expires for anyone who already redeemed — not a
+  // per-redeemer duration, a shared campaign window (see model-level comment).
+  expirationDate    DateTime
+  usageLimit        Int?
+  status            AdminCouponStatus           @default(DRAFT)
+  createdBy         String?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+
+  redemptions CommissionCouponRedemption[]
+
+  @@index([status])
+  @@index([expirationDate])
+}
+
+model CommissionCouponRedemption {
+  id         String   @id @default(cuid())
+  couponId   String
+  // Exactly one of these is set, matching the coupon's targetType — enforced in
+  // CommissionCouponsService, not at the schema level (Prisma has no CHECK-constraint DSL).
+  businessId String?
+  riderId    String?
+  redeemedAt DateTime @default(now())
+
+  coupon   CommissionCoupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  business Business?        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  rider    Rider?           @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  // NULL is distinct per-row in Postgres, so a rider redemption (businessId NULL) never collides
+  // with another rider's here — this only actually blocks the SAME business/rider redeeming twice.
+  @@unique([couponId, businessId])
+  @@unique([couponId, riderId])
+  @@index([businessId])
+  @@index([riderId])
+}
+
 // ───────────────────────────── Business membership (Directory billing) ──────────────────────────
 //
 // A financial domain separate from Marketplace orders (RULE 17): Membership → Subscription →
@@ -2033,16 +2097,40 @@ model MarketplaceRankingConfig {
 }
 
 model Commission {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   businessId    String
-  rate          Decimal  @db.Decimal(5, 4)
-  effectiveFrom DateTime @default(now())
+  rate          Decimal   @db.Decimal(5, 4)
+  effectiveFrom DateTime  @default(now())
+  // Set only on a promotional rate from a redeemed CommissionCoupon — null (every row before this
+  // feature existed, and every rate Admin sets normally) means "standard, never expires". Reads of
+  // "the current rate" (BusinessesService.getCommissionSummary/listCommissionsForAdmin,
+  // ContractsService.buildFeeSnapshot) filter out any row whose expiresAt has passed, so the
+  // business automatically reverts to its previous (non-expiring) rate once the promo window
+  // ends — no cron/scheduled job needed, same mechanism as RiderCommissionOverride below.
+  expiresAt     DateTime?
   createdBy     String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime  @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  @@index([businessId])
+  @@index([businessId, effectiveFrom])
+}
+
+// Per-rider, time-bound override of the platform-wide DeliveryFareConfig.bingoCommissionPercent —
+// only ever created by redeeming a CommissionCoupon (targetType RIDER). DeliveryService.complete()
+// checks for a live (non-expired) row here for that specific rider before falling back to the
+// platform default; expiring naturally reverts the rider with no scheduled job needed.
+model RiderCommissionOverride {
+  id                     String   @id @default(cuid())
+  riderId                String
+  bingoCommissionPercent Decimal  @db.Decimal(5, 4)
+  effectiveFrom          DateTime @default(now())
+  expiresAt              DateTime
+  createdAt              DateTime @default(now())
+
+  rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([riderId, effectiveFrom])
 }
 
 enum PayeeType {

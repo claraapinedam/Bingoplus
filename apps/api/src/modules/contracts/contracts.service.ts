@@ -247,7 +247,7 @@ export class ContractsService {
     contractText: string;
   }> {
     const commission = await this.prisma.commission.findFirst({
-      where: { businessId },
+      where: { businessId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
       orderBy: { effectiveFrom: 'desc' },
     });
     const membership = await this.prisma.businessMembership.findUnique({

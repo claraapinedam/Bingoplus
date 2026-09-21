@@ -525,7 +525,10 @@ export class BusinessesService {
     const [salesByBusiness, commissions] = await Promise.all([
       this.countSalesByBusiness(businessIds),
       this.prisma.commission.findMany({
-        where: { businessId: { in: businessIds } },
+        // A promotional (CommissionCoupon-redeemed) row whose expiresAt has passed is excluded —
+        // the previous, non-expiring row then naturally becomes "latest" again below, with no
+        // scheduled job needed to revert it (see the schema comment on Commission.expiresAt).
+        where: { businessId: { in: businessIds }, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
         orderBy: { effectiveFrom: 'desc' },
       }),
     ]);
@@ -559,7 +562,10 @@ export class BusinessesService {
     const business = await this.getOne(businessId);
     const [salesByBusiness, commission] = await Promise.all([
       this.countSalesByBusiness([businessId]),
-      this.prisma.commission.findFirst({ where: { businessId }, orderBy: { effectiveFrom: 'desc' } }),
+      this.prisma.commission.findFirst({
+        where: { businessId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        orderBy: { effectiveFrom: 'desc' },
+      }),
     ]);
     const sales = salesByBusiness.get(businessId) ?? { count: 0, total: 0 };
     const rate = commission ? Number(commission.rate) : null;

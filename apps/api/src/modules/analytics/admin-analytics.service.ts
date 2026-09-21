@@ -53,7 +53,10 @@ export class AdminAnalyticsService {
     const businessIds = byBusiness.map((b) => b.businessId);
     const commissions =
       businessIds.length > 0
-        ? await this.prisma.commission.findMany({ where: { businessId: { in: businessIds } }, orderBy: { effectiveFrom: 'desc' } })
+        ? await this.prisma.commission.findMany({
+            where: { businessId: { in: businessIds }, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+            orderBy: { effectiveFrom: 'desc' },
+          })
         : [];
     const rateByBusiness = new Map<string, number>();
     for (const c of commissions) {

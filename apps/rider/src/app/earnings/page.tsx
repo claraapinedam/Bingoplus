@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import RiderShell from '@/components/RiderShell';
 import EmptyState from '@/components/EmptyState';
+import CommissionCouponCard from '@/components/CommissionCouponCard';
 import { apiFetch } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
@@ -57,6 +58,8 @@ export default function EarningsPage() {
         <p style={{ fontSize: 11, color: '#9aa5b1', textAlign: 'center', marginTop: 8 }}>
           Los pagos a riders aún no están automatizados — esto es un resumen informativo.
         </p>
+
+        <CommissionCouponCard />
 
         <h2 className="bingo-section-title">Detalle</h2>
         {earnings === null ? (

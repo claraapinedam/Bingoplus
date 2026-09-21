@@ -48,6 +48,7 @@ const COLLAPSIBLE_MENUS = [
       { href: '/contract-templates', label: 'Contratos' },
       { href: '/users', label: 'Usuarios' },
       { href: '/coupons', label: 'Cupones de Plataforma' },
+      { href: '/commission-coupons', label: 'Cupones de Comisión' },
       { href: '/membership-plans', label: 'Planes de Membresía' },
       { href: '/audit-logs', label: 'Auditoría' },
       { href: '/notifications', label: 'Notificaciones' },

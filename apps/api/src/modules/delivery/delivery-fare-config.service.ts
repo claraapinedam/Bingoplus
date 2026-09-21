@@ -60,4 +60,17 @@ export class DeliveryFareConfigService {
     await this.prisma.deliveryFareConfig.create({ data: { ...dto, updatedBy } });
     return dto;
   }
+
+  /** The commission percent DeliveryService.complete() should actually use for this rider right
+   * now — a live (non-expired) RiderCommissionOverride from a redeemed CommissionCoupon takes
+   * priority over the platform-wide default; once it expires this naturally falls back to
+   * `get().bingoCommissionPercent` with no scheduled job needed to revert it. */
+  async getEffectiveCommissionPercent(riderId: string): Promise<number> {
+    const override = await this.prisma.riderCommissionOverride.findFirst({
+      where: { riderId, expiresAt: { gt: new Date() } },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    if (override) return Number(override.bingoCommissionPercent);
+    return (await this.get()).bingoCommissionPercent;
+  }
 }

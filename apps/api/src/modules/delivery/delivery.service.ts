@@ -259,10 +259,13 @@ export class DeliveryService {
     // Reads the *current* DeliveryFareConfig, same "latest row wins" convention as every other
     // append-only config in this codebase — not snapshotted at fare-quote time, since a rate
     // change is expected to apply going forward, not retroactively re-litigate an already-quoted
-    // fare's split.
+    // fare's split. The commission percent specifically may instead come from this rider's own
+    // live RiderCommissionOverride (a redeemed CommissionCoupon) — see
+    // DeliveryFareConfigService.getEffectiveCommissionPercent.
     const fareConfig = await this.fareConfig.get();
+    const bingoCommissionPercent = await this.fareConfig.getEffectiveCommissionPercent(riderId);
     const grossAmount = new Prisma.Decimal(delivery.deliveryFee);
-    const commissionAmount = grossAmount.mul(fareConfig.bingoCommissionPercent);
+    const commissionAmount = grossAmount.mul(bingoCommissionPercent);
     const taxWithheldAmount = grossAmount.minus(commissionAmount).mul(fareConfig.riderTaxWithholdingPercent);
     const netAmount = grossAmount.minus(commissionAmount).minus(taxWithheldAmount);
 

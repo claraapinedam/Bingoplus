@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import DashboardShell, { useBusiness } from '@/components/DashboardShell';
 import { apiFetch, ApiError, getActiveBusinessId } from '@/lib/api';
+import CommissionCouponCard from '@/components/CommissionCouponCard';
 
 const WEEKDAYS: { key: string; label: string }[] = [
   { key: 'mon', label: 'Lunes' },
@@ -97,6 +98,8 @@ function ProfileContent() {
           Estos datos solo puede modificarlos un administrador de BINGO+.
         </div>
       </div>
+
+      {business.capabilities.SELLS_PRODUCTS && businessId && <CommissionCouponCard businessId={businessId} />}
 
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 640 }}>
         <div>

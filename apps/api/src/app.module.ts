@@ -22,6 +22,7 @@ import { DirectoryModule } from './modules/directory/directory.module';
 import { MembershipsModule } from './modules/memberships/memberships.module';
 import { CouponsModule } from './modules/coupons/coupons.module';
 import { AdminCouponsModule } from './modules/admin-coupons/admin-coupons.module';
+import { CommissionCouponsModule } from './modules/commission-coupons/commission-coupons.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { AddressesModule } from './modules/addresses/addresses.module';
 import { PricingModule } from './modules/pricing/pricing.module';
@@ -57,6 +58,7 @@ import { PetFriendlyPlacesModule } from './modules/pet-friendly-places/pet-frien
     MembershipsModule,
     CouponsModule,
     AdminCouponsModule,
+    CommissionCouponsModule,
     FavoritesModule,
     AddressesModule,
     PricingModule,
