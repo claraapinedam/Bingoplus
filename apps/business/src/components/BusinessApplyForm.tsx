@@ -239,14 +239,17 @@ export default function BusinessApplyForm({
   }, [goal]);
 
   // Selling products always requires a RUC (a natural/CEDULA-only seller can't issue invoices for
-  // Marketplace sales) — Directory-only listings can still be a CEDULA. Clear a CEDULA choice that
-  // the newly-picked goal no longer allows instead of silently submitting it.
+  // Marketplace sales) — auto-selected to save the click since it's the only option anyway.
+  // Directory-only listings can still be a CEDULA, so switching there clears any RUC left over from
+  // a previous goal instead of silently keeping it — the user picks it deliberately either way.
   useEffect(() => {
-    if (sellsProducts && idType === 'CEDULA') {
+    if (sellsProducts) {
+      if (idType !== 'RUC') selectIdType('RUC');
+    } else if (goal === 'DIRECTORY') {
       setIdType(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sellsProducts]);
+  }, [goal]);
 
   useEffect(() => {
     if (!wantsDirectory) return;
