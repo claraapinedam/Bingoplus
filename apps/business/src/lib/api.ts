@@ -171,6 +171,71 @@ export async function uploadFile(file: File, _isRetry = false): Promise<{ url: s
   return body.data as { url: string };
 }
 
+/** Like `uploadFile`, but posts an arbitrary FormData and unwraps the generic {data} envelope
+ * instead of assuming a `{url}` shape — used by the bulk product upload's Excel validation step. */
+export async function postFormData<T>(path: string, form: FormData, _isRetry = false): Promise<T> {
+  const token = getAccessToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+
+  if (res.status === 401 && !_isRetry) {
+    const refreshed = await refreshSession();
+    if (refreshed) {
+      return postFormData<T>(path, form, true);
+    }
+    clearTokens();
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+    throw new ApiError(401, 'SESSION_EXPIRED', 'Tu sesión expiró. Inicia sesión de nuevo.');
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(res.status, body?.error?.code ?? 'UPLOAD_FAILED', body?.error?.message ?? friendlyStatusMessage(res.status));
+  }
+  return body.data as T;
+}
+
+/** Downloads a file from an authenticated GET endpoint (e.g. the bulk-upload Excel template) and
+ * triggers the browser's native "save as" — apiFetch can't be reused since it always expects the
+ * {data} JSON envelope, not a raw file. Retries once on 401, same as every other helper here. */
+export async function downloadFile(path: string, filename: string, _isRetry = false): Promise<void> {
+  const token = getAccessToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  if (res.status === 401 && !_isRetry) {
+    const refreshed = await refreshSession();
+    if (refreshed) {
+      return downloadFile(path, filename, true);
+    }
+    clearTokens();
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+    throw new ApiError(401, 'SESSION_EXPIRED', 'Tu sesión expiró. Inicia sesión de nuevo.');
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body?.error?.code ?? 'DOWNLOAD_FAILED', body?.error?.message ?? friendlyStatusMessage(res.status));
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 interface AuthUser {
   id: string;
   email: string;

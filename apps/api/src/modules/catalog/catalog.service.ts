@@ -200,8 +200,11 @@ export class CatalogService {
     return { ...this.withSpeciesNames(product), lowStock: product.stock < LOW_STOCK_THRESHOLD };
   }
 
-  async create(businessId: string, dto: CreateProductDto) {
-    const category = await this.prisma.productCategory.findUnique({
+  /** `client` defaults to the regular PrismaService but accepts a `$transaction` callback's tx
+   * client too — BulkProductUploadService.bulkCreate() passes one so an entire bulk upload commits
+   * or rolls back as a single unit, reusing this exact same validation instead of duplicating it. */
+  async create(businessId: string, dto: CreateProductDto, client: Prisma.TransactionClient | PrismaService = this.prisma) {
+    const category = await client.productCategory.findUnique({
       where: { slug: dto.categorySlug },
     });
     if (!category) {
@@ -210,9 +213,9 @@ export class CatalogService {
     if (dto.salePrice !== undefined && dto.salePrice >= dto.price) {
       throw new BadRequestException('salePrice must be lower than price');
     }
-    const speciesIds = await this.resolveSpeciesIds(dto.speciesSlugs);
+    const speciesIds = await this.resolveSpeciesIds(dto.speciesSlugs, client);
 
-    return this.prisma.product.create({
+    return client.product.create({
       data: {
         businessId,
         categoryId: category.id,
@@ -260,10 +263,13 @@ export class CatalogService {
   }
 
   /** Resolves PetSpecies slugs to ids, rejecting anything unknown — undefined input stays undefined (no change on update). */
-  private async resolveSpeciesIds(slugs?: string[]): Promise<string[] | undefined> {
+  private async resolveSpeciesIds(
+    slugs?: string[],
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<string[] | undefined> {
     if (slugs === undefined) return undefined;
     if (slugs.length === 0) return [];
-    const species = await this.prisma.petSpecies.findMany({ where: { slug: { in: slugs } } });
+    const species = await client.petSpecies.findMany({ where: { slug: { in: slugs } } });
     const unknown = slugs.filter((slug) => !species.some((s) => s.slug === slug));
     if (unknown.length > 0) {
       throw new BadRequestException(`Unknown pet species: ${unknown.join(', ')}`);

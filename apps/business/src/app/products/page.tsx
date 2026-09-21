@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardShell, { useBusiness } from '@/components/DashboardShell';
 import EmptyState from '@/components/EmptyState';
+import BulkProductUploadModal from '@/components/BulkProductUploadModal';
 import { apiFetchPage, getActiveBusinessId } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
@@ -29,6 +30,7 @@ function ProductsContent() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
 
   const load = useCallback(() => {
     if (!businessId) return;
@@ -60,10 +62,26 @@ function ProductsContent() {
           <div className="dashboard-page-title">Productos</div>
           <div className="dashboard-page-subtitle">{total} producto(s)</div>
         </div>
-        <button className="bingo-button" style={{ width: 'auto' }} onClick={() => router.push('/products/new')}>
-          + Agregar producto
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="bingo-button secondary" style={{ width: 'auto' }} onClick={() => setShowBulkUpload(true)}>
+            Carga masiva
+          </button>
+          <button className="bingo-button" style={{ width: 'auto' }} onClick={() => router.push('/products/new')}>
+            + Agregar producto
+          </button>
+        </div>
       </header>
+
+      {showBulkUpload && businessId && (
+        <BulkProductUploadModal
+          businessId={businessId}
+          onClose={() => setShowBulkUpload(false)}
+          onCreated={() => {
+            setShowBulkUpload(false);
+            load();
+          }}
+        />
+      )}
 
       <div className="dashboard-toolbar">
         <input
