@@ -23,7 +23,8 @@ type CapabilityType =
   | 'BOOKINGS'
   | 'PICKUP'
   | 'DELIVERY'
-  | 'COUPONS';
+  | 'COUPONS'
+  | 'HOME_SERVICE';
 
 const CAPABILITY_LABELS: Record<CapabilityType, string> = {
   SELLS_PRODUCTS: 'Vende productos (Marketplace)',
@@ -33,6 +34,7 @@ const CAPABILITY_LABELS: Record<CapabilityType, string> = {
   PICKUP: 'Retiro en tienda',
   DELIVERY: 'Delivery',
   COUPONS: 'Cupones de negocio',
+  HOME_SERVICE: 'Servicio a domicilio',
 };
 
 const CAPABILITY_ORDER: CapabilityType[] = [
@@ -43,6 +45,7 @@ const CAPABILITY_ORDER: CapabilityType[] = [
   'PICKUP',
   'DELIVERY',
   'COUPONS',
+  'HOME_SERVICE',
 ];
 
 interface Business {

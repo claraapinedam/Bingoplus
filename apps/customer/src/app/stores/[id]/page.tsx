@@ -16,11 +16,16 @@ interface BusinessDetail {
   coverImageUrl: string | null;
   city: string;
   addressLine: string;
+  latitude: number | null;
+  longitude: number | null;
   ratingAvg: number;
   reviewCount: number;
   categories: { name: string }[];
   capabilities: Record<string, boolean>;
   openingHours: Record<string, { open: string; close: string }> | null;
+  /** False only for a Directory-only business that exclusively offers "servicio a domicilio" —
+   * no premises of its own for a customer to visit, so the address/"Cómo llegar" don't apply. */
+  hasPhysicalLocation: boolean;
 }
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
@@ -191,8 +196,20 @@ export default function StoreDetailPage() {
 
         <h1 style={{ fontSize: 20, fontWeight: 800, margin: '12px 0 4px' }}>{business.tradeName}</h1>
         <div style={{ fontSize: 13, color: '#7f8ea3' }}>
-          {business.categories.map((c) => c.name).join(' · ')} · {business.addressLine}, {business.city}
+          {business.categories.map((c) => c.name).join(' · ')}
+          {business.hasPhysicalLocation && ` · ${business.addressLine}, ${business.city}`}
         </div>
+        {business.hasPhysicalLocation && business.latitude != null && business.longitude != null && (
+          <button
+            className="bingo-button secondary small"
+            style={{ width: 'auto', marginTop: 8 }}
+            onClick={() =>
+              window.open(`https://www.google.com/maps/dir/?api=1&destination=${business.latitude},${business.longitude}`, '_blank')
+            }
+          >
+            🧭 Cómo llegar
+          </button>
+        )}
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10, fontSize: 13 }}>
           <span>★ {business.ratingAvg.toFixed(1)} ({business.reviewCount})</span>

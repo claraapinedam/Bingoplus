@@ -27,6 +27,7 @@ interface BookingRow {
   service: { name: string };
   pet: { name: string } | null;
   user: { firstName: string; lastName: string; phone: string | null };
+  atCustomerHome: boolean;
 }
 
 function BookingsContent() {
@@ -101,7 +102,10 @@ function BookingsContent() {
                   <td style={{ fontWeight: 700 }}>
                     {new Date(b.startTime).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}
                   </td>
-                  <td>{b.service.name}</td>
+                  <td>
+                    {b.service.name}
+                    {b.atCustomerHome && <span title="A domicilio del cliente" style={{ marginLeft: 6 }}>🚗</span>}
+                  </td>
                   <td>
                     {b.user.firstName} {b.user.lastName}
                   </td>

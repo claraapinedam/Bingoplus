@@ -158,6 +158,39 @@ describe('BookingsService', () => {
     });
   });
 
+  describe('create — service location (atCustomerHome)', () => {
+    beforeEach(() => {
+      prisma.booking.findUnique.mockResolvedValue(null);
+      pets.get.mockResolvedValue({ id: 'pet-1', speciesId: DOG_SPECIES.id, species: DOG_SPECIES, birthDate: null });
+      prisma.booking.count.mockResolvedValue(0);
+      prisma.booking.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'new-booking', ...data, service: { name: 'X' }, user: { firstName: 'A' } }));
+    });
+
+    it('forces atCustomerHome=true for an AT_CUSTOMER_HOME service, ignoring the dto', async () => {
+      prisma.service.findUnique.mockResolvedValue({ ...baseService, locationType: 'AT_CUSTOMER_HOME' });
+      await service.create('user-1', { ...baseDto, atCustomerHome: false } as any);
+      expect(prisma.booking.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ atCustomerHome: true }) }));
+    });
+
+    it('forces atCustomerHome=false for an AT_BUSINESS service, ignoring the dto', async () => {
+      prisma.service.findUnique.mockResolvedValue({ ...baseService, locationType: 'AT_BUSINESS' });
+      await service.create('user-1', { ...baseDto, atCustomerHome: true } as any);
+      expect(prisma.booking.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ atCustomerHome: false }) }));
+    });
+
+    it('requires an explicit choice for a BOTH service', async () => {
+      prisma.service.findUnique.mockResolvedValue({ ...baseService, locationType: 'BOTH' });
+      await expect(service.create('user-1', { ...baseDto, atCustomerHome: undefined } as any)).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.booking.create).not.toHaveBeenCalled();
+    });
+
+    it('honors the customer\'s choice for a BOTH service', async () => {
+      prisma.service.findUnique.mockResolvedValue({ ...baseService, locationType: 'BOTH' });
+      await service.create('user-1', { ...baseDto, atCustomerHome: true } as any);
+      expect(prisma.booking.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ atCustomerHome: true }) }));
+    });
+  });
+
   describe('create — concurrency (double booking)', () => {
     beforeEach(() => {
       prisma.booking.findUnique.mockResolvedValue(null);

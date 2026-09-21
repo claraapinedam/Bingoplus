@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import DashboardShell from '@/components/DashboardShell';
+import DashboardShell, { useBusiness } from '@/components/DashboardShell';
 import EmptyState from '@/components/EmptyState';
 import ServiceForm, { ServiceFormValues } from '@/components/ServiceForm';
 import { apiFetch, ApiError, getActiveBusinessId } from '@/lib/api';
@@ -22,11 +22,13 @@ interface Service {
   maxAgeMonths: number | null;
   active: boolean;
   species: { slug: string }[];
+  locationType: 'AT_BUSINESS' | 'AT_CUSTOMER_HOME' | 'BOTH';
 }
 
 function ServiceDetailContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { business } = useBusiness();
   const businessId = getActiveBusinessId();
   const [service, setService] = useState<Service | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
@@ -119,10 +121,12 @@ function ServiceDetailContent() {
           minAgeMonths: service.minAgeMonths ?? undefined,
           maxAgeMonths: service.maxAgeMonths ?? undefined,
           speciesSlugs: service.species.map((s) => s.slug),
+          locationType: service.locationType,
         }}
         submitting={saving}
         submitLabel="Guardar cambios"
         onSubmit={handleSubmit}
+        homeServiceEnabled={business.capabilities.HOME_SERVICE}
       />
     </>
   );

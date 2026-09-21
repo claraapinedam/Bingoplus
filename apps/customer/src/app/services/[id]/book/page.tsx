@@ -15,9 +15,10 @@ interface ServiceDetail {
   durationMinutes: number;
   /** Only meaningful for DAYCARE/BOARDING — see DAY_RANGE_TYPES. */
   operatingDays: string[];
-  business: { id: string; tradeName: string };
+  business: { id: string; tradeName: string; addressLine: string };
   species: { id: string }[];
   bookingsEnabled: boolean;
+  locationType: 'AT_BUSINESS' | 'AT_CUSTOMER_HOME' | 'BOTH';
 }
 
 // Booked by check-in/check-out date range instead of a time-of-day slot — mirrors the backend's
@@ -60,7 +61,7 @@ function newIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-type Step = 'pet' | 'date' | 'time' | 'dates' | 'review';
+type Step = 'pet' | 'location' | 'date' | 'time' | 'dates' | 'review';
 
 export default function BookServicePage() {
   const params = useParams<{ id: string }>();
@@ -74,6 +75,7 @@ export default function BookServicePage() {
   const [checkOutDate, setCheckOutDate] = useState('');
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [startTime, setStartTime] = useState('');
+  const [atCustomerHome, setAtCustomerHome] = useState<boolean | null>(null);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +117,16 @@ export default function BookServicePage() {
   const eligiblePets = service.species.length === 0 ? pets : pets.filter((p) => service.species.some((s) => s.id === p.speciesId));
   const isDayRange = DAY_RANGE_TYPES.includes(service.type);
   const billableDays = isDayRange ? countBillableDays(date, checkOutDate, service.operatingDays) : 0;
+  const needsLocationChoice = service.locationType === 'BOTH';
+  const effectiveAtCustomerHome = needsLocationChoice ? atCustomerHome : service.locationType === 'AT_CUSTOMER_HOME';
+
+  function afterPetStep() {
+    if (needsLocationChoice) {
+      setStep('location');
+    } else {
+      setStep(isDayRange ? 'dates' : 'date');
+    }
+  }
 
   async function confirmBooking() {
     setSubmitting(true);
@@ -127,6 +139,7 @@ export default function BookServicePage() {
           petId,
           date,
           ...(isDayRange ? { checkOutDate } : { startTime }),
+          ...(needsLocationChoice ? { atCustomerHome } : {}),
           notes: notes || undefined,
           idempotencyKey,
         }),
@@ -188,14 +201,47 @@ export default function BookServicePage() {
                 ))}
               </div>
             )}
-            <button
-              className="bingo-button"
-              style={{ marginTop: 16 }}
-              disabled={!petId}
-              onClick={() => setStep(isDayRange ? 'dates' : 'date')}
-            >
+            <button className="bingo-button" style={{ marginTop: 16 }} disabled={!petId} onClick={afterPetStep}>
               Continuar
             </button>
+          </>
+        )}
+
+        {step === 'location' && (
+          <>
+            <h2 className="bingo-section-title" style={{ marginTop: 0 }}>
+              ¿Dónde prefieres el servicio?
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                className="bingo-card"
+                style={{ textAlign: 'left', border: atCustomerHome === false ? '2px solid var(--bingo-teal)' : '1px solid transparent', cursor: 'pointer' }}
+                onClick={() => setAtCustomerHome(false)}
+              >
+                <div style={{ fontWeight: 700 }}>En {service.business.tradeName}</div>
+                <div style={{ fontSize: 12, color: '#7f8ea3' }}>{service.business.addressLine}</div>
+              </button>
+              <button
+                className="bingo-card"
+                style={{ textAlign: 'left', border: atCustomerHome === true ? '2px solid var(--bingo-teal)' : '1px solid transparent', cursor: 'pointer' }}
+                onClick={() => setAtCustomerHome(true)}
+              >
+                <div style={{ fontWeight: 700 }}>A domicilio</div>
+                <div style={{ fontSize: 12, color: '#7f8ea3' }}>El profesional va a tu dirección.</div>
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button className="bingo-button secondary" onClick={() => setStep('pet')}>
+                Atrás
+              </button>
+              <button
+                className="bingo-button"
+                disabled={atCustomerHome === null}
+                onClick={() => setStep(isDayRange ? 'dates' : 'date')}
+              >
+                Continuar
+              </button>
+            </div>
           </>
         )}
 
@@ -237,7 +283,7 @@ export default function BookServicePage() {
               </p>
             )}
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button className="bingo-button secondary" onClick={() => setStep('pet')}>
+              <button className="bingo-button secondary" onClick={() => setStep(needsLocationChoice ? 'location' : 'pet')}>
                 Atrás
               </button>
               <button className="bingo-button" disabled={billableDays === 0} onClick={() => setStep('review')}>
@@ -260,7 +306,7 @@ export default function BookServicePage() {
               onChange={(e) => setDate(e.target.value)}
             />
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button className="bingo-button secondary" onClick={() => setStep('pet')}>
+              <button className="bingo-button secondary" onClick={() => setStep(needsLocationChoice ? 'location' : 'pet')}>
                 Atrás
               </button>
               <button className="bingo-button" disabled={!date} onClick={() => setStep('time')}>
@@ -315,6 +361,11 @@ export default function BookServicePage() {
                 <div>
                   <strong>Mascota:</strong> {selectedPet?.name}
                 </div>
+                {service.locationType !== 'AT_BUSINESS' && (
+                  <div>
+                    <strong>Lugar:</strong> {effectiveAtCustomerHome ? 'A domicilio' : `En ${service.business.tradeName}`}
+                  </div>
+                )}
                 {isDayRange ? (
                   <>
                     <div>

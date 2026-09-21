@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ServiceType } from '@prisma/client';
+import { ServiceType, ServiceLocationType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUrl, Min, MinLength } from 'class-validator';
 
@@ -83,4 +83,14 @@ export class CreateServiceDto {
   @ArrayMaxSize(20)
   @IsString({ each: true })
   speciesSlugs?: string[];
+
+  @ApiPropertyOptional({
+    enum: ServiceLocationType,
+    description:
+      'Where the service is rendered. Only settable to AT_CUSTOMER_HOME/BOTH while the business ' +
+      'has the HOME_SERVICE capability enabled — ServicesService forces AT_BUSINESS otherwise.',
+  })
+  @IsOptional()
+  @IsEnum(ServiceLocationType)
+  locationType?: ServiceLocationType;
 }

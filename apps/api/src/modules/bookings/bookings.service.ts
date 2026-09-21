@@ -1,5 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BookingStatus, BusinessCapabilityType, BusinessStatus, NotificationAudience, PaymentStatus, Prisma, ServiceType } from '@prisma/client';
+import {
+  BookingStatus,
+  BusinessCapabilityType,
+  BusinessStatus,
+  NotificationAudience,
+  PaymentStatus,
+  Prisma,
+  ServiceLocationType,
+  ServiceType,
+} from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
@@ -160,6 +169,8 @@ export class BookingsService {
       }
     }
 
+    const atCustomerHome = this.resolveAtCustomerHome(service.locationType, dto.atCustomerHome);
+
     let bookingDate: Date;
     let startTime: Date;
     let endTime: Date;
@@ -238,6 +249,7 @@ export class BookingsService {
           endTime,
           price,
           billableDays,
+          atCustomerHome,
           notes: dto.notes,
           idempotencyKey: dto.idempotencyKey,
           status: BookingStatus.PENDING,
@@ -264,6 +276,20 @@ export class BookingsService {
     });
 
     return booking;
+  }
+
+  /** AT_CUSTOMER_HOME leaves no real choice — always true. Only BOTH actually asks the customer,
+   * and requires an explicit answer rather than silently defaulting one way. Everything else
+   * (AT_BUSINESS, and defensively any unrecognized/missing value) is false. */
+  private resolveAtCustomerHome(locationType: ServiceLocationType, requested?: boolean): boolean {
+    if (locationType === ServiceLocationType.AT_CUSTOMER_HOME) return true;
+    if (locationType === ServiceLocationType.BOTH) {
+      if (requested === undefined) {
+        throw new BadRequestException('atCustomerHome is required for this service (choose at home or at the business)');
+      }
+      return requested;
+    }
+    return false;
   }
 
   async cancelForCustomer(userId: string, bookingId: string, reason?: string) {

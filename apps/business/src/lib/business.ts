@@ -1,7 +1,14 @@
 import { apiFetch } from './api';
 
 export type CapabilityMap = Record<
-  'SELLS_PRODUCTS' | 'DIRECTORY_LISTING' | 'SERVICES' | 'BOOKINGS' | 'PICKUP' | 'DELIVERY' | 'COUPONS',
+  | 'SELLS_PRODUCTS'
+  | 'DIRECTORY_LISTING'
+  | 'SERVICES'
+  | 'BOOKINGS'
+  | 'PICKUP'
+  | 'DELIVERY'
+  | 'COUPONS'
+  | 'HOME_SERVICE',
   boolean
 >;
 
@@ -9,7 +16,22 @@ export type CapabilityMap = Record<
  * and DIRECTORY_LISTING are platform-eligibility decisions reserved for Admin, matching exactly
  * what BusinessesService.setOperationalCapability enforces server-side. Mirrored here only to
  * decide what Settings shows as editable vs read-only — the real enforcement is the backend 400. */
-export const OPERATIONAL_CAPABILITIES: (keyof CapabilityMap)[] = ['SERVICES', 'BOOKINGS', 'COUPONS', 'PICKUP', 'DELIVERY'];
+export const OPERATIONAL_CAPABILITIES: (keyof CapabilityMap)[] = [
+  'SERVICES',
+  'BOOKINGS',
+  'COUPONS',
+  'HOME_SERVICE',
+  'PICKUP',
+  'DELIVERY',
+];
+
+/** SERVICES/BOOKINGS/COUPONS/HOME_SERVICE only apply to a Directory-listed business — hidden
+ * entirely (not just disabled) while DIRECTORY_LISTING is off, mirroring
+ * BusinessesService.setOperationalCapability's server-side 400 for the same case. */
+export const DIRECTORY_DEPENDENT_CAPABILITIES: (keyof CapabilityMap)[] = ['SERVICES', 'BOOKINGS', 'COUPONS', 'HOME_SERVICE'];
+
+/** PICKUP/DELIVERY are fulfillment options for products — hidden while SELLS_PRODUCTS is off. */
+export const PRODUCTS_DEPENDENT_CAPABILITIES: (keyof CapabilityMap)[] = ['PICKUP', 'DELIVERY'];
 
 export interface BusinessProfile {
   id: string;

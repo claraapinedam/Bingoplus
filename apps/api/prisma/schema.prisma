@@ -307,31 +307,31 @@ model Business {
   // onboarding record); actual access control reads from `businessUsers` (BusinessUser), which
   // is the real source of truth and also covers BUSINESS_MANAGER staff — see
   // docs/08-roles-permissions.md and BusinessOwnershipGuard.
-  owner              User                 @relation("BusinessOwner", fields: [ownerId], references: [id])
+  owner                       User                         @relation("BusinessOwner", fields: [ownerId], references: [id])
   // Multi-select (§ "¿Qué quieres hacer en BINGO+?" restricts which categories are offerable: only
   // "tiendas" when selling products alone, any non-product category for Directory-only, or a mix
   // of both when the business does both) — see BusinessesService.apply's category validation.
-  categories         BusinessCategoryLink[]
-  documents          BusinessDocument[]
-  contracts          BusinessContract[]
+  categories                  BusinessCategoryLink[]
+  documents                   BusinessDocument[]
+  contracts                   BusinessContract[]
   // Declared at onboarding ("¿A qué mascotas aplica tu negocio?") — the species-match signal for
   // BusinessRankingService that doesn't depend on the business having any products/services yet,
   // which matters most for Directory-only businesses (groomers, vets, hotels) that may have none.
-  species            BusinessSpecies[]
-  products           Product[]
-  services           Service[]
-  commissions        Commission[]
-  carts              Cart[]
-  orders             Order[]
-  bookings           Booking[]
-  payouts            Payout[]
-  capabilities       BusinessCapability[]
-  businessUsers      BusinessUser[]
-  membership         BusinessMembership?
-  businessCoupons    BusinessCoupon[]
-  couponRedemptions  CouponRedemption[]
-  promotions         Promotion[]
-  availabilityBlocks AvailabilityBlock[]
+  species                     BusinessSpecies[]
+  products                    Product[]
+  services                    Service[]
+  commissions                 Commission[]
+  carts                       Cart[]
+  orders                      Order[]
+  bookings                    Booking[]
+  payouts                     Payout[]
+  capabilities                BusinessCapability[]
+  businessUsers               BusinessUser[]
+  membership                  BusinessMembership?
+  businessCoupons             BusinessCoupon[]
+  couponRedemptions           CouponRedemption[]
+  promotions                  Promotion[]
+  availabilityBlocks          AvailabilityBlock[]
   commissionCouponRedemptions CommissionCouponRedemption[]
 
   @@index([ownerId])
@@ -421,6 +421,11 @@ enum BusinessCapabilityType {
   PICKUP
   DELIVERY
   COUPONS
+  // Directory-only (never applicable to a "Tiendas" business) — the provider travels to the
+  // customer's home instead of the customer coming to the business. Gated the same way as
+  // SERVICES/BOOKINGS/COUPONS: only assignable while DIRECTORY_LISTING is enabled, and cascades
+  // off with it. See Service.locationType for the per-service refinement this unlocks.
+  HOME_SERVICE
 }
 
 model BusinessCapability {
@@ -969,16 +974,16 @@ model Rider {
   createdAt             DateTime                               @default(now())
   updatedAt             DateTime                               @updatedAt
 
-  user              User                        @relation(fields: [userId], references: [id])
-  vehicles          Vehicle[]
-  documents         RiderDocument[]
-  payoutMethod      RiderPayoutMethod?
-  deliveries        Delivery[]
-  earnings          RiderEarning[]
-  payouts           Payout[]
-  locations         RiderLocation[]
-  assignmentHistory DeliveryAssignmentHistory[]
-  contracts         RiderContract[]
+  user                        User                         @relation(fields: [userId], references: [id])
+  vehicles                    Vehicle[]
+  documents                   RiderDocument[]
+  payoutMethod                RiderPayoutMethod?
+  deliveries                  Delivery[]
+  earnings                    RiderEarning[]
+  payouts                     Payout[]
+  locations                   RiderLocation[]
+  assignmentHistory           DeliveryAssignmentHistory[]
+  contracts                   RiderContract[]
   commissionOverrides         RiderCommissionOverride[]
   commissionCouponRedemptions CommissionCouponRedemption[]
 
@@ -1360,13 +1365,25 @@ enum ServiceType {
   DOG_WALKING
 }
 
+// Where the service is actually rendered. Only meaningful — and only editable in the business
+// app — while the owning business has the HOME_SERVICE capability enabled; otherwise every
+// service is implicitly AT_BUSINESS. BOTH lets a customer pick per-booking. Drives whether
+// "Cómo llegar" makes sense to show on the customer-facing service/business page (a business
+// whose active services are all AT_CUSTOMER_HOME has no premises worth visiting).
+enum ServiceLocationType {
+  AT_BUSINESS
+  AT_CUSTOMER_HOME
+  BOTH
+}
+
 model Service {
-  id              String      @id @default(cuid())
+  id              String              @id @default(cuid())
   businessId      String
   type            ServiceType
   name            String
   description     String?
-  price           Decimal     @db.Decimal(12, 2)
+  price           Decimal             @db.Decimal(12, 2)
+  locationType    ServiceLocationType @default(AT_BUSINESS)
   // Meaningless for DAYCARE/BOARDING (those are booked by date range, not a time slot) — the DTO
   // still requires it for schema simplicity, the frontend just sends a nominal value for those
   // two types and never shows the field. See BookingsService's DAY_UNIT_TYPES branch.
@@ -1374,7 +1391,7 @@ model Service {
   // Which weekdays ('sun'..'sat', same keys as Business.openingHours) DAYCARE/BOARDING actually
   // operates — e.g. a daycare open weekdays only. Empty/unused for every other ServiceType; a
   // customer's check-in/check-out range only counts nights/days that fall on one of these.
-  operatingDays   String[]    @default([])
+  operatingDays   String[]            @default([])
   // Max simultaneous bookings for the same time slot — null defaults to 1 (single-provider
   // service, e.g. a vet consultation) in BookingsService, never silently unlimited.
   capacity        Int?
@@ -1385,11 +1402,11 @@ model Service {
   minAgeMonths    Int?
   maxAgeMonths    Int?
   // Phase 8: derived exclusively from Review aggregation (ReviewsService.recomputeAggregate).
-  ratingAvg       Float       @default(0)
-  reviewCount     Int         @default(0)
-  active          Boolean     @default(true)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  ratingAvg       Float               @default(0)
+  reviewCount     Int                 @default(0)
+  active          Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
   business           Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
   bookings           Booking[]
@@ -1438,6 +1455,10 @@ model Booking {
   // (price above is exactly service.price × this number at booking time). Null for every
   // time-slot-based booking (startTime/endTime already span the one slot for those).
   billableDays   Int?
+  // Resolved at creation from Service.locationType: forced false for AT_BUSINESS, forced true for
+  // AT_CUSTOMER_HOME, and the customer's own choice for BOTH — see BookingsService.create's
+  // resolveAtCustomerHome. Drives whether the business needs the customer's address for this visit.
+  atCustomerHome Boolean       @default(false)
   notes          String?
   // Client-supplied idempotency key (same pattern as Payment.idempotencyKey) — a retried
   // "create booking" request (double-tap) with the same key returns the original booking instead
@@ -1858,23 +1879,23 @@ enum CommissionCouponTargetType {
 }
 
 model CommissionCoupon {
-  id                String                      @id @default(cuid())
-  code              String                      @unique
+  id                String                     @id @default(cuid())
+  code              String                     @unique
   name              String
   description       String?
   targetType        CommissionCouponTargetType
   // The reduced rate itself — e.g. 0.10 for "BINGO+ keeps 10%" — same Decimal(5,4) shape as
   // Commission.rate / DeliveryFareConfig.bingoCommissionPercent, whichever this coupon targets.
-  commissionPercent Decimal                     @db.Decimal(5, 4)
+  commissionPercent Decimal                    @db.Decimal(5, 4)
   startDate         DateTime
   // Also the moment the discount itself expires for anyone who already redeemed — not a
   // per-redeemer duration, a shared campaign window (see model-level comment).
   expirationDate    DateTime
   usageLimit        Int?
-  status            AdminCouponStatus           @default(DRAFT)
+  status            AdminCouponStatus          @default(DRAFT)
   createdBy         String?
-  createdAt         DateTime                    @default(now())
-  updatedAt         DateTime                    @updatedAt
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
 
   redemptions CommissionCouponRedemption[]
 

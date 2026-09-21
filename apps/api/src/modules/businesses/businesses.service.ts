@@ -7,6 +7,7 @@ import {
   MembershipPlanStatus,
   ProductStatus,
   RoleName,
+  ServiceLocationType,
 } from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -15,7 +16,12 @@ import { UpdateBusinessDto } from './dto/update-business.dto';
 import { AddBusinessDocumentDto } from './dto/add-document.dto';
 import { ListMarketplaceQueryDto } from './dto/list-marketplace-query.dto';
 import { BusinessRankingService, RankableBusiness } from '../ranking/business-ranking.service';
-import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
+import {
+  BusinessCapabilitiesService,
+  CapabilityMap,
+  DIRECTORY_DEPENDENT_CAPABILITIES,
+  PRODUCTS_DEPENDENT_CAPABILITIES,
+} from '../business-capabilities/business-capabilities.service';
 import { MembershipsService } from '../memberships/memberships.service';
 import { getActiveOffersMap } from '../coupons/active-offers.util';
 import { CouponsService } from '../coupons/coupons.service';
@@ -213,7 +219,29 @@ export class BusinessesService {
     // "Ver cupón" visibility itself from capabilities alone (COUPONS=true with zero active
     // coupons must NOT show the CTA).
     const couponSummary = await this.coupons.getCouponSummary(businessId);
-    return { ...rest, categories: categories.map((c) => c.category), capabilities: capabilityMap, couponSummary };
+    const hasPhysicalLocation = await this.resolveHasPhysicalLocation(businessId, capabilityMap);
+    return {
+      ...rest,
+      categories: categories.map((c) => c.category),
+      capabilities: capabilityMap,
+      couponSummary,
+      hasPhysicalLocation,
+    };
+  }
+
+  /**
+   * Whether there's an actual premises worth showing "Cómo llegar" for. A business that sells
+   * products or offers in-store pickup always has one. A Directory-only business only loses it if
+   * HOME_SERVICE is enabled AND every one of its active services is AT_CUSTOMER_HOME-only — i.e. it
+   * exclusively travels to the customer and has no place of its own to visit.
+   */
+  private async resolveHasPhysicalLocation(businessId: string, capabilities: CapabilityMap): Promise<boolean> {
+    if (capabilities.SELLS_PRODUCTS || capabilities.PICKUP || !capabilities.HOME_SERVICE) return true;
+    const onPremisesService = await this.prisma.service.findFirst({
+      where: { businessId, active: true, locationType: { not: ServiceLocationType.AT_CUSTOMER_HOME } },
+      select: { id: true },
+    });
+    return onPremisesService !== null;
   }
 
   /** Resolves PetSpecies slugs to ids, rejecting anything unknown — mirrors CatalogService's own
@@ -414,6 +442,17 @@ export class BusinessesService {
     }
 
     const capabilityRow = await this.capabilities.set(businessId, capability, enabled);
+
+    // Turning off the gate cascades off everything that depends on it — those toggles stop being
+    // visible to the owner (see the business app's settings page), so they shouldn't stay silently
+    // "on" underneath.
+    if (!enabled && capability === BusinessCapabilityType.DIRECTORY_LISTING) {
+      await this.capabilities.setManyDisabled(businessId, DIRECTORY_DEPENDENT_CAPABILITIES);
+    }
+    if (!enabled && capability === BusinessCapabilityType.SELLS_PRODUCTS) {
+      await this.capabilities.setManyDisabled(businessId, PRODUCTS_DEPENDENT_CAPABILITIES);
+    }
+
     return { requiresSignature: false as const, capability: capabilityRow };
   }
 
@@ -423,19 +462,38 @@ export class BusinessesService {
    * are platform-eligibility decisions reserved for Admin (mirrors the approve/reject/suspend
    * tier of control), not a business-side self-service toggle.
    */
-  setOperationalCapability(businessId: string, capability: BusinessCapabilityType, enabled: boolean) {
+  async setOperationalCapability(businessId: string, capability: BusinessCapabilityType, enabled: boolean) {
     const OPERATIONAL: BusinessCapabilityType[] = [
       BusinessCapabilityType.SERVICES,
       BusinessCapabilityType.BOOKINGS,
       BusinessCapabilityType.COUPONS,
       BusinessCapabilityType.PICKUP,
       BusinessCapabilityType.DELIVERY,
+      BusinessCapabilityType.HOME_SERVICE,
     ];
     if (!OPERATIONAL.includes(capability)) {
       throw new BadRequestException(
         `"${capability}" can only be changed by an administrator, not the business itself`,
       );
     }
+
+    // These toggles are hidden from the owner in the UI while their gate is off (Directory for
+    // Servicios/Reservas/Cupones/Servicio a domicilio, Venta de productos for Retiro/Delivery) —
+    // enforce the same rule server-side so a direct API call can't turn one on regardless.
+    if (enabled) {
+      const current = await this.capabilities.getMap(businessId);
+      if (DIRECTORY_DEPENDENT_CAPABILITIES.includes(capability) && !current.DIRECTORY_LISTING) {
+        throw new BadRequestException(
+          `"${capability}" requires the Directory listing capability, which this business doesn't have enabled`,
+        );
+      }
+      if (PRODUCTS_DEPENDENT_CAPABILITIES.includes(capability) && !current.SELLS_PRODUCTS) {
+        throw new BadRequestException(
+          `"${capability}" requires the "sells products" capability, which this business doesn't have enabled`,
+        );
+      }
+    }
+
     return this.capabilities.set(businessId, capability, enabled);
   }
 

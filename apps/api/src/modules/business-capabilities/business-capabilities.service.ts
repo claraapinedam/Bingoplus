@@ -6,6 +6,25 @@ export type CapabilityMap = Record<BusinessCapabilityType, boolean>;
 
 const ALL_CAPABILITIES = Object.values(BusinessCapabilityType);
 
+// Capabilities that only make sense while the business is Directory-listed — turning
+// DIRECTORY_LISTING off cascades all of these off too (BusinessesService.setCapabilityAsAdmin),
+// and the owner can't turn any of them on while DIRECTORY_LISTING is off
+// (BusinessesService.setOperationalCapability). Mirrored on the frontend (apps/business's
+// settings page) to hide the toggles entirely rather than just disabling them.
+export const DIRECTORY_DEPENDENT_CAPABILITIES: BusinessCapabilityType[] = [
+  BusinessCapabilityType.SERVICES,
+  BusinessCapabilityType.BOOKINGS,
+  BusinessCapabilityType.COUPONS,
+  BusinessCapabilityType.HOME_SERVICE,
+];
+
+// Same idea, gated on SELLS_PRODUCTS instead — a business that doesn't sell products has no
+// fulfillment method to configure.
+export const PRODUCTS_DEPENDENT_CAPABILITIES: BusinessCapabilityType[] = [
+  BusinessCapabilityType.PICKUP,
+  BusinessCapabilityType.DELIVERY,
+];
+
 function emptyMap(): CapabilityMap {
   return Object.fromEntries(ALL_CAPABILITIES.map((c) => [c, false])) as CapabilityMap;
 }
@@ -53,6 +72,11 @@ export class BusinessCapabilitiesService {
       update: { enabled },
       create: { businessId, capability, enabled },
     });
+  }
+
+  /** Cascade-disable a batch of capabilities in one go (e.g. DIRECTORY_LISTING being turned off). */
+  setManyDisabled(businessId: string, capabilities: BusinessCapabilityType[]) {
+    return Promise.all(capabilities.map((capability) => this.set(businessId, capability, false)));
   }
 
   /**

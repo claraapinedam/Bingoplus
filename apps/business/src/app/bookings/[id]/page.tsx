@@ -22,6 +22,7 @@ interface BookingDetail {
   endTime: string;
   price: string | number;
   notes: string | null;
+  atCustomerHome: boolean;
   service: { name: string; description: string | null };
   pet: { name: string; species: { name: string } } | null;
   user: { firstName: string; lastName: string; phone: string | null };
@@ -105,6 +106,11 @@ function BookingDetailContent() {
             <span className="bingo-badge" style={{ background: '#f2f4f7' }}>
               {STATUS_LABELS[booking.status] ?? booking.status}
             </span>
+            {booking.atCustomerHome && (
+              <span className="bingo-badge" style={{ background: '#fff3ea', color: 'var(--bingo-coral)', marginLeft: 6 }}>
+                🚗 A domicilio del cliente
+              </span>
+            )}
           </div>
         </div>
       </header>

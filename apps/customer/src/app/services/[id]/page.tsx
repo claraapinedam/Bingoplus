@@ -27,8 +27,17 @@ interface ServiceDetail {
   minAgeMonths: number | null;
   maxAgeMonths: number | null;
   species: { id: string; name: string }[];
-  business: { id: string; tradeName: string; city: string; addressLine: string; logoUrl: string | null };
+  business: {
+    id: string;
+    tradeName: string;
+    city: string;
+    addressLine: string;
+    logoUrl: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  };
   bookingsEnabled: boolean;
+  locationType: 'AT_BUSINESS' | 'AT_CUSTOMER_HOME' | 'BOTH';
 }
 
 export default function ServiceDetailPage() {
@@ -77,8 +86,24 @@ export default function ServiceDetailPage() {
           </span>
           <h1 style={{ fontSize: 18, fontWeight: 800, margin: '10px 0 4px' }}>{service.name}</h1>
           <div style={{ fontSize: 13, color: '#7f8ea3' }}>
-            {service.business.tradeName} · {service.business.addressLine}, {service.business.city}
+            {service.business.tradeName}
+            {service.locationType !== 'AT_CUSTOMER_HOME' && ` · ${service.business.addressLine}, ${service.business.city}`}
+            {service.locationType === 'AT_CUSTOMER_HOME' && ' · A domicilio del cliente'}
           </div>
+          {service.locationType !== 'AT_CUSTOMER_HOME' && service.business.latitude != null && service.business.longitude != null && (
+            <button
+              className="bingo-button secondary small"
+              style={{ width: 'auto', marginTop: 8 }}
+              onClick={() =>
+                window.open(
+                  `https://www.google.com/maps/dir/?api=1&destination=${service.business.latitude},${service.business.longitude}`,
+                  '_blank',
+                )
+              }
+            >
+              🧭 Cómo llegar
+            </button>
+          )}
 
           <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
             <div>

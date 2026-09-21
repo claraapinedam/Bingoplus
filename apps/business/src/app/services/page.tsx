@@ -25,6 +25,7 @@ interface ServiceRow {
   capacity: number | null;
   active: boolean;
   species: { name: string }[];
+  locationType: 'AT_BUSINESS' | 'AT_CUSTOMER_HOME' | 'BOTH';
 }
 
 function ServicesContent() {
@@ -136,7 +137,14 @@ function ServicesContent() {
             <tbody>
               {services.map((s) => (
                 <tr key={s.id} onClick={() => router.push(`/services/${s.id}`)}>
-                  <td style={{ fontWeight: 700 }}>{s.name}</td>
+                  <td style={{ fontWeight: 700 }}>
+                    {s.name}
+                    {s.locationType !== 'AT_BUSINESS' && (
+                      <span title={s.locationType === 'BOTH' ? 'En el negocio o a domicilio' : 'Solo a domicilio'} style={{ marginLeft: 6 }}>
+                        🚗
+                      </span>
+                    )}
+                  </td>
                   <td>{SERVICE_TYPE_LABELS[s.type] ?? s.type}</td>
                   <td>{s.species.length > 0 ? s.species.map((sp) => sp.name).join(', ') : 'Todas'}</td>
                   <td>{currencyFormatter.format(Number(s.price))}</td>

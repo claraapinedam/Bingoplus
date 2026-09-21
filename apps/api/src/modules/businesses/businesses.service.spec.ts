@@ -41,6 +41,7 @@ describe('BusinessesService', () => {
       getMap: jest.fn().mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: false }),
       grantOnboardingDefaults: jest.fn(),
       set: jest.fn().mockResolvedValue({ id: 'cap1' }),
+      setManyDisabled: jest.fn().mockResolvedValue(undefined),
     };
     memberships = { startTrialIfMissing: jest.fn(), redeemAdminCoupon: jest.fn() };
     contracts = {
@@ -307,6 +308,24 @@ describe('BusinessesService', () => {
       expect(capabilities.set).toHaveBeenCalledWith('b1', 'SERVICES', true);
     });
 
+    it('cascades SERVICES/BOOKINGS/COUPONS/HOME_SERVICE off when DIRECTORY_LISTING is turned off', async () => {
+      await service.setCapabilityAsAdmin('b1', 'DIRECTORY_LISTING' as any, false);
+
+      expect(capabilities.setManyDisabled).toHaveBeenCalledWith('b1', ['SERVICES', 'BOOKINGS', 'COUPONS', 'HOME_SERVICE']);
+    });
+
+    it('cascades PICKUP/DELIVERY off when SELLS_PRODUCTS is turned off', async () => {
+      await service.setCapabilityAsAdmin('b1', 'SELLS_PRODUCTS' as any, false);
+
+      expect(capabilities.setManyDisabled).toHaveBeenCalledWith('b1', ['PICKUP', 'DELIVERY']);
+    });
+
+    it('does not cascade anything when turning an unrelated capability off', async () => {
+      await service.setCapabilityAsAdmin('b1', 'COUPONS' as any, false);
+
+      expect(capabilities.setManyDisabled).not.toHaveBeenCalled();
+    });
+
     it('applies immediately when the governing contract already covers the addition', async () => {
       contracts.requestCapabilityChange.mockResolvedValue({ requiresSignature: false });
 
@@ -325,6 +344,48 @@ describe('BusinessesService', () => {
       expect(memberships.startTrialIfMissing).toHaveBeenCalledWith('b1');
       expect(capabilities.set).not.toHaveBeenCalled();
       expect(result).toEqual({ requiresSignature: true, pendingContractId: 'contract2' });
+    });
+  });
+
+  describe('setOperationalCapability — owner self-service, gated by dependency capabilities', () => {
+    it('rejects turning on BOOKINGS while DIRECTORY_LISTING is off', async () => {
+      capabilities.getMap.mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: false });
+
+      await expect(service.setOperationalCapability('b1', 'BOOKINGS' as any, true)).rejects.toBeInstanceOf(BadRequestException);
+      expect(capabilities.set).not.toHaveBeenCalled();
+    });
+
+    it('rejects turning on HOME_SERVICE while DIRECTORY_LISTING is off', async () => {
+      capabilities.getMap.mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: false });
+
+      await expect(service.setOperationalCapability('b1', 'HOME_SERVICE' as any, true)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('allows turning on BOOKINGS once DIRECTORY_LISTING is on', async () => {
+      capabilities.getMap.mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: true });
+
+      await service.setOperationalCapability('b1', 'BOOKINGS' as any, true);
+
+      expect(capabilities.set).toHaveBeenCalledWith('b1', 'BOOKINGS', true);
+    });
+
+    it('rejects turning on DELIVERY while SELLS_PRODUCTS is off', async () => {
+      capabilities.getMap.mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: true });
+
+      await expect(service.setOperationalCapability('b1', 'DELIVERY' as any, true)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('never gates turning a capability off', async () => {
+      capabilities.getMap.mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: false });
+
+      await service.setOperationalCapability('b1', 'BOOKINGS' as any, false);
+
+      expect(capabilities.set).toHaveBeenCalledWith('b1', 'BOOKINGS', false);
+    });
+
+    it('still rejects SELLS_PRODUCTS/DIRECTORY_LISTING themselves — admin-only', async () => {
+      await expect(service.setOperationalCapability('b1', 'DIRECTORY_LISTING' as any, true)).rejects.toBeInstanceOf(BadRequestException);
+      expect(capabilities.getMap).not.toHaveBeenCalled();
     });
   });
 

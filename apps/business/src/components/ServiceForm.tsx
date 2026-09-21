@@ -47,7 +47,15 @@ export interface ServiceFormValues {
   minAgeMonths: number | undefined;
   maxAgeMonths: number | undefined;
   speciesSlugs: string[];
+  /** Only settable while the business has "Servicio a domicilio" enabled — otherwise always AT_BUSINESS. */
+  locationType: 'AT_BUSINESS' | 'AT_CUSTOMER_HOME' | 'BOTH';
 }
+
+const LOCATION_TYPES: { value: ServiceFormValues['locationType']; label: string }[] = [
+  { value: 'AT_BUSINESS', label: 'En mi negocio' },
+  { value: 'AT_CUSTOMER_HOME', label: 'A domicilio del cliente' },
+  { value: 'BOTH', label: 'Ambas' },
+];
 
 const SERVICE_TYPES = [
   { value: 'VETERINARY', label: 'Veterinario' },
@@ -69,11 +77,14 @@ export default function ServiceForm({
   submitting,
   submitLabel,
   onSubmit,
+  homeServiceEnabled = false,
 }: {
   initial?: Partial<ServiceFormValues>;
   submitting: boolean;
   submitLabel: string;
   onSubmit: (values: ServiceFormValues) => void;
+  /** Whether the business has "Servicio a domicilio" active — gates the location-type field below. */
+  homeServiceEnabled?: boolean;
 }) {
   const [species, setSpecies] = useState<Species[]>([]);
   const [type, setType] = useState(initial?.type ?? 'VETERINARY');
@@ -92,6 +103,9 @@ export default function ServiceForm({
   const [minAgeMonths, setMinAgeMonths] = useState(initial?.minAgeMonths?.toString() ?? '');
   const [maxAgeMonths, setMaxAgeMonths] = useState(initial?.maxAgeMonths?.toString() ?? '');
   const [speciesSlugs, setSpeciesSlugs] = useState<string[]>(initial?.speciesSlugs ?? []);
+  const [locationType, setLocationType] = useState<ServiceFormValues['locationType']>(
+    initial?.locationType ?? 'AT_BUSINESS',
+  );
 
   useEffect(() => {
     apiFetch<Species[]>('/public/pet-species').then(setSpecies).catch(() => setSpecies([]));
@@ -122,6 +136,7 @@ export default function ServiceForm({
       minAgeMonths: minAgeMonths ? Number(minAgeMonths) : undefined,
       maxAgeMonths: maxAgeMonths ? Number(maxAgeMonths) : undefined,
       speciesSlugs,
+      locationType: homeServiceEnabled ? locationType : 'AT_BUSINESS',
     });
   }
 
@@ -196,6 +211,24 @@ export default function ServiceForm({
           {operatingDays.length === 0 && (
             <p style={{ fontSize: 11, color: 'var(--bingo-error)', margin: '6px 0 0' }}>Elige al menos un día.</p>
           )}
+        </div>
+      )}
+
+      {homeServiceEnabled && (
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6 }}>¿Dónde se presta este servicio?</label>
+          <div className="bingo-chip-row">
+            {LOCATION_TYPES.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`bingo-chip${locationType === opt.value ? ' active' : ''}`}
+                onClick={() => setLocationType(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

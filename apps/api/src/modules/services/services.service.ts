@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { BusinessCapabilityType, BusinessStatus, Prisma, ServiceType } from '@prisma/client';
+import { BusinessCapabilityType, BusinessStatus, Prisma, ServiceLocationType, ServiceType } from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
@@ -59,7 +59,18 @@ export class ServicesService {
       },
       include: {
         species: { include: { species: true } },
-        business: { select: { id: true, tradeName: true, city: true, addressLine: true, logoUrl: true, openingHours: true } },
+        business: {
+          select: {
+            id: true,
+            tradeName: true,
+            city: true,
+            addressLine: true,
+            logoUrl: true,
+            openingHours: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
       },
     });
     if (!service) throw new NotFoundException('Service not found');
@@ -141,6 +152,7 @@ export class ServicesService {
     this.validateAgeRange(dto.minAgeMonths, dto.maxAgeMonths);
     this.validateOperatingDays(dto.type, dto.operatingDays);
     const speciesIds = await this.resolveSpeciesIds(dto.speciesSlugs);
+    const locationType = await this.resolveLocationType(businessId, dto.locationType);
     return this.prisma.service.create({
       data: {
         businessId,
@@ -155,6 +167,7 @@ export class ServicesService {
         requirements: dto.requirements,
         minAgeMonths: dto.minAgeMonths,
         maxAgeMonths: dto.maxAgeMonths,
+        locationType,
         species: speciesIds ? { create: speciesIds.map((speciesId) => ({ speciesId })) } : undefined,
       },
     });
@@ -167,8 +180,10 @@ export class ServicesService {
     if (dto.operatingDays !== undefined || dto.type !== undefined) {
       this.validateOperatingDays(effectiveType, dto.operatingDays ?? current.operatingDays);
     }
-    const { speciesSlugs, ...rest } = dto;
+    const { speciesSlugs, locationType: dtoLocationType, ...rest } = dto;
     const speciesIds = await this.resolveSpeciesIds(speciesSlugs);
+    const locationType =
+      dtoLocationType !== undefined ? await this.resolveLocationType(businessId, dtoLocationType) : undefined;
     return this.prisma.service.update({
       where: { id: serviceId },
       data: {
@@ -176,9 +191,28 @@ export class ServicesService {
         // Switching a service OUT of DAYCARE/BOARDING clears operatingDays — it's meaningless (and
         // potentially stale/misleading) for every other type.
         operatingDays: !DAY_UNIT_TYPES.includes(effectiveType) ? [] : dto.operatingDays,
+        locationType,
         species: speciesIds ? { deleteMany: {}, create: speciesIds.map((speciesId) => ({ speciesId })) } : undefined,
       },
     });
+  }
+
+  /** AT_CUSTOMER_HOME/BOTH require the business to have HOME_SERVICE enabled — a business without
+   * it only ever renders services AT_BUSINESS, mirroring the owner-facing UI hiding the field. */
+  private async resolveLocationType(
+    businessId: string,
+    requested?: ServiceLocationType,
+  ): Promise<ServiceLocationType> {
+    if (!requested || requested === ServiceLocationType.AT_BUSINESS) return ServiceLocationType.AT_BUSINESS;
+    const homeService = await this.prisma.businessCapability.findUnique({
+      where: { businessId_capability: { businessId, capability: BusinessCapabilityType.HOME_SERVICE } },
+    });
+    if (!homeService?.enabled) {
+      throw new BadRequestException(
+        '"locationType" can only be AT_CUSTOMER_HOME/BOTH while the "servicio a domicilio" capability is enabled',
+      );
+    }
+    return requested;
   }
 
   private validateOperatingDays(type: ServiceType, operatingDays?: string[]) {

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class CreateBookingDto {
   @ApiProperty()
@@ -33,6 +33,16 @@ export class CreateBookingDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Only required when the service\'s locationType is BOTH — whether the customer wants the ' +
+      'provider to come to their home instead of visiting the business. Ignored (forced by the ' +
+      'service\'s own locationType) for AT_BUSINESS/AT_CUSTOMER_HOME services.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  atCustomerHome?: boolean;
 
   @ApiProperty({ description: 'Client-generated key — a retried "Reservar" double-tap with the same key returns the original booking' })
   @IsString()

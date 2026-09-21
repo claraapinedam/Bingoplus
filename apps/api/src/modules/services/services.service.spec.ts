@@ -71,6 +71,46 @@ describe('ServicesService', () => {
     });
   });
 
+  describe('create — locationType, gated by the HOME_SERVICE capability', () => {
+    it('defaults to AT_BUSINESS without even checking the capability', async () => {
+      prisma.service.create.mockResolvedValue({ id: 'svc-1' });
+      await service.create('biz-1', { type: 'GROOMING', name: 'Baño', price: 10, durationMinutes: 30 } as any);
+      expect(prisma.businessCapability.findUnique).not.toHaveBeenCalled();
+      expect(prisma.service.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ locationType: 'AT_BUSINESS' }) }),
+      );
+    });
+
+    it('rejects AT_CUSTOMER_HOME when the business does not have HOME_SERVICE enabled', async () => {
+      prisma.businessCapability.findUnique.mockResolvedValue({ enabled: false });
+      await expect(
+        service.create('biz-1', {
+          type: 'GROOMING',
+          name: 'Baño a domicilio',
+          price: 10,
+          durationMinutes: 30,
+          locationType: 'AT_CUSTOMER_HOME',
+        } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.service.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts BOTH once the business has HOME_SERVICE enabled', async () => {
+      prisma.businessCapability.findUnique.mockResolvedValue({ enabled: true });
+      prisma.service.create.mockResolvedValue({ id: 'svc-1' });
+      await service.create('biz-1', {
+        type: 'GROOMING',
+        name: 'Baño',
+        price: 10,
+        durationMinutes: 30,
+        locationType: 'BOTH',
+      } as any);
+      expect(prisma.service.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ locationType: 'BOTH' }) }),
+      );
+    });
+  });
+
   describe('ownership', () => {
     it('assertOwnedService 404s when the service belongs to a different business', async () => {
       prisma.service.findUnique.mockResolvedValue({ id: 'svc-1', businessId: 'other-biz' });

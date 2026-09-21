@@ -3,7 +3,12 @@
 import { useState } from 'react';
 import DashboardShell, { useBusiness } from '@/components/DashboardShell';
 import { apiFetch, ApiError, getActiveBusinessId } from '@/lib/api';
-import { CapabilityMap, OPERATIONAL_CAPABILITIES } from '@/lib/business';
+import {
+  CapabilityMap,
+  DIRECTORY_DEPENDENT_CAPABILITIES,
+  OPERATIONAL_CAPABILITIES,
+  PRODUCTS_DEPENDENT_CAPABILITIES,
+} from '@/lib/business';
 
 const CAPABILITY_LABELS: Record<keyof CapabilityMap, { label: string; hint: string }> = {
   SELLS_PRODUCTS: { label: 'Venta de productos', hint: 'Habilita Productos, Inventario y Pedidos de marketplace.' },
@@ -13,6 +18,7 @@ const CAPABILITY_LABELS: Record<keyof CapabilityMap, { label: string; hint: stri
   PICKUP: { label: 'Retiro en tienda', hint: 'El cliente recoge su pedido en el local.' },
   DELIVERY: { label: 'Entrega a domicilio', hint: 'Envío con repartidor de BINGO+.' },
   COUPONS: { label: 'Cupones', hint: 'Crea descuentos promocionales.' },
+  HOME_SERVICE: { label: 'Servicio a domicilio', hint: 'Vas tú al domicilio del cliente a prestar el servicio.' },
 };
 
 const ADMIN_ONLY: (keyof CapabilityMap)[] = ['SELLS_PRODUCTS', 'DIRECTORY_LISTING'];
@@ -52,10 +58,14 @@ function SettingsContent() {
       {error && <div className="bingo-error-banner" style={{ marginBottom: 12, maxWidth: 640 }}>{error}</div>}
       <div className="bingo-card" style={{ maxWidth: 640, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {OPERATIONAL_CAPABILITIES
+          // Servicios/Reservas/Cupones/Servicio a domicilio only apply to a Directory-listed
+          // business — hidden entirely until DIRECTORY_LISTING is on (an Admin-only toggle), never
+          // just shown-but-disabled.
+          .filter((cap) => business.capabilities.DIRECTORY_LISTING || !DIRECTORY_DEPENDENT_CAPABILITIES.includes(cap))
           // PICKUP/DELIVERY are fulfillment options for products — meaningless (and never
           // auto-granted at onboarding) while SELLS_PRODUCTS itself is off, so they don't even
           // appear here until it's on, instead of offering a toggle for something that can't apply.
-          .filter((cap) => business.capabilities.SELLS_PRODUCTS || (cap !== 'PICKUP' && cap !== 'DELIVERY'))
+          .filter((cap) => business.capabilities.SELLS_PRODUCTS || !PRODUCTS_DEPENDENT_CAPABILITIES.includes(cap))
           .map((cap) => (
           <div key={cap} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f2f4f7' }}>
             <div>

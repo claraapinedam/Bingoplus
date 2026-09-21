@@ -26,6 +26,7 @@ interface BookingDetail {
   service: { name: string; description: string | null };
   pet: { name: string } | null;
   business: { tradeName: string; city: string; addressLine: string; phone: string | null };
+  atCustomerHome: boolean;
 }
 
 export default function BookingDetailPage() {
@@ -105,7 +106,8 @@ export default function BookingDetailPage() {
               <strong>Negocio:</strong> {booking.business.tradeName}
             </div>
             <div>
-              <strong>Ubicación:</strong> {booking.business.addressLine}, {booking.business.city}
+              <strong>Ubicación:</strong>{' '}
+              {booking.atCustomerHome ? 'A domicilio (en tu dirección)' : `${booking.business.addressLine}, ${booking.business.city}`}
             </div>
             {booking.business.phone && (
               <div>
