@@ -52,10 +52,9 @@ function ServiceDetailContent() {
         method: 'PATCH',
         body: JSON.stringify(values),
       });
-      load();
+      router.push('/services');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo guardar el servicio.');
-    } finally {
       setSaving(false);
     }
   }

@@ -193,7 +193,13 @@ function InventoryContent() {
                   {openId === p.id && (
                     <tr>
                       <td colSpan={4} style={{ padding: '0 16px 16px' }}>
-                        <AdjustPanel product={p} onDone={load} />
+                        <AdjustPanel
+                          product={p}
+                          onDone={() => {
+                            load();
+                            setOpenId(null);
+                          }}
+                        />
                       </td>
                     </tr>
                   )}

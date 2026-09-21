@@ -58,10 +58,9 @@ function CouponDetailContent() {
     setError(null);
     try {
       await apiFetch(`/me/business/${businessId}/coupons/${params.id}`, { method: 'PATCH', body: JSON.stringify(values) });
-      load();
+      router.push('/coupons');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo guardar el cupón.');
-    } finally {
       setSaving(false);
     }
   }

@@ -1,6 +1,7 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import DashboardShell, { useBusiness } from '@/components/DashboardShell';
 import { apiFetch, ApiError, getActiveBusinessId } from '@/lib/api';
 import CommissionCouponCard from '@/components/CommissionCouponCard';
@@ -19,6 +20,7 @@ const WEEKDAYS: { key: string; label: string }[] = [
 type Hours = Record<string, { open: string; close: string }>;
 
 function ProfileContent() {
+  const router = useRouter();
   const { business, reload } = useBusiness();
   const businessId = getActiveBusinessId();
   const [tradeName, setTradeName] = useState(business.tradeName);
@@ -28,11 +30,6 @@ function ProfileContent() {
   const [hours, setHours] = useState<Hours>(business.openingHours ?? {});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    setSaved(false);
-  }, [tradeName, description, logoUrl, coverImageUrl, hours]);
 
   function toggleDay(key: string, enabled: boolean) {
     setHours((prev) => {
@@ -64,10 +61,9 @@ function ProfileContent() {
         }),
       });
       reload();
-      setSaved(true);
+      router.push('/');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo guardar el perfil.');
-    } finally {
       setSaving(false);
     }
   }
@@ -155,7 +151,6 @@ function ProfileContent() {
         </div>
 
         {error && <div className="bingo-error-banner">{error}</div>}
-        {saved && <div style={{ fontSize: 12, color: 'var(--bingo-success)' }}>Perfil actualizado.</div>}
 
         <button className="bingo-button" type="submit" disabled={saving} style={{ width: 'auto', alignSelf: 'flex-start', padding: '12px 28px' }}>
           {saving ? 'Guardando…' : 'Guardar cambios'}
