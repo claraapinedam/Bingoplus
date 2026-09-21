@@ -14,6 +14,7 @@ interface BookingDetail {
   date: string;
   startTime: string;
   endTime: string;
+  billableDays: number | null;
   price: string | number;
   notes: string | null;
   service: { name: string; type: string };
@@ -79,12 +80,25 @@ export default function AdminBookingDetailPage() {
         </div>
 
         <div className="bingo-card">
-          <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Fecha y hora</h2>
-          <div style={{ fontSize: 13, marginBottom: 6 }}>{new Date(booking.date).toLocaleDateString('es-EC')}</div>
-          <div style={{ fontSize: 13 }}>
-            {new Date(booking.startTime).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })} –{' '}
-            {new Date(booking.endTime).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}
-          </div>
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>{booking.billableDays != null ? 'Entrada y salida' : 'Fecha y hora'}</h2>
+          {booking.billableDays != null ? (
+            <>
+              <div style={{ fontSize: 13, marginBottom: 6 }}>
+                {new Date(booking.startTime).toLocaleDateString('es-EC')} – {new Date(booking.endTime).toLocaleDateString('es-EC')}
+              </div>
+              <div style={{ fontSize: 13 }}>
+                {booking.billableDays} {booking.service.type === 'BOARDING' ? 'noche(s)' : 'día(s)'} facturado(s)
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, marginBottom: 6 }}>{new Date(booking.date).toLocaleDateString('es-EC')}</div>
+              <div style={{ fontSize: 13 }}>
+                {new Date(booking.startTime).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })} –{' '}
+                {new Date(booking.endTime).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="bingo-card">

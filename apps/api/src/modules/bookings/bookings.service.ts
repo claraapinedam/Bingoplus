@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BookingStatus, BusinessCapabilityType, BusinessStatus, NotificationAudience, PaymentStatus, Prisma } from '@prisma/client';
+import { BookingStatus, BusinessCapabilityType, BusinessStatus, NotificationAudience, PaymentStatus, Prisma, ServiceType } from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
@@ -11,6 +11,10 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { ListAdminBookingsQueryDto, ListBusinessBookingsQueryDto, ListCustomerBookingsQueryDto } from './dto/list-bookings-query.dto';
 
 const ACTIVE_STATUSES: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.CONFIRMED];
+
+/** Booked by check-in/check-out date range instead of a time-of-day slot — see the DAY_UNIT_TYPES
+ * branch in create() and Service.operatingDays' schema comment. */
+const DAY_UNIT_TYPES: ServiceType[] = [ServiceType.DAYCARE, ServiceType.BOARDING];
 
 // Same weekday-indexing convention as getOpeningStatus() in @bingoplus/utils (Business.openingHours
 // keys), kept as a local copy since that helper's WEEKDAY_KEYS isn't exported — both read the exact
@@ -52,6 +56,9 @@ export class BookingsService {
       include: { business: { select: { openingHours: true, status: true } } },
     });
     if (!service) throw new NotFoundException('Service not found');
+    if (DAY_UNIT_TYPES.includes(service.type)) {
+      throw new BadRequestException('This service is booked by date range (check-in/check-out), not a time slot');
+    }
     if (service.business.status !== BusinessStatus.ACTIVE) return [];
 
     const dayStart = new Date(`${dateStr}T00:00:00`);
@@ -153,20 +160,62 @@ export class BookingsService {
       }
     }
 
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(dto.startTime)) {
-      throw new BadRequestException('Invalid startTime');
-    }
-    const [h, m] = dto.startTime.split(':').map(Number);
-    const bookingDate = new Date(`${dto.date}T00:00:00`);
-    const startTime = new Date(bookingDate);
-    startTime.setHours(h, m, 0, 0);
-    const endTime = new Date(startTime.getTime() + service.durationMinutes * 60000);
-    if (startTime.getTime() <= Date.now()) {
-      throw new BadRequestException('Cannot book a time slot in the past');
+    let bookingDate: Date;
+    let startTime: Date;
+    let endTime: Date;
+    let price: number | Prisma.Decimal;
+    let billableDays: number | null = null;
+
+    if (DAY_UNIT_TYPES.includes(service.type)) {
+      if (!dto.checkOutDate) {
+        throw new BadRequestException('checkOutDate is required for this service');
+      }
+      const checkIn = new Date(`${dto.date}T00:00:00`);
+      const checkOut = new Date(`${dto.checkOutDate}T00:00:00`);
+      if (checkOut.getTime() <= checkIn.getTime()) {
+        throw new BadRequestException('checkOutDate must be after date');
+      }
+      const todayMidnight = new Date();
+      todayMidnight.setHours(0, 0, 0, 0);
+      if (checkIn.getTime() < todayMidnight.getTime()) {
+        throw new BadRequestException('Cannot book a check-in date in the past');
+      }
+
+      // Only nights/days the service actually operates count — e.g. a Mon-Fri daycare booked
+      // across a weekend only charges/reserves capacity for the weekdays in range.
+      let count = 0;
+      for (const d = new Date(checkIn); d.getTime() < checkOut.getTime(); d.setDate(d.getDate() + 1)) {
+        if (service.operatingDays.includes(WEEKDAY_KEYS[d.getDay()])) count++;
+      }
+      if (count === 0) {
+        throw new BadRequestException('No operating days fall within the selected date range');
+      }
+
+      bookingDate = checkIn;
+      startTime = checkIn;
+      endTime = checkOut;
+      price = Number(service.price) * count;
+      billableDays = count;
+    } else {
+      if (!dto.startTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(dto.startTime)) {
+        throw new BadRequestException('Invalid startTime');
+      }
+      const [h, m] = dto.startTime.split(':').map(Number);
+      bookingDate = new Date(`${dto.date}T00:00:00`);
+      startTime = new Date(bookingDate);
+      startTime.setHours(h, m, 0, 0);
+      endTime = new Date(startTime.getTime() + service.durationMinutes * 60000);
+      if (startTime.getTime() <= Date.now()) {
+        throw new BadRequestException('Cannot book a time slot in the past');
+      }
+      price = service.price;
     }
 
     const booking = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Service" WHERE id = ${service.id} FOR UPDATE`;
+      // Same overlap shape regardless of grain — a DAYCARE/BOARDING stay's [startTime, endTime)
+      // spans the whole check-in/check-out range, so this counts any other stay/slot that
+      // overlaps any part of it, same "at most `capacity` concurrent" model as time slots.
       const overlapping = await tx.booking.count({
         where: {
           serviceId: service.id,
@@ -187,7 +236,8 @@ export class BookingsService {
           date: bookingDate,
           startTime,
           endTime,
-          price: service.price,
+          price,
+          billableDays,
           notes: dto.notes,
           idempotencyKey: dto.idempotencyKey,
           status: BookingStatus.PENDING,

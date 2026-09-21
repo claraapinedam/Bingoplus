@@ -9,12 +9,34 @@ import { apiFetch, ApiError } from '@/lib/api';
 
 interface ServiceDetail {
   id: string;
+  type: string;
   name: string;
   price: string | number;
   durationMinutes: number;
+  /** Only meaningful for DAYCARE/BOARDING — see DAY_RANGE_TYPES. */
+  operatingDays: string[];
   business: { id: string; tradeName: string };
   species: { id: string }[];
   bookingsEnabled: boolean;
+}
+
+// Booked by check-in/check-out date range instead of a time-of-day slot — mirrors the backend's
+// own DAY_UNIT_TYPES (BookingsService).
+const DAY_RANGE_TYPES = ['DAYCARE', 'BOARDING'];
+const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+/** Client-side estimate only, shown before submitting — the backend recomputes and freezes the
+ * authoritative count/price at booking time (see BookingsService.create). */
+function countBillableDays(checkIn: string, checkOut: string, operatingDays: string[]): number {
+  if (!checkIn || !checkOut) return 0;
+  const start = new Date(`${checkIn}T00:00:00`);
+  const end = new Date(`${checkOut}T00:00:00`);
+  if (end.getTime() <= start.getTime()) return 0;
+  let count = 0;
+  for (const d = new Date(start); d.getTime() < end.getTime(); d.setDate(d.getDate() + 1)) {
+    if (operatingDays.includes(WEEKDAY_KEYS[d.getDay()])) count++;
+  }
+  return count;
 }
 
 interface Pet {
@@ -38,8 +60,7 @@ function newIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-const STEPS = ['pet', 'date', 'time', 'review'] as const;
-type Step = (typeof STEPS)[number];
+type Step = 'pet' | 'date' | 'time' | 'dates' | 'review';
 
 export default function BookServicePage() {
   const params = useParams<{ id: string }>();
@@ -50,6 +71,7 @@ export default function BookServicePage() {
   const [step, setStep] = useState<Step>('pet');
   const [petId, setPetId] = useState('');
   const [date, setDate] = useState(todayString());
+  const [checkOutDate, setCheckOutDate] = useState('');
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [startTime, setStartTime] = useState('');
   const [notes, setNotes] = useState('');
@@ -63,7 +85,7 @@ export default function BookServicePage() {
   }, [params.id]);
 
   useEffect(() => {
-    if (step !== 'time' || !date) return;
+    if (step !== 'time' || !date || (service && DAY_RANGE_TYPES.includes(service.type))) return;
     setSlots(null);
     setStartTime('');
     apiFetch<Slot[]>(`/public/services/${params.id}/availability?date=${date}`)
@@ -91,6 +113,8 @@ export default function BookServicePage() {
   }
 
   const eligiblePets = service.species.length === 0 ? pets : pets.filter((p) => service.species.some((s) => s.id === p.speciesId));
+  const isDayRange = DAY_RANGE_TYPES.includes(service.type);
+  const billableDays = isDayRange ? countBillableDays(date, checkOutDate, service.operatingDays) : 0;
 
   async function confirmBooking() {
     setSubmitting(true);
@@ -98,7 +122,14 @@ export default function BookServicePage() {
     try {
       const booking = await apiFetch<{ id: string }>('/me/bookings', {
         method: 'POST',
-        body: JSON.stringify({ serviceId: params.id, petId, date, startTime, notes: notes || undefined, idempotencyKey }),
+        body: JSON.stringify({
+          serviceId: params.id,
+          petId,
+          date,
+          ...(isDayRange ? { checkOutDate } : { startTime }),
+          notes: notes || undefined,
+          idempotencyKey,
+        }),
       });
       router.push(`/bookings/${booking.id}`);
     } catch (err) {
@@ -157,9 +188,62 @@ export default function BookServicePage() {
                 ))}
               </div>
             )}
-            <button className="bingo-button" style={{ marginTop: 16 }} disabled={!petId} onClick={() => setStep('date')}>
+            <button
+              className="bingo-button"
+              style={{ marginTop: 16 }}
+              disabled={!petId}
+              onClick={() => setStep(isDayRange ? 'dates' : 'date')}
+            >
               Continuar
             </button>
+          </>
+        )}
+
+        {step === 'dates' && (
+          <>
+            <h2 className="bingo-section-title" style={{ marginTop: 0 }}>
+              ¿Qué fechas?
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Entrada</label>
+                <input
+                  className="bingo-input"
+                  type="date"
+                  min={todayString()}
+                  value={date}
+                  onChange={(e) => {
+                    setDate(e.target.value);
+                    if (checkOutDate && checkOutDate <= e.target.value) setCheckOutDate('');
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Salida</label>
+                <input
+                  className="bingo-input"
+                  type="date"
+                  min={date}
+                  value={checkOutDate}
+                  onChange={(e) => setCheckOutDate(e.target.value)}
+                />
+              </div>
+            </div>
+            {date && checkOutDate && (
+              <p style={{ fontSize: 12, color: '#7f8ea3', marginTop: 10 }}>
+                {billableDays === 0
+                  ? `${service.business.tradeName} no opera ningún día dentro de ese rango.`
+                  : `${billableDays} ${service.type === 'BOARDING' ? 'noche(s)' : 'día(s)'} de servicio · estimado $${(Number(service.price) * billableDays).toFixed(2)}`}
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button className="bingo-button secondary" onClick={() => setStep('pet')}>
+                Atrás
+              </button>
+              <button className="bingo-button" disabled={billableDays === 0} onClick={() => setStep('review')}>
+                Continuar
+              </button>
+            </div>
           </>
         )}
 
@@ -231,18 +315,38 @@ export default function BookServicePage() {
                 <div>
                   <strong>Mascota:</strong> {selectedPet?.name}
                 </div>
-                <div>
-                  <strong>Fecha:</strong> {new Date(`${date}T00:00:00`).toLocaleDateString('es-EC', { weekday: 'long', day: 'numeric', month: 'long' })}
-                </div>
-                <div>
-                  <strong>Hora:</strong> {startTime}
-                </div>
-                <div>
-                  <strong>Duración:</strong> {service.durationMinutes} min
-                </div>
-                <div>
-                  <strong>Precio:</strong> ${Number(service.price).toFixed(2)}
-                </div>
+                {isDayRange ? (
+                  <>
+                    <div>
+                      <strong>Entrada:</strong> {new Date(`${date}T00:00:00`).toLocaleDateString('es-EC', { day: 'numeric', month: 'long' })}
+                    </div>
+                    <div>
+                      <strong>Salida:</strong>{' '}
+                      {new Date(`${checkOutDate}T00:00:00`).toLocaleDateString('es-EC', { day: 'numeric', month: 'long' })}
+                    </div>
+                    <div>
+                      <strong>{service.type === 'BOARDING' ? 'Noches' : 'Días'}:</strong> {billableDays}
+                    </div>
+                    <div>
+                      <strong>Precio:</strong> ${(Number(service.price) * billableDays).toFixed(2)}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <strong>Fecha:</strong> {new Date(`${date}T00:00:00`).toLocaleDateString('es-EC', { weekday: 'long', day: 'numeric', month: 'long' })}
+                    </div>
+                    <div>
+                      <strong>Hora:</strong> {startTime}
+                    </div>
+                    <div>
+                      <strong>Duración:</strong> {service.durationMinutes} min
+                    </div>
+                    <div>
+                      <strong>Precio:</strong> ${Number(service.price).toFixed(2)}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -250,7 +354,7 @@ export default function BookServicePage() {
             <textarea className="bingo-input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
 
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button className="bingo-button secondary" onClick={() => setStep('time')} disabled={submitting}>
+              <button className="bingo-button secondary" onClick={() => setStep(isDayRange ? 'dates' : 'time')} disabled={submitting}>
                 Atrás
               </button>
               <button className="bingo-button" onClick={confirmBooking} disabled={submitting}>

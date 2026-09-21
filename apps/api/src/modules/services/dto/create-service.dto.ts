@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ServiceType } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUrl, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUrl, Min, MinLength } from 'class-validator';
+
+export const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
 export class CreateServiceDto {
   @ApiProperty({ enum: ServiceType })
@@ -29,6 +31,17 @@ export class CreateServiceDto {
   @IsInt()
   @Min(5)
   durationMinutes!: number;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Only meaningful for DAYCARE/BOARDING — weekday keys the service actually operates ' +
+      '(e.g. ["mon","tue","wed","thu","fri"]). Ignored for every other ServiceType.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(WEEKDAY_KEYS, { each: true })
+  operatingDays?: string[];
 
   @ApiPropertyOptional({ description: 'Max simultaneous bookings per slot — defaults to 1 (single-provider) if omitted' })
   @IsOptional()

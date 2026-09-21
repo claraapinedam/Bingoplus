@@ -14,6 +14,7 @@ interface Service {
   description: string | null;
   price: string | number;
   durationMinutes: number;
+  operatingDays: string[];
   capacity: number | null;
   imageUrl: string | null;
   requirements: string | null;
@@ -111,6 +112,7 @@ function ServiceDetailContent() {
           description: service.description ?? '',
           price: Number(service.price),
           durationMinutes: service.durationMinutes,
+          operatingDays: service.operatingDays,
           capacity: service.capacity ?? undefined,
           imageUrl: service.imageUrl ?? '',
           requirements: service.requirements ?? '',

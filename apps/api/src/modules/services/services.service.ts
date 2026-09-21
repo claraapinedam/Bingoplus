@@ -1,8 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { BusinessCapabilityType, BusinessStatus, Prisma } from '@prisma/client';
+import { BusinessCapabilityType, BusinessStatus, Prisma, ServiceType } from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
+
+/** DAYCARE/BOARDING are booked by date range (see BookingsService), never a time slot — they must
+ * declare which weekdays they actually operate so a check-in/check-out range knows what to count. */
+const DAY_UNIT_TYPES: ServiceType[] = [ServiceType.DAYCARE, ServiceType.BOARDING];
 import { UpdateServiceDto } from './dto/update-service.dto';
 import {
   ListAdminServicesQueryDto,
@@ -135,6 +139,7 @@ export class ServicesService {
 
   async create(businessId: string, dto: CreateServiceDto) {
     this.validateAgeRange(dto.minAgeMonths, dto.maxAgeMonths);
+    this.validateOperatingDays(dto.type, dto.operatingDays);
     const speciesIds = await this.resolveSpeciesIds(dto.speciesSlugs);
     return this.prisma.service.create({
       data: {
@@ -144,6 +149,7 @@ export class ServicesService {
         description: dto.description,
         price: dto.price,
         durationMinutes: dto.durationMinutes,
+        operatingDays: DAY_UNIT_TYPES.includes(dto.type) ? dto.operatingDays ?? [] : [],
         capacity: dto.capacity,
         imageUrl: dto.imageUrl,
         requirements: dto.requirements,
@@ -155,17 +161,30 @@ export class ServicesService {
   }
 
   async update(businessId: string, serviceId: string, dto: UpdateServiceDto) {
-    await this.assertOwnedService(businessId, serviceId);
+    const current = await this.assertOwnedService(businessId, serviceId);
     this.validateAgeRange(dto.minAgeMonths, dto.maxAgeMonths);
+    const effectiveType = dto.type ?? current.type;
+    if (dto.operatingDays !== undefined || dto.type !== undefined) {
+      this.validateOperatingDays(effectiveType, dto.operatingDays ?? current.operatingDays);
+    }
     const { speciesSlugs, ...rest } = dto;
     const speciesIds = await this.resolveSpeciesIds(speciesSlugs);
     return this.prisma.service.update({
       where: { id: serviceId },
       data: {
         ...rest,
+        // Switching a service OUT of DAYCARE/BOARDING clears operatingDays — it's meaningless (and
+        // potentially stale/misleading) for every other type.
+        operatingDays: !DAY_UNIT_TYPES.includes(effectiveType) ? [] : dto.operatingDays,
         species: speciesIds ? { deleteMany: {}, create: speciesIds.map((speciesId) => ({ speciesId })) } : undefined,
       },
     });
+  }
+
+  private validateOperatingDays(type: ServiceType, operatingDays?: string[]) {
+    if (DAY_UNIT_TYPES.includes(type) && (!operatingDays || operatingDays.length === 0)) {
+      throw new BadRequestException('operatingDays is required for DAYCARE/BOARDING services');
+    }
   }
 
   async activate(businessId: string, serviceId: string) {

@@ -10,13 +10,23 @@ export class CreateBookingDto {
   @IsString()
   petId!: string;
 
-  @ApiProperty({ description: 'Calendar date, e.g. "2026-09-20"' })
+  @ApiProperty({ description: 'Calendar date, e.g. "2026-09-20" — for DAYCARE/BOARDING this is the check-in date' })
   @IsDateString({ strict: true })
   date!: string;
 
-  @ApiProperty({ description: '24h "HH:MM", must be one of the slots returned by the availability endpoint' })
+  @ApiPropertyOptional({
+    description:
+      '24h "HH:MM", must be one of the slots returned by the availability endpoint. Required for every ' +
+      'ServiceType except DAYCARE/BOARDING, which use checkOutDate instead.',
+  })
+  @IsOptional()
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'startTime must be in HH:MM 24h format' })
-  startTime!: string;
+  startTime?: string;
+
+  @ApiPropertyOptional({ description: 'DAYCARE/BOARDING only — the check-out date, e.g. "2026-09-25". Required for those two types.' })
+  @IsOptional()
+  @IsDateString({ strict: true })
+  checkOutDate?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -16,6 +16,22 @@ function futureDateString(daysAhead = 30): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** A Monday at least 30 days out, regardless of what day the suite happens to run on — needed to
+ * deterministically test operatingDays weekday filtering. */
+function futureMondayDateString(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  const diffToMonday = (8 - d.getDay()) % 7 || 7;
+  d.setDate(d.getDate() + diffToMonday);
+  return d.toISOString().slice(0, 10);
+}
+
+function addDaysToDateString(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 describe('BookingsService', () => {
   let service: BookingsService;
   let prisma: any;
@@ -170,7 +186,92 @@ describe('BookingsService', () => {
     });
   });
 
+  describe('create — DAYCARE/BOARDING date-range booking', () => {
+    const dayService = {
+      ...baseService,
+      type: 'DAYCARE',
+      operatingDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+    };
+
+    beforeEach(() => {
+      prisma.booking.findUnique.mockResolvedValue(null);
+      pets.get.mockResolvedValue({ id: 'pet-1', speciesId: DOG_SPECIES.id, species: DOG_SPECIES, birthDate: null });
+    });
+
+    it('rejects when checkOutDate is missing', async () => {
+      prisma.service.findUnique.mockResolvedValue(dayService);
+      const checkIn = futureMondayDateString();
+      await expect(
+        service.create('user-1', { ...baseDto, date: checkIn, startTime: undefined } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects when checkOutDate is not after date', async () => {
+      prisma.service.findUnique.mockResolvedValue(dayService);
+      const checkIn = futureMondayDateString();
+      await expect(
+        service.create('user-1', { ...baseDto, date: checkIn, checkOutDate: checkIn, startTime: undefined } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a check-in date in the past', async () => {
+      prisma.service.findUnique.mockResolvedValue(dayService);
+      await expect(
+        service.create('user-1', { ...baseDto, date: '2020-01-01', checkOutDate: '2020-01-05', startTime: undefined } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a range with no operating days in it', async () => {
+      // A service that only operates Saturdays, booked Mon-Fri.
+      prisma.service.findUnique.mockResolvedValue({ ...dayService, operatingDays: ['sat'] });
+      const checkIn = futureMondayDateString();
+      await expect(
+        service.create('user-1', { ...baseDto, date: checkIn, checkOutDate: addDaysToDateString(checkIn, 5), startTime: undefined } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('only counts operating weekdays and prices per billable day, skipping the weekend', async () => {
+      prisma.service.findUnique.mockResolvedValue(dayService); // Mon-Fri only, price 20
+      prisma.booking.count.mockResolvedValue(0);
+      prisma.booking.create.mockImplementation(({ data }: any) =>
+        Promise.resolve({ ...data, id: 'stay-1', service: { name: 'Guardería' }, user: { firstName: 'Ana' } }),
+      );
+      const checkIn = futureMondayDateString();
+      const checkOut = addDaysToDateString(checkIn, 7); // Mon -> next Mon: 5 weekdays + a weekend
+
+      const result = await service.create('user-1', {
+        ...baseDto,
+        date: checkIn,
+        checkOutDate: checkOut,
+        startTime: undefined,
+      } as any);
+
+      expect(result.billableDays).toBe(5);
+      expect(result.price).toBe(100); // 5 days * 20
+    });
+
+    it('still enforces capacity across the whole stay, same as a time slot', async () => {
+      prisma.service.findUnique.mockResolvedValue({ ...dayService, capacity: 1 });
+      prisma.booking.count.mockResolvedValue(1); // already one overlapping stay
+      const checkIn = futureMondayDateString();
+      await expect(
+        service.create('user-1', {
+          ...baseDto,
+          date: checkIn,
+          checkOutDate: addDaysToDateString(checkIn, 3),
+          startTime: undefined,
+        } as any),
+      ).rejects.toBeInstanceOf(BookingSlotUnavailableException);
+    });
+  });
+
   describe('availability', () => {
+    it('rejects checking time-of-day slots for a DAYCARE/BOARDING service — those use date ranges', async () => {
+      prisma.service.findFirst.mockResolvedValue({ id: 'svc-1', type: 'DAYCARE' });
+      await expect(service.getAvailableSlots('svc-1', futureDateString())).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+
     it('404s on an unknown service', async () => {
       prisma.service.findFirst.mockResolvedValue(null);
       await expect(service.getAvailableSlots('svc-1', futureDateString())).rejects.toBeInstanceOf(NotFoundException);

@@ -1367,7 +1367,14 @@ model Service {
   name            String
   description     String?
   price           Decimal     @db.Decimal(12, 2)
+  // Meaningless for DAYCARE/BOARDING (those are booked by date range, not a time slot) — the DTO
+  // still requires it for schema simplicity, the frontend just sends a nominal value for those
+  // two types and never shows the field. See BookingsService's DAY_UNIT_TYPES branch.
   durationMinutes Int
+  // Which weekdays ('sun'..'sat', same keys as Business.openingHours) DAYCARE/BOARDING actually
+  // operates — e.g. a daycare open weekdays only. Empty/unused for every other ServiceType; a
+  // customer's check-in/check-out range only counts nights/days that fall on one of these.
+  operatingDays   String[]    @default([])
   // Max simultaneous bookings for the same time slot — null defaults to 1 (single-provider
   // service, e.g. a vet consultation) in BookingsService, never silently unlimited.
   capacity        Int?
@@ -1425,6 +1432,12 @@ model Booking {
   endTime        DateTime
   status         BookingStatus @default(PENDING)
   price          Decimal       @db.Decimal(12, 2)
+  // Set only for a DAYCARE/BOARDING booking — how many of Service.operatingDays fell inside
+  // [startTime, endTime) at creation time, frozen here since a later change to the service's
+  // operatingDays or price must never retroactively rewrite what was already booked and priced
+  // (price above is exactly service.price × this number at booking time). Null for every
+  // time-slot-based booking (startTime/endTime already span the one slot for those).
+  billableDays   Int?
   notes          String?
   // Client-supplied idempotency key (same pattern as Payment.idempotencyKey) — a retried
   // "create booking" request (double-tap) with the same key returns the original booking instead
