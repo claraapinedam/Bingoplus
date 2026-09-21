@@ -67,6 +67,7 @@ img {
   height: 36px;
   width: auto;
   margin-bottom: 10px;
+  flex: none;
 }
 
 .bingo-header-sub {
@@ -441,22 +442,78 @@ img {
   grid-template-columns: 1fr;
 }
 
+.dashboard-mobile-topbar {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .dashboard-shell {
     flex-direction: column;
   }
-  .dashboard-sidebar {
-    width: 100%;
-    height: auto;
-    position: relative;
-    flex-direction: row;
-    overflow-x: auto;
+
+  /* Slim always-visible header on mobile — just the logo + a hamburger toggle for the drawer
+     below, since the full sidebar (nav + footer) no longer fits or reads well as a squeezed
+     horizontal strip (the previous layout — see git history for why it was replaced). */
+  .dashboard-mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bingo-navy);
+    padding: 10px 16px;
+    position: sticky;
+    top: 0;
+    z-index: 40;
   }
+
+  .dashboard-mobile-topbar .bingo-logo-img {
+    height: 28px;
+    margin-bottom: 0;
+  }
+
+  .dashboard-menu-toggle {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 22px;
+    line-height: 1;
+    padding: 6px;
+    cursor: pointer;
+    flex: none;
+  }
+
+  /* Off-canvas drawer, anchored to the right — hidden by default, slides in over the content
+     instead of squeezing it (a fixed sidebar never fit well next to a phone-width main area). */
+  .dashboard-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: auto;
+    height: 100vh;
+    width: 260px;
+    max-width: 80vw;
+    flex-direction: column;
+    overflow-x: hidden;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    z-index: 60;
+  }
+
+  .dashboard-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .dashboard-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(23, 43, 77, 0.5);
+    z-index: 50;
+  }
+
   .dashboard-nav {
-    flex-direction: row;
+    flex-direction: column;
   }
   .dashboard-sidebar-footer {
-    border-top: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
   .dashboard-main {
     padding: 20px;

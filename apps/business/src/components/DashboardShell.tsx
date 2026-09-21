@@ -55,6 +55,13 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const [business, setBusiness] = useState<BusinessProfile | null | undefined>(undefined);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [pendingContract, setPendingContract] = useState<BusinessContract | null>(null);
+  // Mobile-only off-canvas drawer (see .dashboard-sidebar's max-width:900px rules) — irrelevant on
+  // desktop, where the sidebar is always visible regardless of this state.
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
   const load = () => {
     if (!businessId) return;
@@ -184,7 +191,21 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   return (
     <BusinessContext.Provider value={{ business, reload: load }}>
       <div className="dashboard-shell">
-        <aside className="dashboard-sidebar">
+        <div className="dashboard-mobile-topbar">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
+          <button
+            className="dashboard-menu-toggle"
+            aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            ☰
+          </button>
+        </div>
+
+        {menuOpen && <div className="dashboard-sidebar-overlay" onClick={() => setMenuOpen(false)} />}
+
+        <aside className={`dashboard-sidebar${menuOpen ? ' open' : ''}`}>
           <div className="dashboard-sidebar-header">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
