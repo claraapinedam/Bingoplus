@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ServiceType, ServiceLocationType } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUrl, Min, MinLength } from 'class-validator';
 
 export const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
@@ -52,6 +52,9 @@ export class CreateServiceDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  // @IsOptional() only skips validation for null/undefined, not '' — a "no image chosen" field
+  // left blank submits an empty string, which would otherwise fail @IsUrl() as a real 400.
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUrl({ require_tld: false })
   imageUrl?: string;
 

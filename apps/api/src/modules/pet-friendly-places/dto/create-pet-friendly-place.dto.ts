@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PetFriendlyPlaceCategory } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsEnum, IsOptional, IsString, IsUrl, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreatePetFriendlyPlaceDto {
@@ -39,6 +39,9 @@ export class CreatePetFriendlyPlaceDto {
 
   @ApiPropertyOptional({ description: 'URL returned by POST /uploads' })
   @IsOptional()
+  // @IsOptional() only skips validation for null/undefined, not '' — see the same fix on
+  // CreateServiceDto.imageUrl for why this needs an explicit empty-string guard.
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUrl({ require_tld: false })
   photoUrl?: string;
 }
