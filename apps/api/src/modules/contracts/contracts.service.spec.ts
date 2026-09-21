@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ContractsService } from './contracts.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
-import { UploadsService } from '../uploads/uploads.service';
+import { StorageProvider } from '../uploads/providers/storage-provider.interface';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { ContractTemplateService, DEFAULT_BUSINESS_CONTRACT_TEMPLATE } from './contract-template.service';
 
@@ -32,14 +32,14 @@ describe('ContractsService', () => {
       set: jest.fn().mockResolvedValue({ id: 'cap1' }),
     };
     const config = { get: jest.fn((_key: string, fallback?: unknown) => fallback) } as unknown as ConfigService;
-    const uploads = { directory: '/tmp/bingoplus-test-uploads', publicPath: (f: string) => `/uploads/${f}` } as unknown as UploadsService;
+    const storage = { upload: jest.fn().mockResolvedValue({ url: 'http://localhost:3001/api/v1/uploads/test.pdf' }) } as unknown as StorageProvider;
     const templates = { get: jest.fn().mockResolvedValue(DEFAULT_BUSINESS_CONTRACT_TEMPLATE), set: jest.fn() };
 
     service = new ContractsService(
       prisma as unknown as PrismaService,
       config,
       email as unknown as EmailService,
-      uploads,
+      storage,
       capabilities as unknown as BusinessCapabilitiesService,
       templates as unknown as ContractTemplateService,
     );

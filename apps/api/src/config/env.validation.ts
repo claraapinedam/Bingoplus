@@ -107,9 +107,20 @@ class EnvironmentVariables {
   @IsOptional()
   CURRENCY: string = 'USD';
 
+  // Supabase Storage (S3-compatible) — see UploadsModule's factory. Without these two, uploads
+  // fall back to the container's local disk, which is wiped on every redeploy/restart on a host
+  // without a persistent disk attached (Render's free plan, notably).
   @IsString()
   @IsOptional()
-  STORAGE_BUCKET?: string;
+  SUPABASE_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  STORAGE_BUCKET: string = 'uploads';
 
   // Legacy placeholder — never wired to anything. RESEND_API_KEY below is the real one.
   @IsString()

@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { RiderContractsService } from './rider-contracts.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
-import { UploadsService } from '../uploads/uploads.service';
+import { StorageProvider } from '../uploads/providers/storage-provider.interface';
 import { DeliveryFareConfigService } from '../delivery/delivery-fare-config.service';
 import { ContractTemplateService, DEFAULT_RIDER_CONTRACT_TEMPLATE } from './contract-template.service';
 
@@ -27,14 +27,14 @@ describe('RiderContractsService', () => {
     email = { sendSignedContractEmail: jest.fn().mockResolvedValue(undefined) };
     fareConfig = { get: jest.fn().mockResolvedValue({ bingoCommissionPercent: 0.2, riderTaxWithholdingPercent: 0.08 }) };
     const config = { get: jest.fn((_key: string, fallback?: unknown) => fallback) } as unknown as ConfigService;
-    const uploads = { directory: '/tmp/bingoplus-test-uploads', publicPath: (f: string) => `/uploads/${f}` } as unknown as UploadsService;
+    const storage = { upload: jest.fn().mockResolvedValue({ url: 'http://localhost:3001/api/v1/uploads/test.pdf' }) } as unknown as StorageProvider;
     const templates = { get: jest.fn().mockResolvedValue(DEFAULT_RIDER_CONTRACT_TEMPLATE), set: jest.fn() };
 
     service = new RiderContractsService(
       prisma as unknown as PrismaService,
       config,
       email as unknown as EmailService,
-      uploads,
+      storage,
       fareConfig as unknown as DeliveryFareConfigService,
       templates as unknown as ContractTemplateService,
     );

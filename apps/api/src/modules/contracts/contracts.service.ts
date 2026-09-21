@@ -1,12 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import { randomUUID } from 'crypto';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BusinessCapabilityType, BusinessStatus, ContractStatus, ContractTemplateType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
-import { UploadsService } from '../uploads/uploads.service';
+import { STORAGE_PROVIDER_TOKEN, StorageProvider } from '../uploads/providers/storage-provider.interface';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { ContractTemplateService } from './contract-template.service';
 import { buildContractPdf } from './pdf/contract-pdf.builder';
@@ -17,7 +15,7 @@ export class ContractsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly email: EmailService,
-    private readonly uploads: UploadsService,
+    @Inject(STORAGE_PROVIDER_TOKEN) private readonly storage: StorageProvider,
     private readonly capabilities: BusinessCapabilitiesService,
     private readonly templates: ContractTemplateService,
   ) {}
@@ -187,7 +185,7 @@ export class ContractsService {
       signatureImage,
     });
 
-    const pdfUrl = this.savePdf(pdfBuffer, apiOrigin);
+    const pdfUrl = await this.savePdf(pdfBuffer, apiOrigin);
 
     const isFirstContract = business.status === BusinessStatus.APPROVED;
     const ops: Prisma.PrismaPromise<unknown>[] = [
@@ -220,16 +218,13 @@ export class ContractsService {
     return signed;
   }
 
-  /** Local-disk save mirroring UploadsService's own convention (random filename under the same
-   * uploads/ directory) — this PDF is generated server-side, never uploaded via multipart, so it
-   * bypasses UploadsController but lands in the exact same place and is served back the same way. */
-  private savePdf(buffer: Buffer, apiOrigin: string): string {
-    const dir = this.uploads.directory;
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  /** Signed contract PDFs go through the same StorageProvider as any multipart upload — this one's
+   * just server-generated, never uploaded via UploadsController, so it bypasses that endpoint but
+   * lands in exactly the same place and is served back the same way. */
+  private async savePdf(buffer: Buffer, apiOrigin: string): Promise<string> {
     const filename = `${randomUUID()}.pdf`;
-    writeFileSync(join(dir, filename), buffer);
-    const apiPrefix = this.config.get<string>('API_PREFIX', 'api/v1');
-    return `${apiOrigin}/${apiPrefix}${this.uploads.publicPath(filename)}`;
+    const { url } = await this.storage.upload(buffer, filename, 'application/pdf', apiOrigin);
+    return url;
   }
 
   /** Fictitious boilerplate clauses (placeholder pending real legal review), but the fees quoted

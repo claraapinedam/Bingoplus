@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync } from 'fs';
 import { join, normalize } from 'path';
 import {
   BadRequestException,
   Controller,
   Get,
+  Inject,
   NotFoundException,
   Param,
   Post,
@@ -13,15 +14,13 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { memoryStorage } from 'multer';
 import { ApiTags } from '@nestjs/swagger';
-import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { UploadsService } from './uploads.service';
-
-const UPLOAD_DIR = join(process.cwd(), 'uploads');
-if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
+import { STORAGE_PROVIDER_TOKEN, StorageProvider } from './providers/storage-provider.interface';
+import { LocalDiskStorageProvider } from './providers/local-disk-storage.provider';
 
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
@@ -31,8 +30,6 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.webp': 'image/webp',
-  // Server-generated signed contracts (ContractsService) land in this same directory — never
-  // uploaded via this controller's multipart route, but served back through the same endpoint.
   '.pdf': 'application/pdf',
 };
 
@@ -41,26 +38,26 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
  * logged-in user can upload (mirrors how POST /rider/apply itself has no role restriction, since
  * a plain CUSTOMER applying as a rider is the exact case this exists for). Returns a URL the
  * caller then passes back as a plain string field (e.g. RegisterRiderApplicationDto.idPhotoFrontUrl),
- * same convention every other `fileUrl` in this schema already uses.
+ * same convention every other `fileUrl` in this schema already uses. Where the bytes actually land
+ * is decided by UploadsModule's StorageProvider factory (Supabase Storage in production, local
+ * disk only for dev — see that module for why).
  */
 @ApiTags('uploads')
 @Controller('uploads')
 export class UploadsController {
   constructor(
     private readonly uploads: UploadsService,
-    private readonly config: ConfigService,
+    @Inject(STORAGE_PROVIDER_TOKEN) private readonly storage: StorageProvider,
+    // Injected directly (not via the factory token) — GET :filename only ever makes sense for
+    // files LocalDiskStorageProvider itself wrote; a SupabaseStorageProvider upload's URL points
+    // at Supabase's own domain and never reaches this route at all.
+    private readonly localDisk: LocalDiskStorageProvider,
   ) {}
 
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: UPLOAD_DIR,
-        filename: (_req, file, cb) => {
-          const ext = file.originalname.includes('.') ? file.originalname.slice(file.originalname.lastIndexOf('.')).toLowerCase() : '';
-          cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: MAX_FILE_SIZE_BYTES },
       fileFilter: (_req, file, cb) => {
         if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
@@ -71,26 +68,25 @@ export class UploadsController {
       },
     }),
   )
-  upload(@UploadedFile() file: Express.Multer.File, @Req() req: Request) {
+  async upload(@UploadedFile() file: Express.Multer.File, @Req() req: Request) {
     if (!file) throw new BadRequestException('No file was uploaded');
-    // Absolute, not relative — DTOs that accept an uploaded file's URL (e.g.
-    // RegisterRiderApplicationDto.idPhotoFrontUrl) validate it with @IsUrl, same as every other
-    // externally-hosted `fileUrl` in this schema.
-    const apiPrefix = this.config.get<string>('API_PREFIX', 'api/v1');
-    const url = `${req.protocol}://${req.get('host')}/${apiPrefix}${this.uploads.publicPath(file.filename)}`;
+    const apiOrigin = `${req.protocol}://${req.get('host')}`;
+    const filename = this.uploads.buildStoredFilename(file.originalname);
+    const { url } = await this.storage.upload(file.buffer, filename, file.mimetype, apiOrigin);
     return { url };
   }
 
   // Deliberately public (no auth) — this only ever serves back what an authenticated user (or an
-  // admin reviewing the application) already has the URL to; it's not a directory listing.
+  // admin reviewing the application) already has the URL to; it's not a directory listing. Only
+  // reachable for LocalDiskStorageProvider-written files (dev) — see the constructor comment.
   @Public()
   @Get(':filename')
   serve(@Param('filename') filename: string, @Res() res: Response) {
     const safeName = normalize(filename).replace(/^(\.\.[/\\])+/, '');
     const ext = safeName.includes('.') ? safeName.slice(safeName.lastIndexOf('.')).toLowerCase() : '';
     const contentType = CONTENT_TYPE_BY_EXT[ext];
-    const filePath = join(UPLOAD_DIR, safeName);
-    if (!contentType || !filePath.startsWith(UPLOAD_DIR) || !existsSync(filePath)) {
+    const filePath = join(this.localDisk.directory, safeName);
+    if (!contentType || !filePath.startsWith(this.localDisk.directory) || !existsSync(filePath)) {
       throw new NotFoundException('File not found');
     }
     res.setHeader('Content-Type', contentType);

@@ -1,12 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import { randomUUID } from 'crypto';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BusinessIdType, ContractStatus, ContractTemplateType, RiderAccountStatus, RiderDocumentType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
-import { UploadsService } from '../uploads/uploads.service';
+import { STORAGE_PROVIDER_TOKEN, StorageProvider } from '../uploads/providers/storage-provider.interface';
 import { DeliveryFareConfigService } from '../delivery/delivery-fare-config.service';
 import { ContractTemplateService } from './contract-template.service';
 import { buildRiderContractPdf } from './pdf/rider-contract-pdf.builder';
@@ -17,7 +15,7 @@ export class RiderContractsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly email: EmailService,
-    private readonly uploads: UploadsService,
+    @Inject(STORAGE_PROVIDER_TOKEN) private readonly storage: StorageProvider,
     private readonly fareConfig: DeliveryFareConfigService,
     private readonly templates: ContractTemplateService,
   ) {}
@@ -108,7 +106,7 @@ export class RiderContractsService {
       signatureImage,
     });
 
-    const pdfUrl = this.savePdf(pdfBuffer, apiOrigin);
+    const pdfUrl = await this.savePdf(pdfBuffer, apiOrigin);
 
     await this.prisma.$transaction([
       this.prisma.riderContract.update({
@@ -127,13 +125,10 @@ export class RiderContractsService {
     return signed;
   }
 
-  private savePdf(buffer: Buffer, apiOrigin: string): string {
-    const dir = this.uploads.directory;
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  private async savePdf(buffer: Buffer, apiOrigin: string): Promise<string> {
     const filename = `${randomUUID()}.pdf`;
-    writeFileSync(join(dir, filename), buffer);
-    const apiPrefix = this.config.get<string>('API_PREFIX', 'api/v1');
-    return `${apiOrigin}/${apiPrefix}${this.uploads.publicPath(filename)}`;
+    const { url } = await this.storage.upload(buffer, filename, 'application/pdf', apiOrigin);
+    return url;
   }
 }
 
