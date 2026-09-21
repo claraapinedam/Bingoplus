@@ -49,6 +49,39 @@ describe('CatalogService', () => {
     });
   });
 
+  describe('update', () => {
+    beforeEach(() => {
+      prisma.product.findUnique.mockResolvedValue({ id: 'p1', businessId: 'biz-1', deletedAt: null });
+      prisma.product.update.mockResolvedValue({ id: 'p1' });
+    });
+
+    it('resolves categorySlug to categoryId instead of passing it straight to Prisma (which has no such column)', async () => {
+      prisma.productCategory.findUnique.mockResolvedValue({ id: 'cat-2' });
+
+      await service.update('biz-1', 'p1', { categorySlug: 'snacks' } as any);
+
+      const data = prisma.product.update.mock.calls[0][0].data;
+      expect(data.categoryId).toBe('cat-2');
+      expect(data.categorySlug).toBeUndefined();
+    });
+
+    it('rejects an unknown category slug on update', async () => {
+      prisma.productCategory.findUnique.mockResolvedValue(null);
+      await expect(service.update('biz-1', 'p1', { categorySlug: 'no-such-category' } as any)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.product.update).not.toHaveBeenCalled();
+    });
+
+    it('leaves the category untouched when categorySlug is not part of the update', async () => {
+      await service.update('biz-1', 'p1', { name: 'New name' } as any);
+
+      expect(prisma.productCategory.findUnique).not.toHaveBeenCalled();
+      const data = prisma.product.update.mock.calls[0][0].data;
+      expect(data.categoryId).toBeUndefined();
+    });
+  });
+
   describe('updateStock', () => {
     it('refuses to let stock go negative', async () => {
       prisma.product.findUnique.mockResolvedValue({

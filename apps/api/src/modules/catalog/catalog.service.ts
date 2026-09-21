@@ -235,13 +235,23 @@ export class CatalogService {
     if (dto.salePrice !== undefined && dto.price !== undefined && dto.salePrice >= dto.price) {
       throw new BadRequestException('salePrice must be lower than price');
     }
-    const { speciesSlugs, ...rest } = dto;
+    const { speciesSlugs, categorySlug, ...rest } = dto;
     const speciesIds = await this.resolveSpeciesIds(speciesSlugs);
+
+    let categoryId: string | undefined;
+    if (categorySlug !== undefined) {
+      const category = await this.prisma.productCategory.findUnique({ where: { slug: categorySlug } });
+      if (!category) {
+        throw new BadRequestException(`Unknown product category "${categorySlug}"`);
+      }
+      categoryId = category.id;
+    }
 
     return this.prisma.product.update({
       where: { id: productId },
       data: {
         ...rest,
+        categoryId,
         // A provided speciesSlugs list replaces the product's species entirely — a merge would
         // leave no way to remove a species that no longer applies.
         species: speciesIds ? { deleteMany: {}, create: speciesIds.map((speciesId) => ({ speciesId })) } : undefined,
