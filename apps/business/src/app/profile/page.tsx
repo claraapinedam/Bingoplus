@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import DashboardShell, { useBusiness } from '@/components/DashboardShell';
 import { apiFetch, ApiError, getActiveBusinessId } from '@/lib/api';
 import CommissionCouponCard from '@/components/CommissionCouponCard';
+import ImageUploadField from '@/components/ImageUploadField';
 
 const WEEKDAYS: { key: string; label: string }[] = [
   { key: 'mon', label: 'Lunes' },
@@ -113,14 +114,8 @@ function ProfileContent() {
         </div>
 
         <div className="dashboard-form-grid">
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Logo (URL)</label>
-            <input className="bingo-input" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} />
-          </div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Portada (URL)</label>
-            <input className="bingo-input" value={coverImageUrl} onChange={(e) => setCoverImageUrl(e.target.value)} />
-          </div>
+          <ImageUploadField label="Logo" value={logoUrl} onChange={setLogoUrl} />
+          <ImageUploadField label="Portada" value={coverImageUrl} onChange={setCoverImageUrl} />
         </div>
 
         {business.capabilities.SELLS_PRODUCTS && business.capabilities.DELIVERY && (

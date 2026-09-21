@@ -138,6 +138,39 @@ export async function apiFetchPage<T>(path: string): Promise<{ data: T[]; meta: 
   return apiFetchEnvelope(path);
 }
 
+/** Uploads a single file (e.g. a product photo, business logo/cover) and returns the URL to pass
+ * back in a DTO field — bypasses apiFetch's JSON Content-Type default, multipart sets its own.
+ * Retries once against a refreshed token on 401, same as apiFetch — a long product form or a slow
+ * upload can outlast the 15-minute access token before the request actually fires. */
+export async function uploadFile(file: File, _isRetry = false): Promise<{ url: string }> {
+  const token = getAccessToken();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}/uploads`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+
+  if (res.status === 401 && !_isRetry) {
+    const refreshed = await refreshSession();
+    if (refreshed) {
+      return uploadFile(file, true);
+    }
+    clearTokens();
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+    throw new ApiError(401, 'SESSION_EXPIRED', 'Tu sesión expiró. Inicia sesión de nuevo.');
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(res.status, body?.error?.code ?? 'UPLOAD_FAILED', body?.error?.message ?? 'No se pudo subir el archivo.');
+  }
+  return body.data as { url: string };
+}
+
 interface AuthUser {
   id: string;
   email: string;
