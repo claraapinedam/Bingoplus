@@ -3,6 +3,7 @@ import {
   BusinessesController,
   BusinessCategoriesController,
   MarketplaceBusinessesController,
+  PublicCommissionRateController,
 } from './businesses.controller';
 import { BusinessesService } from './businesses.service';
 import { RankingModule } from '../ranking/ranking.module';
@@ -13,7 +14,7 @@ import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
   imports: [RankingModule, BusinessCapabilitiesModule, MembershipsModule, CouponsModule, ContractsModule],
-  controllers: [BusinessesController, BusinessCategoriesController, MarketplaceBusinessesController],
+  controllers: [BusinessesController, BusinessCategoriesController, MarketplaceBusinessesController, PublicCommissionRateController],
   providers: [BusinessesService],
   exports: [BusinessesService, BusinessCapabilitiesModule],
 })

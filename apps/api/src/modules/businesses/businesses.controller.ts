@@ -23,6 +23,21 @@ export class BusinessCategoriesController {
   }
 }
 
+/** Shown on the Business apply form before "Elige un plan" whenever the applicant is selling
+ * products — same figure BusinessesService.approve() falls back to for Commission.rate, disclosed
+ * upfront rather than only after approval. */
+@ApiTags('public/commission-rate')
+@Controller('public/commission-rate')
+export class PublicCommissionRateController {
+  constructor(private readonly businessesService: BusinessesService) {}
+
+  @Public()
+  @Get()
+  async get() {
+    return { rate: await this.businessesService.getDefaultCommissionRateForAdmin() };
+  }
+}
+
 /**
  * "Tiendas" — the marketplace's primary discovery surface. Business cards ranked by
  * BusinessRankingService, never a flat/global product catalog. `/public/businesses` works

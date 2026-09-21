@@ -118,6 +118,7 @@ export default function BusinessApplyForm({
   const [goal, setGoal] = useState<BusinessGoal | null>(null);
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [membershipPlanId, setMembershipPlanId] = useState('');
+  const [commissionRate, setCommissionRate] = useState<number | null>(null);
   const [couponCode, setCouponCode] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
@@ -202,6 +203,7 @@ export default function BusinessApplyForm({
   useEffect(() => {
     apiFetch<Category[]>('/public/business-categories').then(setCategories).catch(() => setCategories([]));
     apiFetch<PetSpeciesOption[]>('/public/pet-species').then(setSpeciesOptions).catch(() => setSpeciesOptions([]));
+    apiFetch<{ rate: number }>('/public/commission-rate').then((r) => setCommissionRate(r.rate)).catch(() => setCommissionRate(null));
     // Prefills contact fields from the caller's own account — a convenience default only,
     // editing it here never touches the User record (Business.email/legalName are separate
     // columns, this is a one-way copy at fill time).
@@ -235,6 +237,16 @@ export default function BusinessApplyForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goal]);
+
+  // Selling products always requires a RUC (a natural/CEDULA-only seller can't issue invoices for
+  // Marketplace sales) — Directory-only listings can still be a CEDULA. Clear a CEDULA choice that
+  // the newly-picked goal no longer allows instead of silently submitting it.
+  useEffect(() => {
+    if (sellsProducts && idType === 'CEDULA') {
+      setIdType(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sellsProducts]);
 
   useEffect(() => {
     if (!wantsDirectory) return;
@@ -280,24 +292,49 @@ export default function BusinessApplyForm({
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 520 }}>
       <div>
-        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>¿Con qué te identificas? *</label>
-        <div className="bingo-chip-row">
-          <button
-            type="button"
-            className={`bingo-chip${idType === 'RUC' ? ' active' : ''}`}
-            onClick={() => selectIdType('RUC')}
-          >
-            RUC
-          </button>
-          <button
-            type="button"
-            className={`bingo-chip${idType === 'CEDULA' ? ' active' : ''}`}
-            onClick={() => selectIdType('CEDULA')}
-          >
-            Cédula
-          </button>
+        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>¿Qué quieres hacer en BINGO+? *</label>
+        <div className="bingo-chip-row centered">
+          {GOAL_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`bingo-chip${goal === opt.value ? ' active' : ''}`}
+              onClick={() => setGoal(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
       </div>
+
+      {goal && (
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>¿Con qué te identificas? *</label>
+          <div className="bingo-chip-row">
+            <button
+              type="button"
+              className={`bingo-chip${idType === 'RUC' ? ' active' : ''}`}
+              onClick={() => selectIdType('RUC')}
+            >
+              RUC
+            </button>
+            {!sellsProducts && (
+              <button
+                type="button"
+                className={`bingo-chip${idType === 'CEDULA' ? ' active' : ''}`}
+                onClick={() => selectIdType('CEDULA')}
+              >
+                Cédula
+              </button>
+            )}
+          </div>
+          {sellsProducts && (
+            <p style={{ fontSize: 11, color: '#7f8ea3', margin: '4px 0 0' }}>
+              Vender productos en BINGO+ requiere RUC.
+            </p>
+          )}
+        </div>
+      )}
 
       <div>
         <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Nombre comercial *</label>
@@ -429,22 +466,6 @@ export default function BusinessApplyForm({
         </div>
       </div>
 
-      <div>
-        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>¿Qué quieres hacer en BINGO+? *</label>
-        <div className="bingo-chip-row centered">
-          {GOAL_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`bingo-chip${goal === opt.value ? ' active' : ''}`}
-              onClick={() => setGoal(opt.value)}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {goal && (
         <div>
           <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Categoría *</label>
@@ -456,6 +477,22 @@ export default function BusinessApplyForm({
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {sellsProducts && (
+        <div className="bingo-card">
+          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Comisión de BINGO+ por venta</label>
+          {commissionRate === null ? (
+            <p style={{ fontSize: 12, color: '#9aa5b1', margin: 0 }}>Cargando…</p>
+          ) : (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>{(commissionRate * 100).toFixed(2)}%</div>
+              <p style={{ fontSize: 11, color: '#7f8ea3', margin: '4px 0 0' }}>
+                Sobre cada venta que hagas en el Marketplace de BINGO+. Se confirma al firmar tu contrato de afiliación.
+              </p>
+            </>
+          )}
         </div>
       )}
 
