@@ -19,6 +19,7 @@ const COLLAPSIBLE_MENUS = [
     items: [
       { href: '/businesses/requests', label: 'Solicitudes de Negocios' },
       { href: '/businesses', label: 'Negocios' },
+      { href: '/businesses/payments', label: 'Pagos a negocios' },
     ],
   },
   {
@@ -28,6 +29,7 @@ const COLLAPSIBLE_MENUS = [
     items: [
       { href: '/riders/requests', label: 'Solicitudes de Riders' },
       { href: '/riders', label: 'Riders' },
+      { href: '/riders/payments', label: 'Pagos a riders' },
     ],
   },
   {

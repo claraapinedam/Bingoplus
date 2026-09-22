@@ -19,6 +19,7 @@ import { AnalyticsModule } from '../analytics/analytics.module';
 import { PetFriendlyPlacesModule } from '../pet-friendly-places/pet-friendly-places.module';
 import { ContractsModule } from '../contracts/contracts.module';
 import { DeliveryFareModule } from '../delivery/delivery-fare.module';
+import { PayoutsModule } from '../payouts/payouts.module';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminCustomersController } from './admin-customers.controller';
 import { AdminBusinessesController } from './admin-businesses.controller';
@@ -37,6 +38,7 @@ import { AdminReviewsController } from './admin-reviews.controller';
 import { AdminPromotionsController } from './admin-promotions.controller';
 import { AdminAnalyticsController } from './admin-analytics.controller';
 import { AdminPetFriendlyPlacesController } from './admin-pet-friendly-places.controller';
+import { AdminPayoutsController } from './admin-payouts.controller';
 
 @Module({
   imports: [
@@ -60,6 +62,7 @@ import { AdminPetFriendlyPlacesController } from './admin-pet-friendly-places.co
     PetFriendlyPlacesModule,
     ContractsModule,
     DeliveryFareModule,
+    PayoutsModule,
   ],
   controllers: [
     AdminUsersController,
@@ -81,6 +84,7 @@ import { AdminPetFriendlyPlacesController } from './admin-pet-friendly-places.co
     AdminPromotionsController,
     AdminAnalyticsController,
     AdminPetFriendlyPlacesController,
+    AdminPayoutsController,
   ],
 })
 export class AdminModule {}

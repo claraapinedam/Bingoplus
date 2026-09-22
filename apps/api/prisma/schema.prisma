@@ -693,6 +693,13 @@ model Order {
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
 
+  // Set only once this order's GMV has been swept into a business Payout
+  // (PayoutsService.markBusinessesPaid) — null means "still outstanding, counted in the
+  // business's pending payout total". Never cleared back to null once set, so an order's revenue
+  // can be paid out to the business exactly once (see Payout model comment). Independent of
+  // `status`/Payment.status, which track the customer's own purchase, not what BINGO+ owes back.
+  payoutId String?
+
   user     User        @relation(fields: [userId], references: [id])
   business Business    @relation(fields: [businessId], references: [id])
   // SetNull, never Restrict: the live Address can be deleted freely — deliveryAddressSnapshot
@@ -704,10 +711,12 @@ model Order {
   delivery Delivery?
   disputes Dispute[]
   reviews  Review[]
+  payout   Payout?     @relation(fields: [payoutId], references: [id])
 
   @@index([userId])
   @@index([businessId])
   @@index([status])
+  @@index([payoutId])
 }
 
 model OrderItem {
@@ -1334,12 +1343,19 @@ model RiderEarning {
   status            RiderEarningStatus @default(PENDING)
   createdAt         DateTime           @default(now())
 
+  // Set only once this earning has been swept into a rider Payout (PayoutsService.markRidersPaid)
+  // — null means "still outstanding, counted in the rider's pending total". Never cleared back to
+  // null once set, so an earning can be paid out exactly once (see Payout model comment).
+  payoutId String?
+
   rider    Rider     @relation(fields: [riderId], references: [id], onDelete: Cascade)
   delivery Delivery? @relation(fields: [deliveryId], references: [id])
+  payout   Payout?   @relation(fields: [payoutId], references: [id])
 
   @@index([riderId])
   @@index([deliveryId])
   @@index([status])
+  @@index([payoutId])
 }
 
 // §19: dispatch weighting/timeout, admin-configurable — append-only history like
@@ -2187,6 +2203,17 @@ enum PayoutStatus {
   FAILED
 }
 
+// PayoutsService (admin "Pagos"/Payouts module — Businesses & Riders) is the only writer of this
+// table. Design: a Payout row is created already PAID, at the moment an admin marks a payee's
+// outstanding balance as paid — there's no intermediate PENDING Payout row to generate/manage.
+// The "pending total" shown to admin before that is computed live: sum(RiderEarning.netAmount)
+// where status=PENDING and payoutId is null (riders), or sum(Order.subtotal) × the business's
+// current commission rate for orders that are paid/completed and have payoutId null (businesses).
+// Marking paid does two things atomically: (1) creates this row with status PAID/paidAt set, and
+// (2) stamps payoutId on every RiderEarning/Order row it covers, so those rows are permanently
+// excluded from the next "pending" computation — a row can be swept into a Payout exactly once,
+// which is what makes double-paying or losing track of an owed amount structurally impossible
+// (no separate "already paid" flag to forget to check, no PENDING Payout that could be paid twice).
 model Payout {
   id          String       @id @default(cuid())
   payeeType   PayeeType
@@ -2199,8 +2226,14 @@ model Payout {
   paidAt      DateTime?
   createdAt   DateTime     @default(now())
 
-  business Business? @relation(fields: [businessId], references: [id])
-  rider    Rider?    @relation(fields: [riderId], references: [id])
+  business      Business?      @relation(fields: [businessId], references: [id])
+  rider         Rider?         @relation(fields: [riderId], references: [id])
+  riderEarnings RiderEarning[]
+  orders        Order[]
+
+  @@index([payeeType, status])
+  @@index([businessId])
+  @@index([riderId])
 }
 
 // ───────────────────────────── Governance ─────────────────────────────

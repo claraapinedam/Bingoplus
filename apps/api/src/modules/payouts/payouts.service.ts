@@ -1,0 +1,239 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { OrderStatus, PayeeType, Prisma, PayoutStatus, RiderEarningStatus } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
+
+/**
+ * Admin "Pagos" module (Businesses & Riders) — accumulates what BINGO+ owes each payee, already
+ * net of commission/tax, and lets admin flip selected payees from pending to paid.
+ *
+ * Design (see the Payout model's schema comment for the full rationale): the "pending" list below
+ * is always computed live from the real ledgers — RiderEarning for riders (the same table
+ * DeliveryService.complete() writes and the rider's own Ganancias screen reads), and Order GMV ×
+ * the business's current Commission rate for businesses (the same "real GMV × current rate, never
+ * a fabricated figure" pattern BusinessesService.listCommissionsForAdmin/getCommissionSummary
+ * already use) — never a second, drifting copy of that math. A `Payout` row is only ever created
+ * already PAID, at the exact moment admin marks a payee's balance as paid, and that same write
+ * stamps `payoutId` on every RiderEarning/Order row it covers. Because the pending query always
+ * filters `payoutId: null`, a row can be swept into a Payout exactly once — there's no
+ * intermediate "PENDING Payout" state that could be generated twice or paid twice.
+ */
+@Injectable()
+export class PayoutsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** Orders whose customer payment has actually gone through — the same set of statuses
+   * CheckoutService transitions an Order into once Payment.status becomes PAID (never CREATED/
+   * PAYMENT_PENDING, which is money BINGO+ hasn't actually received yet, and never CANCELLED). */
+  private static readonly PAID_ORDER_STATUSES: OrderStatus[] = [
+    OrderStatus.PAID,
+    OrderStatus.CONFIRMED,
+    OrderStatus.PREPARING,
+    OrderStatus.READY_FOR_PICKUP,
+    OrderStatus.COMPLETED,
+  ];
+
+  // ───────────────────────────── Riders ─────────────────────────────
+
+  /** One line item per rider with an outstanding balance — net delivery earnings
+   * (RiderEarning.netAmount, already net of BINGO+'s commission and tax withholding, see
+   * DeliveryFareConfigService.splitRiderEarning) that are still PENDING and not yet swept into a
+   * Payout. */
+  async listPendingRiders() {
+    const grouped = await this.prisma.riderEarning.groupBy({
+      by: ['riderId'],
+      where: { status: RiderEarningStatus.PENDING, payoutId: null },
+      _sum: { netAmount: true },
+      _count: { _all: true },
+    });
+    if (grouped.length === 0) return { total: 0, items: [] };
+
+    const riderIds = grouped.map((g) => g.riderId);
+    const riders = await this.prisma.rider.findMany({
+      where: { id: { in: riderIds } },
+      select: { id: true, user: { select: { firstName: true, lastName: true, email: true } } },
+    });
+    const riderById = new Map(riders.map((r) => [r.id, r]));
+
+    const items = grouped
+      .map((g) => {
+        const rider = riderById.get(g.riderId);
+        return {
+          riderId: g.riderId,
+          riderName: rider ? `${rider.user.firstName} ${rider.user.lastName}`.trim() : 'Rider',
+          riderEmail: rider?.user.email ?? null,
+          earningsCount: g._count._all,
+          amount: Number(g._sum.netAmount ?? 0),
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+
+    const total = Math.round(items.reduce((sum, i) => sum + i.amount, 0) * 100) / 100;
+    return { total, items };
+  }
+
+  /** Marks each selected rider's *entire current* outstanding balance as paid in one shot — not a
+   * partial amount, mirroring how the request was phrased ("pasar de pendiente a pagado", not
+   * "pagar parcialmente"). Idempotent per rider: a rider with nothing outstanding (already paid,
+   * or raced by a concurrent request) is silently skipped rather than erroring the whole batch. */
+  async markRidersPaid(riderIds: string[], adminId?: string) {
+    const paid: { riderId: string; amount: number; payoutId: string }[] = [];
+    for (const riderId of riderIds) {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const earnings = await tx.riderEarning.findMany({
+          where: { riderId, status: RiderEarningStatus.PENDING, payoutId: null },
+          select: { id: true, netAmount: true, createdAt: true },
+        });
+        if (earnings.length === 0) return null;
+
+        const amount = earnings.reduce((sum, e) => sum.plus(e.netAmount), new Prisma.Decimal(0));
+        const periodStart = earnings.reduce((min, e) => (e.createdAt < min ? e.createdAt : min), earnings[0].createdAt);
+        const payout = await tx.payout.create({
+          data: {
+            payeeType: PayeeType.RIDER,
+            riderId,
+            amount,
+            status: PayoutStatus.PAID,
+            paidAt: new Date(),
+            periodStart,
+            periodEnd: new Date(),
+          },
+        });
+
+        // Guarded by payoutId: null again here (not just in the SELECT above) so a concurrent
+        // mark-paid call for the same rider can't double-sweep the same earning into two Payouts —
+        // whichever transaction's updateMany actually matches a row wins.
+        const { count } = await tx.riderEarning.updateMany({
+          where: { id: { in: earnings.map((e) => e.id) }, payoutId: null },
+          data: { payoutId: payout.id, status: RiderEarningStatus.PAID },
+        });
+        if (count !== earnings.length) {
+          throw new BadRequestException('Otro proceso ya estaba pagando a este rider. Intenta de nuevo.');
+        }
+        return { riderId, amount: Number(amount), payoutId: payout.id };
+      });
+      if (result) paid.push(result);
+    }
+
+    return {
+      paidCount: paid.length,
+      totalPaid: Math.round(paid.reduce((sum, p) => sum + p.amount, 0) * 100) / 100,
+      payouts: paid,
+    };
+  }
+
+  // ───────────────────────────── Businesses ─────────────────────────────
+
+  /** One line item per business with an outstanding balance — real GMV (Order.subtotal, net of
+   * discount/pre-tax, same base BusinessesService.listCommissionsForAdmin sums) on paid/completed
+   * orders not yet swept into a Payout, times that business's current commission rate. A business
+   * with no live Commission row is left out entirely (never guess a rate, same rule
+   * listCommissionsForAdmin follows for its `estimatedRevenue`) — in practice every approved
+   * business has one (BusinessesService.approve always creates it).
+   *
+   * Membership fees (MembershipPlan/BusinessMembership/Subscription/Invoice) are deliberately NOT
+   * netted out of this figure — the schema itself documents Membership billing as "a financial
+   * domain separate from Marketplace orders" (see the comment above BillingFrequency), collected
+   * via its own Invoice, never against a business's order payout. Folding it in here would make
+   * this owed-amount silently diverge from GMV × rate the moment a business's plan price changed,
+   * for no product requirement asked for. */
+  async listPendingBusinesses() {
+    const grouped = await this.prisma.order.groupBy({
+      by: ['businessId'],
+      where: { status: { in: PayoutsService.PAID_ORDER_STATUSES }, payoutId: null },
+      _sum: { subtotal: true },
+      _count: { _all: true },
+    });
+    if (grouped.length === 0) return { total: 0, items: [] };
+
+    const businessIds = grouped.map((g) => g.businessId);
+    const [businesses, commissions] = await Promise.all([
+      this.prisma.business.findMany({ where: { id: { in: businessIds } }, select: { id: true, tradeName: true } }),
+      this.prisma.commission.findMany({
+        where: { businessId: { in: businessIds }, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        orderBy: { effectiveFrom: 'desc' },
+      }),
+    ]);
+    const businessById = new Map(businesses.map((b) => [b.id, b]));
+    const rateByBusiness = new Map<string, number>();
+    for (const c of commissions) {
+      if (!rateByBusiness.has(c.businessId)) rateByBusiness.set(c.businessId, Number(c.rate));
+    }
+
+    const items = grouped
+      .filter((g) => rateByBusiness.has(g.businessId))
+      .map((g) => {
+        const business = businessById.get(g.businessId);
+        const gmv = Number(g._sum.subtotal ?? 0);
+        const rate = rateByBusiness.get(g.businessId)!;
+        return {
+          businessId: g.businessId,
+          tradeName: business?.tradeName ?? 'Negocio',
+          ordersCount: g._count._all,
+          gmv,
+          commissionRate: rate,
+          amount: Math.round(gmv * (1 - rate) * 100) / 100,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+
+    const total = Math.round(items.reduce((sum, i) => sum + i.amount, 0) * 100) / 100;
+    return { total, items };
+  }
+
+  /** Same "entire current outstanding balance, idempotent per payee" shape as markRidersPaid. */
+  async markBusinessesPaid(businessIds: string[], adminId?: string) {
+    const paid: { businessId: string; amount: number; payoutId: string }[] = [];
+    for (const businessId of businessIds) {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const orders = await tx.order.findMany({
+          where: { businessId, status: { in: PayoutsService.PAID_ORDER_STATUSES }, payoutId: null },
+          select: { id: true, subtotal: true, createdAt: true },
+        });
+        if (orders.length === 0) return null;
+
+        const commission = await tx.commission.findFirst({
+          where: { businessId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+          orderBy: { effectiveFrom: 'desc' },
+        });
+        if (!commission) {
+          // No live commission rate to apply — refuse rather than guessing one (same rule as the
+          // read side). Skipped, not thrown, so one misconfigured business doesn't block the rest
+          // of a bulk selection.
+          return null;
+        }
+
+        const gmv = orders.reduce((sum, o) => sum.plus(o.subtotal), new Prisma.Decimal(0));
+        const rate = new Prisma.Decimal(commission.rate);
+        const amount = gmv.mul(new Prisma.Decimal(1).minus(rate));
+        const periodStart = orders.reduce((min, o) => (o.createdAt < min ? o.createdAt : min), orders[0].createdAt);
+        const payout = await tx.payout.create({
+          data: {
+            payeeType: PayeeType.BUSINESS,
+            businessId,
+            amount,
+            status: PayoutStatus.PAID,
+            paidAt: new Date(),
+            periodStart,
+            periodEnd: new Date(),
+          },
+        });
+
+        const { count } = await tx.order.updateMany({
+          where: { id: { in: orders.map((o) => o.id) }, payoutId: null },
+          data: { payoutId: payout.id },
+        });
+        if (count !== orders.length) {
+          throw new BadRequestException('Otro proceso ya estaba pagando a este negocio. Intenta de nuevo.');
+        }
+        return { businessId, amount: Number(amount), payoutId: payout.id };
+      });
+      if (result) paid.push(result);
+    }
+
+    return {
+      paidCount: paid.length,
+      totalPaid: Math.round(paid.reduce((sum, p) => sum + p.amount, 0) * 100) / 100,
+      payouts: paid,
+    };
+  }
+}
