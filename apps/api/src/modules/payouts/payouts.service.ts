@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { OrderStatus, PayeeType, Prisma, PayoutStatus, RiderEarningStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -121,6 +121,82 @@ export class PayoutsService {
     };
   }
 
+  /** Per-rider drilldown (Pagos a riders → click a rider) — the individual PENDING earnings behind
+   * that rider's summary row, so admin can select a subset rather than only ever paying the whole
+   * balance at once. */
+  async getRiderPending(riderId: string) {
+    const earnings = await this.prisma.riderEarning.findMany({
+      where: { riderId, status: RiderEarningStatus.PENDING, payoutId: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, deliveryId: true, grossAmount: true, commissionAmount: true, taxWithheldAmount: true, netAmount: true, createdAt: true },
+    });
+    const items = earnings.map((e) => ({
+      id: e.id,
+      deliveryId: e.deliveryId,
+      grossAmount: Number(e.grossAmount),
+      commissionAmount: Number(e.commissionAmount),
+      taxWithheldAmount: Number(e.taxWithheldAmount),
+      netAmount: Number(e.netAmount),
+      createdAt: e.createdAt,
+    }));
+    const total = Math.round(items.reduce((sum, i) => sum + i.netAmount, 0) * 100) / 100;
+    return { total, items };
+  }
+
+  /** Same drilldown, paid side — every Payout already issued to this rider, newest first. */
+  async getRiderPaidHistory(riderId: string) {
+    const payouts = await this.prisma.payout.findMany({
+      where: { payeeType: PayeeType.RIDER, riderId, status: PayoutStatus.PAID },
+      orderBy: { paidAt: 'desc' },
+      include: { _count: { select: { riderEarnings: true } } },
+    });
+    return payouts.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      paidAt: p.paidAt,
+      referenceNumber: p.referenceNumber,
+      earningsCount: p._count.riderEarnings,
+    }));
+  }
+
+  /** Pays exactly the selected earnings for one rider — unlike markRidersPaid (whole balance, many
+   * riders at once), this is the item-level action inside a single rider's Pendiente tab. */
+  async markRiderEarningsPaid(riderId: string, earningIds: string[], referenceNumber?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const earnings = await tx.riderEarning.findMany({
+        where: { id: { in: earningIds }, riderId, status: RiderEarningStatus.PENDING, payoutId: null },
+        select: { id: true, netAmount: true, createdAt: true },
+      });
+      if (earnings.length === 0) {
+        throw new BadRequestException('Los pagos seleccionados ya no están pendientes.');
+      }
+
+      const amount = earnings.reduce((sum, e) => sum.plus(e.netAmount), new Prisma.Decimal(0));
+      const periodStart = earnings.reduce((min, e) => (e.createdAt < min ? e.createdAt : min), earnings[0].createdAt);
+      const payout = await tx.payout.create({
+        data: {
+          payeeType: PayeeType.RIDER,
+          riderId,
+          amount,
+          status: PayoutStatus.PAID,
+          paidAt: new Date(),
+          periodStart,
+          periodEnd: new Date(),
+          referenceNumber: referenceNumber || null,
+        },
+      });
+
+      const { count } = await tx.riderEarning.updateMany({
+        where: { id: { in: earnings.map((e) => e.id) }, payoutId: null },
+        data: { payoutId: payout.id, status: RiderEarningStatus.PAID },
+      });
+      if (count !== earnings.length) {
+        throw new BadRequestException('Otro proceso ya estaba pagando alguno de estos pagos. Intenta de nuevo.');
+      }
+      return { payoutId: payout.id, amount: Number(amount), earningsCount: earnings.length };
+    });
+  }
+
   // ───────────────────────────── Businesses ─────────────────────────────
 
   /** One line item per business with an outstanding balance — real GMV (Order.subtotal, net of
@@ -178,6 +254,111 @@ export class PayoutsService {
 
     const total = Math.round(items.reduce((sum, i) => sum + i.amount, 0) * 100) / 100;
     return { total, items };
+  }
+
+  /** Per-business drilldown (Pagos a negocios → click a negocio) — the individual paid/completed
+   * orders behind that business's summary row, one row per order with its own GMV/commission/monto
+   * a pagar, so admin can select a subset rather than only ever paying the whole balance at once. */
+  async getBusinessPending(businessId: string) {
+    const commission = await this.prisma.commission.findFirst({
+      where: { businessId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    const rate = commission ? Number(commission.rate) : null;
+
+    const orders = await this.prisma.order.findMany({
+      where: { businessId, status: { in: PayoutsService.PAID_ORDER_STATUSES }, payoutId: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, orderNumber: true, subtotal: true, status: true, createdAt: true },
+    });
+    const items = orders.map((o) => {
+      const gmv = Number(o.subtotal);
+      const commissionAmount = rate == null ? 0 : Math.round(gmv * rate * 100) / 100;
+      return {
+        id: o.id,
+        orderNumber: o.orderNumber,
+        gmv,
+        commissionRate: rate,
+        commissionAmount,
+        amount: Math.round((gmv - commissionAmount) * 100) / 100,
+        status: o.status,
+        createdAt: o.createdAt,
+      };
+    });
+    const total = Math.round(items.reduce((sum, i) => sum + i.amount, 0) * 100) / 100;
+    return { total, hasCommissionRate: rate != null, items };
+  }
+
+  /** Same drilldown, paid side — every Payout already issued to this business, newest first. */
+  async getBusinessPaidHistory(businessId: string) {
+    const payouts = await this.prisma.payout.findMany({
+      where: { payeeType: PayeeType.BUSINESS, businessId, status: PayoutStatus.PAID },
+      orderBy: { paidAt: 'desc' },
+      include: { _count: { select: { orders: true } } },
+    });
+    return payouts.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      paidAt: p.paidAt,
+      referenceNumber: p.referenceNumber,
+      ordersCount: p._count.orders,
+    }));
+  }
+
+  /** Pays exactly the selected orders for one business — the item-level action inside a single
+   * business's Pendiente tab (see markRiderEarningsPaid for the rider-side equivalent). */
+  async markBusinessOrdersPaid(businessId: string, orderIds: string[], referenceNumber?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const commission = await tx.commission.findFirst({
+        where: { businessId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        orderBy: { effectiveFrom: 'desc' },
+      });
+      if (!commission) {
+        throw new BadRequestException('Este negocio no tiene una tasa de comisión vigente configurada.');
+      }
+
+      const orders = await tx.order.findMany({
+        where: { id: { in: orderIds }, businessId, status: { in: PayoutsService.PAID_ORDER_STATUSES }, payoutId: null },
+        select: { id: true, subtotal: true, createdAt: true },
+      });
+      if (orders.length === 0) {
+        throw new BadRequestException('Los pedidos seleccionados ya no están pendientes.');
+      }
+
+      const rate = new Prisma.Decimal(commission.rate);
+      const gmv = orders.reduce((sum, o) => sum.plus(o.subtotal), new Prisma.Decimal(0));
+      const amount = gmv.mul(new Prisma.Decimal(1).minus(rate));
+      const periodStart = orders.reduce((min, o) => (o.createdAt < min ? o.createdAt : min), orders[0].createdAt);
+      const payout = await tx.payout.create({
+        data: {
+          payeeType: PayeeType.BUSINESS,
+          businessId,
+          amount,
+          status: PayoutStatus.PAID,
+          paidAt: new Date(),
+          periodStart,
+          periodEnd: new Date(),
+          referenceNumber: referenceNumber || null,
+        },
+      });
+
+      const { count } = await tx.order.updateMany({
+        where: { id: { in: orders.map((o) => o.id) }, payoutId: null },
+        data: { payoutId: payout.id },
+      });
+      if (count !== orders.length) {
+        throw new BadRequestException('Otro proceso ya estaba pagando alguno de estos pedidos. Intenta de nuevo.');
+      }
+      return { payoutId: payout.id, amount: Number(amount), ordersCount: orders.length };
+    });
+  }
+
+  /** Shared by both payee types — the reference number is entered from the Historial tab, often
+   * after the fact (the transfer may still be in flight when "Marcar como pagado" was clicked). */
+  async updatePayoutReference(payoutId: string, referenceNumber: string) {
+    const payout = await this.prisma.payout.findUnique({ where: { id: payoutId } });
+    if (!payout) throw new NotFoundException('Pago no encontrado.');
+    return this.prisma.payout.update({ where: { id: payoutId }, data: { referenceNumber } });
   }
 
   /** Same "entire current outstanding balance, idempotent per payee" shape as markRidersPaid. */

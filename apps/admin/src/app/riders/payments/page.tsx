@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import AdminShell from '@/components/AdminShell';
 import { apiFetch, ApiError } from '@/lib/api';
 
@@ -15,12 +16,10 @@ interface PendingRiderRow {
 }
 
 export default function RiderPaymentsPage() {
+  const router = useRouter();
   const [total, setTotal] = useState(0);
   const [items, setItems] = useState<PendingRiderRow[] | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -28,7 +27,6 @@ export default function RiderPaymentsPage() {
       const result = await apiFetch<{ total: number; items: PendingRiderRow[] }>('/admin/payouts/riders/pending');
       setTotal(result.total);
       setItems(result.items);
-      setSelected(new Set());
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar el listado de pagos a riders.');
     }
@@ -38,45 +36,13 @@ export default function RiderPaymentsPage() {
     load();
   }, [load]);
 
-  function toggle(riderId: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(riderId)) next.delete(riderId);
-      else next.add(riderId);
-      return next;
-    });
-  }
-
-  function toggleAll() {
-    if (!items) return;
-    setSelected((prev) => (prev.size === items.length ? new Set() : new Set(items.map((i) => i.riderId))));
-  }
-
-  async function markSelectedPaid() {
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await apiFetch<{ paidCount: number; totalPaid: number }>('/admin/payouts/riders/mark-paid', {
-        method: 'POST',
-        body: JSON.stringify({ ids: Array.from(selected) }),
-      });
-      setNotice(`Se marcaron ${result.paidCount} rider(es) como pagados por un total de ${currencyFormatter.format(result.totalPaid)}.`);
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo marcar los pagos seleccionados como pagados.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <AdminShell>
       <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Pagos a riders</h1>
 
       <p style={{ fontSize: 13, color: '#7f8ea3', marginBottom: 16 }}>
-        Ganancias netas de comisión y retención de impuesto (RiderEarning) que todavía no se han pagado a cada
-        rider. Selecciona uno o más riders y márcalos como pagados una vez que la transferencia se haya realizado.
+        Ganancias netas de comisión y retención de impuesto que todavía no se han pagado, acumuladas por rider. Haz
+        clic en un rider para ver el detalle de sus pagos pendientes y su historial.
       </p>
 
       {error && (
@@ -84,28 +50,14 @@ export default function RiderPaymentsPage() {
           {error}
         </div>
       )}
-      {notice && (
-        <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-success)' }}>
-          {notice}
-        </div>
-      )}
 
       <div className="bingo-card" style={{ marginBottom: 20, textAlign: 'center' }}>
-        <div style={{ fontSize: 12, color: '#7f8ea3' }}>Monto acumulado pendiente</div>
+        <div style={{ fontSize: 12, color: '#7f8ea3' }}>Monto acumulado pendiente (todos los riders)</div>
         <div style={{ fontSize: 28, fontWeight: 800 }}>{currencyFormatter.format(total)}</div>
       </div>
 
       <div className="bingo-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Pendientes de pago</h2>
-          <button
-            className="bingo-button"
-            disabled={selected.size === 0 || saving}
-            onClick={markSelectedPaid}
-          >
-            {saving ? 'Guardando…' : `Marcar como pagado (${selected.size})`}
-          </button>
-        </div>
+        <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Riders con saldo pendiente</h2>
 
         {items === null ? (
           <p>Cargando…</p>
@@ -115,25 +67,15 @@ export default function RiderPaymentsPage() {
           <table className="bingo-table">
             <thead>
               <tr>
-                <th style={{ width: 32 }}>
-                  <input type="checkbox" checked={selected.size === items.length} onChange={toggleAll} />
-                </th>
                 <th>Rider</th>
                 <th>Entregas</th>
                 <th>Monto neto</th>
-                <th>Estado</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.riderId}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selected.has(item.riderId)}
-                      onChange={() => toggle(item.riderId)}
-                    />
-                  </td>
+                <tr key={item.riderId} style={{ cursor: 'pointer' }} onClick={() => router.push(`/riders/payments/${item.riderId}`)}>
                   <td>
                     {item.riderName}
                     {item.riderEmail && (
@@ -145,9 +87,7 @@ export default function RiderPaymentsPage() {
                   </td>
                   <td>{item.earningsCount}</td>
                   <td>{currencyFormatter.format(item.amount)}</td>
-                  <td>
-                    <span className="bingo-badge badge-pending">Pendiente</span>
-                  </td>
+                  <td style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>Ver detalle →</td>
                 </tr>
               ))}
             </tbody>

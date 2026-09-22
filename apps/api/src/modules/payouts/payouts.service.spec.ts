@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { PayeeType, Prisma, PayoutStatus, RiderEarningStatus } from '@prisma/client';
 import { PayoutsService } from './payouts.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -13,7 +14,7 @@ describe('PayoutsService', () => {
       order: { groupBy: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
       business: { findMany: jest.fn() },
       commission: { findMany: jest.fn(), findFirst: jest.fn() },
-      payout: { create: jest.fn() },
+      payout: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
       $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     };
     service = new PayoutsService(prisma as unknown as PrismaService);
@@ -179,6 +180,132 @@ describe('PayoutsService', () => {
       prisma.order.findMany.mockResolvedValue([]);
       const result = await service.markBusinessesPaid(['b1']);
       expect(result).toEqual({ paidCount: 0, totalPaid: 0, payouts: [] });
+    });
+  });
+
+  describe('getRiderPending — per-rider drilldown', () => {
+    it('lists individual pending earnings with their sum', async () => {
+      prisma.riderEarning.findMany.mockResolvedValue([
+        {
+          id: 'e1',
+          deliveryId: 'd1',
+          grossAmount: new Prisma.Decimal('12.5'),
+          commissionAmount: new Prisma.Decimal('2.5'),
+          taxWithheldAmount: new Prisma.Decimal('1'),
+          netAmount: new Prisma.Decimal('9'),
+          createdAt: new Date('2026-01-01'),
+        },
+      ]);
+      const result = await service.getRiderPending('r1');
+      expect(prisma.riderEarning.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { riderId: 'r1', status: RiderEarningStatus.PENDING, payoutId: null } }),
+      );
+      expect(result.total).toBe(9);
+      expect(result.items[0]).toEqual(expect.objectContaining({ id: 'e1', netAmount: 9, grossAmount: 12.5 }));
+    });
+  });
+
+  describe('getRiderPaidHistory', () => {
+    it('lists past payouts for that rider with their reference number', async () => {
+      prisma.payout.findMany.mockResolvedValue([
+        { id: 'p1', amount: new Prisma.Decimal('9'), paidAt: new Date('2026-01-02'), referenceNumber: 'REF-1', _count: { riderEarnings: 1 } },
+      ]);
+      const result = await service.getRiderPaidHistory('r1');
+      expect(prisma.payout.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { payeeType: PayeeType.RIDER, riderId: 'r1', status: PayoutStatus.PAID } }),
+      );
+      expect(result).toEqual([{ id: 'p1', amount: 9, paidAt: new Date('2026-01-02'), referenceNumber: 'REF-1', earningsCount: 1 }]);
+    });
+  });
+
+  describe('markRiderEarningsPaid — item-level, single rider', () => {
+    it('pays exactly the selected earnings and records the reference number', async () => {
+      prisma.riderEarning.findMany.mockResolvedValue([{ id: 'e1', netAmount: new Prisma.Decimal('9'), createdAt: new Date('2026-01-01') }]);
+      prisma.payout.create.mockResolvedValue({ id: 'p1' });
+      prisma.riderEarning.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.markRiderEarningsPaid('r1', ['e1'], 'REF-1');
+
+      expect(prisma.payout.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ riderId: 'r1', referenceNumber: 'REF-1' }) }),
+      );
+      expect(result).toEqual({ payoutId: 'p1', amount: 9, earningsCount: 1 });
+    });
+
+    it('rejects if none of the selected earnings are actually still pending', async () => {
+      prisma.riderEarning.findMany.mockResolvedValue([]);
+      await expect(service.markRiderEarningsPaid('r1', ['e1'])).rejects.toThrow('ya no están pendientes');
+    });
+  });
+
+  describe('getBusinessPending — per-business drilldown', () => {
+    it('lists individual pending orders with GMV/commission/monto a pagar per order', async () => {
+      prisma.commission.findFirst.mockResolvedValue({ rate: new Prisma.Decimal('0.2') });
+      prisma.order.findMany.mockResolvedValue([
+        { id: 'o1', orderNumber: 'ORD-1', subtotal: new Prisma.Decimal('100'), status: 'COMPLETED', createdAt: new Date('2026-01-01') },
+      ]);
+      const result = await service.getBusinessPending('b1');
+      expect(result.hasCommissionRate).toBe(true);
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({ id: 'o1', orderNumber: 'ORD-1', gmv: 100, commissionAmount: 20, amount: 80 }),
+      );
+      expect(result.total).toBe(80);
+    });
+
+    it('flags hasCommissionRate=false rather than guessing a rate', async () => {
+      prisma.commission.findFirst.mockResolvedValue(null);
+      prisma.order.findMany.mockResolvedValue([
+        { id: 'o1', orderNumber: 'ORD-1', subtotal: new Prisma.Decimal('100'), status: 'COMPLETED', createdAt: new Date() },
+      ]);
+      const result = await service.getBusinessPending('b1');
+      expect(result.hasCommissionRate).toBe(false);
+      expect(result.items[0].commissionAmount).toBe(0);
+    });
+  });
+
+  describe('getBusinessPaidHistory', () => {
+    it('lists past payouts for that business', async () => {
+      prisma.payout.findMany.mockResolvedValue([
+        { id: 'p1', amount: new Prisma.Decimal('80'), paidAt: new Date('2026-01-02'), referenceNumber: null, _count: { orders: 1 } },
+      ]);
+      const result = await service.getBusinessPaidHistory('b1');
+      expect(result).toEqual([{ id: 'p1', amount: 80, paidAt: new Date('2026-01-02'), referenceNumber: null, ordersCount: 1 }]);
+    });
+  });
+
+  describe('markBusinessOrdersPaid — item-level, single business', () => {
+    it('pays exactly the selected orders', async () => {
+      prisma.commission.findFirst.mockResolvedValue({ rate: new Prisma.Decimal('0.2') });
+      prisma.order.findMany.mockResolvedValue([{ id: 'o1', subtotal: new Prisma.Decimal('100'), createdAt: new Date('2026-01-01') }]);
+      prisma.payout.create.mockResolvedValue({ id: 'p1' });
+      prisma.order.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.markBusinessOrdersPaid('b1', ['o1'], 'REF-9');
+
+      expect(prisma.payout.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ businessId: 'b1', referenceNumber: 'REF-9' }) }),
+      );
+      expect(result).toEqual({ payoutId: 'p1', amount: 80, ordersCount: 1 });
+    });
+
+    it('refuses without a live commission rate rather than guessing one', async () => {
+      prisma.commission.findFirst.mockResolvedValue(null);
+      await expect(service.markBusinessOrdersPaid('b1', ['o1'])).rejects.toThrow('tasa de comisión vigente');
+    });
+  });
+
+  describe('updatePayoutReference', () => {
+    it('updates the reference number on an existing payout', async () => {
+      prisma.payout.findUnique.mockResolvedValue({ id: 'p1' });
+      prisma.payout.update.mockResolvedValue({ id: 'p1', referenceNumber: 'REF-2' });
+      const result = await service.updatePayoutReference('p1', 'REF-2');
+      expect(prisma.payout.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { referenceNumber: 'REF-2' } });
+      expect(result.referenceNumber).toBe('REF-2');
+    });
+
+    it('404s on an unknown payout', async () => {
+      prisma.payout.findUnique.mockResolvedValue(null);
+      await expect(service.updatePayoutReference('ghost', 'REF-2')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

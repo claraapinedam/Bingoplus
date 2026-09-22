@@ -2222,16 +2222,20 @@ enum PayoutStatus {
 // which is what makes double-paying or losing track of an owed amount structurally impossible
 // (no separate "already paid" flag to forget to check, no PENDING Payout that could be paid twice).
 model Payout {
-  id          String       @id @default(cuid())
-  payeeType   PayeeType
-  businessId  String?
-  riderId     String?
-  amount      Decimal      @db.Decimal(12, 2)
-  status      PayoutStatus @default(PENDING)
-  periodStart DateTime
-  periodEnd   DateTime
-  paidAt      DateTime?
-  createdAt   DateTime     @default(now())
+  id              String       @id @default(cuid())
+  payeeType       PayeeType
+  businessId      String?
+  riderId         String?
+  amount          Decimal      @db.Decimal(12, 2)
+  status          PayoutStatus @default(PENDING)
+  periodStart     DateTime
+  periodEnd       DateTime
+  paidAt          DateTime?
+  // Bank/transfer reference the admin records once the payment actually went out — often not known
+  // at the exact moment "Marcar como pagado" is clicked (the transfer may still be in flight), so
+  // this is editable after the fact from the Historial tab rather than required up front.
+  referenceNumber String?
+  createdAt       DateTime     @default(now())
 
   business      Business?      @relation(fields: [businessId], references: [id])
   rider         Rider?         @relation(fields: [riderId], references: [id])
