@@ -11,7 +11,8 @@ const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', cu
 interface DeliverySummary {
   id: string;
   status: string;
-  deliveryFee: string | number;
+  // The rider's own commission for this delivery — never the gross fare/tariff.
+  riderNetAmount: number;
   createdAt: string;
   pickupAddressSnapshot: { tradeName?: string };
   order: { orderNumber: string };
@@ -57,7 +58,7 @@ export default function HistoryPage() {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: 800, fontSize: 14 }}>{currencyFormatter.format(Number(d.deliveryFee))}</div>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>{currencyFormatter.format(Number(d.riderNetAmount))}</div>
                   <span
                     className="bingo-badge"
                     style={{ marginTop: 4, background: '#f2f4f7', color: DELIVERY_STATUS_COLORS[d.status] ?? '#54617a' }}

@@ -140,12 +140,52 @@ export class DeliveryService {
     return delivery;
   }
 
-  listForRider(riderId: string) {
-    return this.prisma.delivery.findMany({
+  /** §48: the Rider App must never render Delivery.deliveryFee directly (that's the gross
+   * fare/tariff the customer or business paid) — every rider-facing delivery response instead
+   * carries `riderNetAmount`, the rider's own commission for that delivery, computed here so the
+   * Home/Historial/detail (and accept-delivery) screens all agree with Ganancias' number. A
+   * DELIVERED delivery uses the authoritative RiderEarning row written by complete() below — never
+   * recomputed, so a later commission-config change can't retroactively change what a rider
+   * already earned. Anything not yet completed (an offer still awaiting Accept, or an active
+   * delivery in progress) has no RiderEarning row yet, so it's a live estimate off the same
+   * DeliveryFareConfigService.splitRiderEarning() complete() itself uses — one formula, never
+   * duplicated.
+   */
+  private async withRiderNetAmount<T extends { id: string; riderId: string | null; deliveryFee: Prisma.Decimal; status: DeliveryStatus }>(
+    deliveries: T[],
+  ): Promise<(T & { riderNetAmount: number })[]> {
+    if (deliveries.length === 0) return [];
+    const deliveredIds = deliveries.filter((d) => d.status === DeliveryStatus.DELIVERED).map((d) => d.id);
+    const earnings = deliveredIds.length
+      ? await this.prisma.riderEarning.findMany({ where: { deliveryId: { in: deliveredIds } } })
+      : [];
+    const earningByDeliveryId = new Map(earnings.map((e) => [e.deliveryId, e]));
+    return Promise.all(
+      deliveries.map(async (d) => {
+        const stored = earningByDeliveryId.get(d.id);
+        if (stored) return { ...d, riderNetAmount: Number(stored.netAmount) };
+        if (!d.riderId) return { ...d, riderNetAmount: 0 };
+        const { netAmount } = await this.fareConfig.splitRiderEarning(d.deliveryFee, d.riderId);
+        return { ...d, riderNetAmount: Number(netAmount) };
+      }),
+    );
+  }
+
+  async listForRider(riderId: string) {
+    const deliveries = await this.prisma.delivery.findMany({
       where: { riderId },
       include: DELIVERY_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
+    return this.withRiderNetAmount(deliveries);
+  }
+
+  /** Same ownership-checked lookup as getForRider (used internally by every action method below),
+   * but enriched with riderNetAmount for the Rider App's delivery detail / accept screen. */
+  async getForRiderDetail(riderId: string, deliveryId: string) {
+    const delivery = await this.getForRider(riderId, deliveryId);
+    const [withEarning] = await this.withRiderNetAmount([delivery]);
+    return withEarning;
   }
 
   /** RIDER_ASSIGNED -> RIDER_ACCEPTED -> GOING_TO_PICKUP: accepting already implies starting
@@ -261,13 +301,10 @@ export class DeliveryService {
     // change is expected to apply going forward, not retroactively re-litigate an already-quoted
     // fare's split. The commission percent specifically may instead come from this rider's own
     // live RiderCommissionOverride (a redeemed CommissionCoupon) — see
-    // DeliveryFareConfigService.getEffectiveCommissionPercent.
-    const fareConfig = await this.fareConfig.get();
-    const bingoCommissionPercent = await this.fareConfig.getEffectiveCommissionPercent(riderId);
+    // DeliveryFareConfigService.getEffectiveCommissionPercent. splitRiderEarning is the one place
+    // this math happens — withRiderNetAmount below reuses it for the same number pre-completion.
     const grossAmount = new Prisma.Decimal(delivery.deliveryFee);
-    const commissionAmount = grossAmount.mul(bingoCommissionPercent);
-    const taxWithheldAmount = grossAmount.minus(commissionAmount).mul(fareConfig.riderTaxWithholdingPercent);
-    const netAmount = grossAmount.minus(commissionAmount).minus(taxWithheldAmount);
+    const { commissionAmount, taxWithheldAmount, netAmount } = await this.fareConfig.splitRiderEarning(grossAmount, riderId);
 
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.delivery.updateMany({

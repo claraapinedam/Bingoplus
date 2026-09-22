@@ -41,7 +41,7 @@ export class RiderDeliveryController {
 
   @Get(':id')
   async getOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.delivery.getForRider(await this.riderIdFor(user.id), id);
+    return this.delivery.getForRiderDetail(await this.riderIdFor(user.id), id);
   }
 
   @Audit('delivery.accept', 'Delivery')

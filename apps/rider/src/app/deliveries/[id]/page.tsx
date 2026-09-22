@@ -53,7 +53,9 @@ interface DeliveryDetail {
   deliveryAddressSnapshot: AddressSnapshot;
   estimatedDistanceKm: number | null;
   estimatedDurationMinutes: number | null;
-  deliveryFee: string | number;
+  // The rider's own commission for this delivery — never the gross fare/tariff the customer or
+  // business paid. Shown at accept time too, not just after completion.
+  riderNetAmount: number;
   order: { id: string; orderNumber: string };
   route: { polyline: string } | null;
   rider: { vehicles: { type: string }[] } | null;
@@ -286,8 +288,10 @@ export default function DeliveryDetailPage() {
         )}
 
         <div className="bingo-card" style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 13, color: '#7f8ea3' }}>Tarifa de esta entrega</span>
-          <span style={{ fontWeight: 800 }}>{currencyFormatter.format(Number(delivery.deliveryFee))}</span>
+          <span style={{ fontSize: 13, color: '#7f8ea3' }}>
+            {delivery.status === 'RIDER_ASSIGNED' ? 'Ganarás por esta entrega' : 'Ganancia de esta entrega'}
+          </span>
+          <span style={{ fontWeight: 800 }}>{currencyFormatter.format(Number(delivery.riderNetAmount))}</span>
         </div>
 
         {error && <div className="bingo-error-banner" style={{ marginTop: 12 }}>{error}</div>}

@@ -20,7 +20,9 @@ interface RiderProfile {
 interface DeliverySummary {
   id: string;
   status: string;
-  deliveryFee: string | number;
+  // The rider's own commission for this delivery — never the gross fare/tariff. Do not read a
+  // `deliveryFee` field here even if the API response includes one: a rider must never see it.
+  riderNetAmount: number;
   createdAt: string;
   pickupAddressSnapshot: { tradeName?: string };
   order: { orderNumber: string };
@@ -120,7 +122,7 @@ export default function RiderHomePage() {
   const recentCompleted = deliveries.filter((d) => d.status === 'DELIVERED').slice(0, 3);
   const todayEarnings = deliveries
     .filter((d) => d.status === 'DELIVERED' && new Date(d.createdAt).toDateString() === new Date().toDateString())
-    .reduce((sum, d) => sum + Number(d.deliveryFee), 0);
+    .reduce((sum, d) => sum + Number(d.riderNetAmount), 0);
 
   return (
     <RiderShell>
@@ -219,7 +221,7 @@ export default function RiderHomePage() {
             {recentCompleted.map((d) => (
               <div key={d.id} className="bingo-card" style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: 13 }}>{d.pickupAddressSnapshot.tradeName ?? 'Negocio'}</span>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>{currencyFormatter.format(Number(d.deliveryFee))}</span>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{currencyFormatter.format(Number(d.riderNetAmount))}</span>
               </div>
             ))}
           </>

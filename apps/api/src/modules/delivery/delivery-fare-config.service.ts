@@ -1,6 +1,18 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SetDeliveryFareConfigDto } from './dto/set-delivery-fare-config.dto';
+
+/** The three-way split of a delivery's gross fare between what BINGO+ keeps (commission), what's
+ * withheld for the rider's tax, and what actually lands in the rider's pocket. See
+ * DeliveryFareConfigService.splitRiderEarning — the one place this math happens, so a rider-facing
+ * screen never shows the gross fare it was computed from (§48 — riders only ever see their own
+ * earning, never the tariff/fare a customer or business paid). */
+export interface RiderEarningSplit {
+  commissionAmount: Prisma.Decimal;
+  taxWithheldAmount: Prisma.Decimal;
+  netAmount: Prisma.Decimal;
+}
 
 export interface DeliveryFareConfigValues {
   minFareDay: number;
@@ -72,5 +84,20 @@ export class DeliveryFareConfigService {
     });
     if (override) return Number(override.bingoCommissionPercent);
     return (await this.get()).bingoCommissionPercent;
+  }
+
+  /** The single source of truth for turning a delivery's gross fare into what a specific rider
+   * actually earns from it — DeliveryService.complete() uses this to write the authoritative
+   * RiderEarning row, and rider-facing delivery responses (list/detail, and the accept-delivery
+   * screen before a RiderEarning even exists) use it to show a live estimate of the same number,
+   * so the commission math never has to be duplicated or drift between the two. */
+  async splitRiderEarning(grossAmount: Prisma.Decimal | number, riderId: string): Promise<RiderEarningSplit> {
+    const config = await this.get();
+    const bingoCommissionPercent = await this.getEffectiveCommissionPercent(riderId);
+    const gross = grossAmount instanceof Prisma.Decimal ? grossAmount : new Prisma.Decimal(grossAmount);
+    const commissionAmount = gross.mul(bingoCommissionPercent);
+    const taxWithheldAmount = gross.minus(commissionAmount).mul(config.riderTaxWithholdingPercent);
+    const netAmount = gross.minus(commissionAmount).minus(taxWithheldAmount);
+    return { commissionAmount, taxWithheldAmount, netAmount };
   }
 }
