@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import DashboardShell from '@/components/DashboardShell';
 
 const FAQS = [
@@ -10,6 +11,8 @@ const FAQS = [
 ];
 
 function HelpContent() {
+  const [showOptions, setShowOptions] = useState(false);
+
   return (
     <>
       <header className="dashboard-page-header">
@@ -22,9 +25,23 @@ function HelpContent() {
             <div style={{ fontSize: 13, color: '#54617a', marginTop: 6 }}>{f.a}</div>
           </div>
         ))}
+
         <div className="bingo-card" style={{ background: 'var(--bingo-navy)', color: 'white' }}>
-          <div style={{ fontWeight: 700 }}>¿No encontraste lo que buscabas?</div>
-          <div style={{ fontSize: 13, opacity: 0.85, marginTop: 4 }}>Escríbenos a soporte@bingoplus.com</div>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>¿Necesitas ser atendido por un agente?</div>
+          {!showOptions ? (
+            <button className="bingo-button" style={{ marginTop: 12 }} onClick={() => setShowOptions(true)}>
+              Sí, necesito ayuda
+            </button>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+              <a href="/help/case" className="bingo-button secondary" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+                Soporte con la aplicación
+              </a>
+              <a href="/help/order" className="bingo-button secondary" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+                Soporte con un pedido
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </>

@@ -224,6 +224,11 @@ button {
 .badge-refunded { background: #eef1f5; color: #7f8ea3; }
 .badge-partially_refunded { background: #fff3e0; color: var(--bingo-warning); }
 
+/* Support module (Soporte técnico / Soporte en pedidos) statuses */
+.badge-received { background: #fff3e0; color: var(--bingo-warning); }
+.badge-in_progress { background: #e6f7f1; color: var(--bingo-teal); }
+.badge-closed { background: #eef1f5; color: #7f8ea3; }
+
 .bingo-button {
   border: none;
   border-radius: 999px;

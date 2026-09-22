@@ -78,6 +78,11 @@ model User {
   couponRedemptions          CouponRedemption[]      @relation("CouponRedeemer")
   submittedPetFriendlyPlaces PetFriendlyPlace[]      @relation("PetFriendlyPlaceSubmitter")
   reviewedPetFriendlyPlaces  PetFriendlyPlace[]      @relation("PetFriendlyPlaceReviewer")
+  supportCases               SupportCase[]           @relation("SupportCaseSubmitter")
+  supportCaseResponses       SupportCaseResponse[]   @relation("SupportCaseResponseAuthor")
+  supportChats               SupportChat[]           @relation("SupportChatSubmitter")
+  assignedSupportChats       SupportChat[]           @relation("SupportChatAssignedAdmin")
+  supportChatMessages        SupportChatMessage[]    @relation("SupportChatMessageSender")
 
   @@index([email])
   @@index([phone])
@@ -333,6 +338,8 @@ model Business {
   promotions                  Promotion[]
   availabilityBlocks          AvailabilityBlock[]
   commissionCouponRedemptions CommissionCouponRedemption[]
+  supportCases                SupportCase[]
+  supportChats                SupportChat[]
 
   @@index([ownerId])
   @@index([status])
@@ -2307,4 +2314,135 @@ model AnalyticsEvent {
 
   @@index([eventName, entityId, createdAt])
   @@index([entityType, entityId])
+}
+
+// ───────────────────────────── Support (Ayuda) ─────────────────────────────
+//
+// Two independent flows behind the same "Ayuda" entry point in Customer/Business/Rider:
+//   1. SupportCase — "Soporte con la aplicación": a general ticket (code + thread of admin
+//      responses), tracked through RECEIVED → IN_PROGRESS → CLOSED.
+//   2. SupportChat — "Soporte con un pedido": a short-poll chat tied to one of the submitter's
+//      own Order/Delivery/Booking (there is no single unified "pedido" table in this schema, so
+//      `relatedType`/`relatedId` stands in for a generic FK rather than three nullable ones), with
+//      an admin agent joining live and a 1-5 rating captured when it's closed.
+//
+// `submitterType`/`submitterUserId` (+ `businessId` when the submitter is a Business) is the same
+// shape used to scope every other "me/..." surface — ownership guards below check submitterUserId
+// (and, for BUSINESS, membership via BusinessUser) so a Customer/Business/Rider only ever sees
+// their own cases/chats, never anyone else's.
+
+enum SupportSubmitterType {
+  CUSTOMER
+  BUSINESS
+  RIDER
+}
+
+enum SupportCaseStatus {
+  RECEIVED
+  IN_PROGRESS
+  CLOSED
+}
+
+model SupportCase {
+  id              String               @id @default(cuid())
+  // Human-facing ticket number, e.g. "SUP-000123" — see support-code.util.ts. Never the PK.
+  code            String               @unique
+  submitterType   SupportSubmitterType
+  submitterUserId String
+  // Only set when submitterType = BUSINESS — which Business this case was raised from, so
+  // BusinessOwnershipGuard-style checks can scope it the same way every other business route does.
+  businessId      String?
+  subject         String
+  description     String
+  evidenceUrl     String?
+  status          SupportCaseStatus    @default(RECEIVED)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  closedAt        DateTime?
+
+  submitter User                  @relation("SupportCaseSubmitter", fields: [submitterUserId], references: [id])
+  business  Business?             @relation(fields: [businessId], references: [id])
+  responses SupportCaseResponse[]
+
+  @@index([submitterUserId])
+  @@index([businessId])
+  @@index([status])
+}
+
+// Admin-authored replies on a SupportCase's thread (§spec: "admin can respond ... can also upload
+// evidence/an image back"). The submitter's own opening message is SupportCase.description itself
+// — there is no submitter-side follow-up message in this scope, matching the brief exactly.
+model SupportCaseResponse {
+  id           String   @id @default(cuid())
+  caseId       String
+  authorUserId String
+  message      String
+  evidenceUrl  String?
+  createdAt    DateTime @default(now())
+
+  case   SupportCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author User        @relation("SupportCaseResponseAuthor", fields: [authorUserId], references: [id])
+
+  @@index([caseId])
+}
+
+enum SupportChatRelatedType {
+  ORDER
+  DELIVERY
+  BOOKING
+}
+
+enum SupportChatStatus {
+  OPEN
+  CLOSED
+}
+
+model SupportChat {
+  id              String                 @id @default(cuid())
+  submitterType   SupportSubmitterType
+  submitterUserId String
+  businessId      String?
+  relatedType     SupportChatRelatedType
+  relatedId       String
+  status          SupportChatStatus      @default(OPEN)
+  // Set once any admin opens the chat (first-to-open "picks it up" — simplest reasonable
+  // assignment given there's no separate admin-agent queueing system in scope here).
+  assignedAdminId String?
+  ratingScore     Int?
+  ratingComment   String?
+  createdAt       DateTime               @default(now())
+  closedAt        DateTime?
+
+  submitter     User                 @relation("SupportChatSubmitter", fields: [submitterUserId], references: [id])
+  business      Business?            @relation(fields: [businessId], references: [id])
+  assignedAdmin User?                @relation("SupportChatAssignedAdmin", fields: [assignedAdminId], references: [id])
+  messages      SupportChatMessage[]
+
+  @@index([submitterUserId])
+  @@index([businessId])
+  @@index([status])
+  @@index([relatedType, relatedId])
+}
+
+enum SupportChatSenderType {
+  CUSTOMER
+  BUSINESS
+  RIDER
+  ADMIN
+}
+
+model SupportChatMessage {
+  id           String                @id @default(cuid())
+  chatId       String
+  senderType   SupportChatSenderType
+  senderUserId String
+  text         String
+  createdAt    DateTime              @default(now())
+  readAt       DateTime?
+
+  chat   SupportChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender User        @relation("SupportChatMessageSender", fields: [senderUserId], references: [id])
+
+  @@index([chatId])
+  @@index([chatId, createdAt])
 }

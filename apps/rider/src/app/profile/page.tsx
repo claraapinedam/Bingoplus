@@ -257,6 +257,12 @@ export default function ProfilePage() {
           </button>
         )}
 
+        <h2 className="bingo-section-title">Ayuda</h2>
+        <a href="/help" className="bingo-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>❓ Ayuda y soporte</span>
+          <span style={{ color: '#9aa5b1' }}>→</span>
+        </a>
+
         <button className="bingo-button" style={{ marginTop: 24, background: 'var(--bingo-error)' }} onClick={logout}>
           Cerrar sesión
         </button>

@@ -42,6 +42,15 @@ const COLLAPSIBLE_MENUS = [
     ],
   },
   {
+    key: 'support',
+    label: 'Soporte',
+    matchPrefix: '/support',
+    items: [
+      { href: '/support/cases', label: 'Soporte técnico' },
+      { href: '/support/chats', label: 'Soporte en pedidos' },
+    ],
+  },
+  {
     key: 'settings',
     label: 'Configuración',
     matchPrefix: '/settings',
