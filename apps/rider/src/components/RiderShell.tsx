@@ -1,8 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { apiFetch, decodeRoles, getAccessToken } from '@/lib/api';
+import { apiFetch, decodeRoles, getAccessToken, watchUserLocation } from '@/lib/api';
+
+// Safely under RiderDispatchConfig.locationStaleThresholdSeconds (120s default) — a rider sitting
+// idle as "Disponible" must keep refreshing its location or it silently drops out of every
+// dispatch candidate search (Rider.currentLocation IS NOT NULL + staleness filter in
+// DispatchService.findEligibleRiders), even though the toggle itself only posts one snapshot.
+const LOCATION_HEARTBEAT_MS = 45000;
+const AVAILABILITY_POLL_MS = 30000;
 
 const NAV_ITEMS = [
   { href: '/', label: 'Inicio', icon: '🏠' },
@@ -24,6 +31,8 @@ export default function RiderShell({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [availabilityStatus, setAvailabilityStatus] = useState<string | null>(null);
+  const lastSentRef = useRef(0);
 
   useEffect(() => {
     const token = getAccessToken();
@@ -49,6 +58,36 @@ export default function RiderShell({ children }: { children: React.ReactNode }) 
       })
       .catch(() => undefined);
   }, [ready, pathname, router]);
+
+  // Tracks availabilityStatus independently of whatever page is mounted (the toggle itself lives on
+  // Home) so the heartbeat below keeps running even if the rider navigates to Historial/Perfil/etc.
+  // while "Disponible" — picks up a status change from another tab/device within one poll interval.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const poll = () => {
+      apiFetch<{ availabilityStatus: string }>('/rider/profile')
+        .then((p) => !cancelled && setAvailabilityStatus(p.availabilityStatus))
+        .catch(() => undefined);
+    };
+    poll();
+    const interval = setInterval(poll, AVAILABILITY_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [ready]);
+
+  useEffect(() => {
+    if (availabilityStatus !== 'AVAILABLE') return;
+    const stopWatch = watchUserLocation((coords) => {
+      const now = Date.now();
+      if (now - lastSentRef.current < LOCATION_HEARTBEAT_MS) return;
+      lastSentRef.current = now;
+      apiFetch('/rider/location', { method: 'POST', body: JSON.stringify(coords) }).catch(() => undefined);
+    });
+    return stopWatch;
+  }, [availabilityStatus]);
 
   if (!ready) return null;
 

@@ -14,6 +14,7 @@ import { DispatchService } from './dispatch.service';
 import { DispatchOrchestratorService } from './dispatch-orchestrator.service';
 import { OfferTimeoutSweeper } from './offer-timeout.sweeper';
 import { SearchingRiderRetrySweeper } from './searching-rider-retry.sweeper';
+import { OrphanedOrderRetrySweeper } from './orphaned-order-retry.sweeper';
 import { DeliveryReassignmentService } from './delivery-reassignment.service';
 import { DeliveryCancellationService } from './delivery-cancellation.service';
 import { DeliveryProofService } from './delivery-proof.service';
@@ -41,6 +42,7 @@ import { BusinessDeliveryController } from './business-delivery.controller';
     DispatchOrchestratorService,
     OfferTimeoutSweeper,
     SearchingRiderRetrySweeper,
+    OrphanedOrderRetrySweeper,
     DeliveryReassignmentService,
     DeliveryCancellationService,
     DeliveryProofService,
