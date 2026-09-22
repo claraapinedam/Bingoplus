@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import RiderShell from '@/components/RiderShell';
+import ImageUploadField from '@/components/ImageUploadField';
 import { apiFetch, ApiError, clearTokens } from '@/lib/api';
 import { disconnectSocket } from '@/lib/socket';
 
@@ -113,6 +114,7 @@ export default function ProfilePage() {
 
   async function addDocument(e: FormEvent) {
     e.preventDefault();
+    if (!fileUrl) return;
     setSaving(true);
     setError(null);
     try {
@@ -232,18 +234,19 @@ export default function ProfilePage() {
                 </option>
               ))}
             </select>
-            <input
-              className="bingo-input"
-              placeholder="URL del documento"
-              required
-              value={fileUrl}
-              onChange={(e) => setFileUrl(e.target.value)}
-            />
+            <ImageUploadField label="Foto del documento" value={fileUrl} onChange={setFileUrl} />
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="bingo-button" type="submit" disabled={saving}>
+              <button className="bingo-button" type="submit" disabled={saving || !fileUrl}>
                 {saving ? 'Guardando…' : 'Guardar'}
               </button>
-              <button className="bingo-button secondary" type="button" onClick={() => setShowAddDocument(false)}>
+              <button
+                className="bingo-button secondary"
+                type="button"
+                onClick={() => {
+                  setShowAddDocument(false);
+                  setFileUrl('');
+                }}
+              >
                 Cancelar
               </button>
             </div>
