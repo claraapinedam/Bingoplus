@@ -16,15 +16,11 @@ import ReviewsList from '@/components/ReviewsList';
 import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
-type CapabilityType =
-  | 'SELLS_PRODUCTS'
-  | 'DIRECTORY_LISTING'
-  | 'SERVICES'
-  | 'BOOKINGS'
-  | 'PICKUP'
-  | 'DELIVERY'
-  | 'COUPONS'
-  | 'HOME_SERVICE';
+// HOME_SERVICE deliberately excluded — it's derived automatically by ServicesService the first
+// time a business's service is set to "a domicilio"/"ambas" (see apps/api's
+// SERVICE_TYPE_CATEGORY_SLUGS/resolveLocationType), never a manual toggle. Showing an editable
+// button for it here would let Admin fight that auto-derivation instead of just reflecting it.
+type CapabilityType = 'SELLS_PRODUCTS' | 'DIRECTORY_LISTING' | 'SERVICES' | 'BOOKINGS' | 'PICKUP' | 'DELIVERY' | 'COUPONS';
 
 const CAPABILITY_LABELS: Record<CapabilityType, string> = {
   SELLS_PRODUCTS: 'Vende productos (Marketplace)',
@@ -34,7 +30,6 @@ const CAPABILITY_LABELS: Record<CapabilityType, string> = {
   PICKUP: 'Retiro en tienda',
   DELIVERY: 'Delivery',
   COUPONS: 'Cupones de negocio',
-  HOME_SERVICE: 'Servicio a domicilio',
 };
 
 const CAPABILITY_ORDER: CapabilityType[] = [
@@ -45,7 +40,6 @@ const CAPABILITY_ORDER: CapabilityType[] = [
   'PICKUP',
   'DELIVERY',
   'COUPONS',
-  'HOME_SERVICE',
 ];
 
 interface Business {
