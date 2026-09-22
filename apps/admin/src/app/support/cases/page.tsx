@@ -48,7 +48,7 @@ export default function SupportCasesPage() {
     <AdminShell>
       <h1 className="bingo-page-title" style={{ marginBottom: 24 }}>Soporte técnico</h1>
       <p className="bingo-page-subtitle" style={{ marginTop: -16, marginBottom: 16 }}>
-        Casos de "Soporte con la aplicación" enviados desde Cliente, Negocio y Rider.
+        Casos de &quot;Soporte con la aplicación&quot; enviados desde Cliente, Negocio y Rider.
       </p>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>

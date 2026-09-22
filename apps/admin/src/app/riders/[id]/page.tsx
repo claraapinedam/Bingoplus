@@ -201,7 +201,7 @@ export default function AdminRiderDetailPage() {
             </button>
             {!allDocumentsVerified && (
               <span style={{ fontSize: 12, color: 'var(--bingo-error)' }}>
-                Faltan documentos por verificar — revisa la sección "Documentos" abajo.
+                Faltan documentos por verificar — revisa la sección &quot;Documentos&quot; abajo.
               </span>
             )}
           </>

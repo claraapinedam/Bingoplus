@@ -53,7 +53,7 @@ export default function SupportChatsPage() {
     <AdminShell>
       <h1 className="bingo-page-title" style={{ marginBottom: 4 }}>Soporte en pedidos</h1>
       <p className="bingo-page-subtitle" style={{ marginTop: 0, marginBottom: 16 }}>
-        Chats en vivo iniciados desde "Soporte con un pedido", separados por quién los envió.
+        Chats en vivo iniciados desde &quot;Soporte con un pedido&quot;, separados por quién los envió.
       </p>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
