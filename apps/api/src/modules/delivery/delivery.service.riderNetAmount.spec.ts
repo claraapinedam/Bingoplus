@@ -16,6 +16,7 @@ describe('DeliveryService riderNetAmount enrichment', () => {
   let service: DeliveryService;
   let prisma: any;
   let fareConfig: any;
+  let dispatch: any;
 
   const unused = {} as any;
 
@@ -23,13 +24,15 @@ describe('DeliveryService riderNetAmount enrichment', () => {
     prisma = {
       delivery: { findMany: jest.fn(), findUnique: jest.fn() },
       riderEarning: { findMany: jest.fn().mockResolvedValue([]) },
+      deliveryAssignmentHistory: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     fareConfig = { splitRiderEarning: jest.fn() };
+    dispatch = { getConfig: jest.fn().mockResolvedValue({ assignmentTimeoutSeconds: 30 }) };
     service = new DeliveryService(
       prisma as unknown as PrismaService,
       unused,
       unused,
-      unused,
+      dispatch,
       unused,
       unused,
       unused,

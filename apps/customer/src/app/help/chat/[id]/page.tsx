@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
 import BackButton from '@/components/BackButton';
 import RatingStars from '@/components/RatingStars';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, ApiError, uploadFile } from '@/lib/api';
 
 // Short-polling, not a WebSocket — see SupportChatsService's header comment in the API for why
 // (this codebase's one real-time channel, DeliveryGateway, is single-purpose for live tracking
@@ -16,7 +16,8 @@ const POLL_INTERVAL_MS = 4000;
 interface ChatMessage {
   id: string;
   senderType: 'CUSTOMER' | 'BUSINESS' | 'RIDER' | 'ADMIN';
-  text: string;
+  text: string | null;
+  imageUrl: string | null;
   createdAt: string;
 }
 
@@ -33,12 +34,14 @@ export default function SupportChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [ratingScore, setRatingScore] = useState(0);
   const [ratingComment, setRatingComment] = useState('');
   const [rateBusy, setRateBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cursorRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const poll = useCallback(async () => {
     try {
@@ -81,6 +84,22 @@ export default function SupportChatPage() {
       setError(err instanceof ApiError ? err.message : 'No se pudo enviar el mensaje.');
     } finally {
       setSending(false);
+    }
+  }
+
+  async function attachImage(file: File | undefined) {
+    if (!file) return;
+    setAttaching(true);
+    setError(null);
+    try {
+      const { url } = await uploadFile(file);
+      await apiFetch(`/me/support/chats/${params.id}/messages`, { method: 'POST', body: JSON.stringify({ imageUrl: url }) });
+      await poll();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo enviar la imagen.');
+    } finally {
+      setAttaching(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
 
@@ -150,6 +169,14 @@ export default function SupportChatPage() {
                 fontSize: 13,
               }}
             >
+              {m.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={m.imageUrl}
+                  alt="Imagen adjunta"
+                  style={{ maxWidth: '100%', borderRadius: 8, display: 'block', marginBottom: m.text ? 6 : 0 }}
+                />
+              )}
               {m.text}
             </div>
           ))}
@@ -161,6 +188,24 @@ export default function SupportChatPage() {
         {chat.status === 'OPEN' ? (
           <>
             <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => attachImage(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                className="bingo-button secondary"
+                style={{ width: 'auto', padding: '0 12px' }}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={attaching}
+                aria-label="Adjuntar imagen"
+                title="Adjuntar imagen"
+              >
+                {attaching ? '…' : '📎'}
+              </button>
               <input
                 className="bingo-input"
                 value={text}

@@ -17,6 +17,7 @@ function CaseFormContent() {
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [evidenceUrl, setEvidenceUrl] = useState('');
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<SupportCase | null>(null);
@@ -97,13 +98,23 @@ function CaseFormContent() {
         />
 
         <div style={{ marginTop: 14 }}>
-          <ImageUploadField label="Evidencia (opcional)" value={evidenceUrl} onChange={setEvidenceUrl} />
+          <ImageUploadField
+            label="Evidencia (opcional)"
+            value={evidenceUrl}
+            onChange={setEvidenceUrl}
+            onUploadingChange={setUploadingEvidence}
+          />
         </div>
 
         {error && <div className="bingo-error-banner" style={{ marginTop: 14 }}>{error}</div>}
 
-        <button className="bingo-button" style={{ marginTop: 18, width: 'auto', padding: '0 20px' }} disabled={busy} type="submit">
-          {busy ? 'Enviando…' : 'Enviar caso'}
+        <button
+          className="bingo-button"
+          style={{ marginTop: 18, width: 'auto', padding: '0 20px' }}
+          disabled={busy || uploadingEvidence}
+          type="submit"
+        >
+          {uploadingEvidence ? 'Esperando la imagen…' : busy ? 'Enviando…' : 'Enviar caso'}
         </button>
       </form>
     </>

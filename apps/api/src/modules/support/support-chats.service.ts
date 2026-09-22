@@ -99,14 +99,15 @@ export class SupportChatsService {
     });
   }
 
-  async sendMine(userId: string, chatId: string, text: string) {
+  async sendMine(userId: string, chatId: string, text: string | undefined, imageUrl: string | undefined) {
+    if (!text && !imageUrl) throw new BadRequestException('A message needs text, an image, or both.');
     const chat = await this.findMineOrThrow(userId, chatId);
     if (chat.status === SupportChatStatus.CLOSED) throw new BadRequestException('This chat is closed');
     // SupportSubmitterType/SupportChatSenderType share the CUSTOMER/BUSINESS/RIDER string values
     // by design (ADMIN is the one sender type with no submitter equivalent) — the submitter's own
     // messages are always sent as whichever type they opened the chat as.
     return this.prisma.supportChatMessage.create({
-      data: { chatId, senderType: chat.submitterType as unknown as SupportChatSenderType, senderUserId: userId, text },
+      data: { chatId, senderType: chat.submitterType as unknown as SupportChatSenderType, senderUserId: userId, text, imageUrl },
     });
   }
 
@@ -161,12 +162,13 @@ export class SupportChatsService {
     return chat;
   }
 
-  async sendAdmin(adminUserId: string, chatId: string, text: string) {
+  async sendAdmin(adminUserId: string, chatId: string, text: string | undefined, imageUrl: string | undefined) {
+    if (!text && !imageUrl) throw new BadRequestException('A message needs text, an image, or both.');
     const chat = await this.prisma.supportChat.findUnique({ where: { id: chatId } });
     if (!chat) throw new NotFoundException('Support chat not found');
     if (chat.status === SupportChatStatus.CLOSED) throw new BadRequestException('This chat is closed');
     return this.prisma.supportChatMessage.create({
-      data: { chatId, senderType: SupportChatSenderType.ADMIN, senderUserId: adminUserId, text },
+      data: { chatId, senderType: SupportChatSenderType.ADMIN, senderUserId: adminUserId, text, imageUrl },
     });
   }
 

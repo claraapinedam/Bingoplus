@@ -9,10 +9,15 @@ export default function ImageUploadField({
   label,
   value,
   onChange,
+  onUploadingChange,
 }: {
   label: string;
   value: string;
   onChange: (url: string) => void;
+  /** Fires true when a file starts uploading and false when it settles — lets the parent form
+   * disable its own submit button so a click during "Subiendo…" can't submit before `onChange`
+   * ever fires with the real URL (the form would otherwise send the old/empty value). */
+  onUploadingChange?: (uploading: boolean) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +26,7 @@ export default function ImageUploadField({
   async function handleFile(file: File | undefined) {
     if (!file) return;
     setBusy(true);
+    onUploadingChange?.(true);
     setError(null);
     try {
       const { url } = await uploadFile(file);
@@ -29,6 +35,7 @@ export default function ImageUploadField({
       setError('No se pudo subir la imagen.');
     } finally {
       setBusy(false);
+      onUploadingChange?.(false);
       if (inputRef.current) inputRef.current.value = '';
     }
   }

@@ -37,7 +37,7 @@ export class SupportChatsController {
 
   @Post(':id/messages')
   async sendMessage(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: SendChatMessageDto) {
-    return this.chats.sendMine(user.id, id, dto.text);
+    return this.chats.sendMine(user.id, id, dto.text, dto.imageUrl);
   }
 
   @Post(':id/close')

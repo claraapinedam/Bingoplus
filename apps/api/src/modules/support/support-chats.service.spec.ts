@@ -75,20 +75,55 @@ describe('SupportChatsService', () => {
     it('tags the message with the chat\'s own submitterType', async () => {
       prisma.supportChat.findUnique.mockResolvedValue({ id: 'chat1', submitterUserId: 'u1', status: SupportChatStatus.OPEN, submitterType: SupportSubmitterType.CUSTOMER });
       prisma.supportChatMessage.create.mockResolvedValue({ id: 'm1' });
-      await service.sendMine('u1', 'chat1', 'Hola, necesito ayuda');
+      await service.sendMine('u1', 'chat1', 'Hola, necesito ayuda', undefined);
       expect(prisma.supportChatMessage.create).toHaveBeenCalledWith({
-        data: { chatId: 'chat1', senderType: SupportChatSenderType.CUSTOMER, senderUserId: 'u1', text: 'Hola, necesito ayuda' },
+        data: { chatId: 'chat1', senderType: SupportChatSenderType.CUSTOMER, senderUserId: 'u1', text: 'Hola, necesito ayuda', imageUrl: undefined },
       });
+    });
+
+    it('accepts an image-only message with no text', async () => {
+      prisma.supportChat.findUnique.mockResolvedValue({ id: 'chat1', submitterUserId: 'u1', status: SupportChatStatus.OPEN, submitterType: SupportSubmitterType.CUSTOMER });
+      prisma.supportChatMessage.create.mockResolvedValue({ id: 'm1' });
+      await service.sendMine('u1', 'chat1', undefined, 'https://example.com/photo.jpg');
+      expect(prisma.supportChatMessage.create).toHaveBeenCalledWith({
+        data: { chatId: 'chat1', senderType: SupportChatSenderType.CUSTOMER, senderUserId: 'u1', text: undefined, imageUrl: 'https://example.com/photo.jpg' },
+      });
+    });
+
+    it('rejects a message with neither text nor an image', async () => {
+      await expect(service.sendMine('u1', 'chat1', undefined, undefined)).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.supportChat.findUnique).not.toHaveBeenCalled();
     });
 
     it('refuses to send into a closed chat', async () => {
       prisma.supportChat.findUnique.mockResolvedValue({ id: 'chat1', submitterUserId: 'u1', status: SupportChatStatus.CLOSED, submitterType: SupportSubmitterType.CUSTOMER });
-      await expect(service.sendMine('u1', 'chat1', 'hola')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.sendMine('u1', 'chat1', 'hola', undefined)).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('never leaks another user\'s chat', async () => {
       prisma.supportChat.findUnique.mockResolvedValue({ id: 'chat1', submitterUserId: 'other-user', status: SupportChatStatus.OPEN });
-      await expect(service.sendMine('u1', 'chat1', 'hola')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.sendMine('u1', 'chat1', 'hola', undefined)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('sendAdmin', () => {
+    it('tags the message as ADMIN and accepts an image', async () => {
+      prisma.supportChat.findUnique.mockResolvedValue({ id: 'chat1', status: SupportChatStatus.OPEN });
+      prisma.supportChatMessage.create.mockResolvedValue({ id: 'm1' });
+      await service.sendAdmin('admin1', 'chat1', 'Ya lo resolvimos', 'https://example.com/proof.jpg');
+      expect(prisma.supportChatMessage.create).toHaveBeenCalledWith({
+        data: { chatId: 'chat1', senderType: SupportChatSenderType.ADMIN, senderUserId: 'admin1', text: 'Ya lo resolvimos', imageUrl: 'https://example.com/proof.jpg' },
+      });
+    });
+
+    it('rejects a message with neither text nor an image', async () => {
+      await expect(service.sendAdmin('admin1', 'chat1', undefined, undefined)).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.supportChat.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('refuses to send into a closed chat', async () => {
+      prisma.supportChat.findUnique.mockResolvedValue({ id: 'chat1', status: SupportChatStatus.CLOSED });
+      await expect(service.sendAdmin('admin1', 'chat1', 'hola', undefined)).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 

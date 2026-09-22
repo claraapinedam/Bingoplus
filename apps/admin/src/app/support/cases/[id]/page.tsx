@@ -36,6 +36,7 @@ export default function SupportCaseDetailPage() {
   const [supportCase, setSupportCase] = useState<SupportCaseDetail | null | undefined>(undefined);
   const [message, setMessage] = useState('');
   const [evidenceUrl, setEvidenceUrl] = useState('');
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -161,10 +162,20 @@ export default function SupportCaseDetailPage() {
           required
         />
         <div style={{ marginTop: 10 }}>
-          <ImageUploadField label="Evidencia (opcional)" value={evidenceUrl} onChange={setEvidenceUrl} />
+          <ImageUploadField
+            label="Evidencia (opcional)"
+            value={evidenceUrl}
+            onChange={setEvidenceUrl}
+            onUploadingChange={setUploadingEvidence}
+          />
         </div>
-        <button className="bingo-button" style={{ marginTop: 12, width: 'auto', padding: '0 20px' }} disabled={sending} type="submit">
-          {sending ? 'Enviando…' : 'Enviar respuesta'}
+        <button
+          className="bingo-button"
+          style={{ marginTop: 12, width: 'auto', padding: '0 20px' }}
+          disabled={sending || uploadingEvidence}
+          type="submit"
+        >
+          {uploadingEvidence ? 'Esperando la imagen…' : sending ? 'Enviando…' : 'Enviar respuesta'}
         </button>
       </form>
     </AdminShell>

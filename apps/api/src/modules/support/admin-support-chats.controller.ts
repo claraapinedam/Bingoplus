@@ -53,7 +53,7 @@ export class AdminSupportChatsController {
 
   @Post(':id/messages')
   sendMessage(@CurrentUser() admin: AuthenticatedUser, @Param('id') id: string, @Body() dto: SendChatMessageDto) {
-    return this.chats.sendAdmin(admin.id, id, dto.text);
+    return this.chats.sendAdmin(admin.id, id, dto.text, dto.imageUrl);
   }
 
   @Post(':id/close')

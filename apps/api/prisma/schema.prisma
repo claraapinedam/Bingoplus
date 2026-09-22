@@ -2463,7 +2463,10 @@ model SupportChatMessage {
   chatId       String
   senderType   SupportChatSenderType
   senderUserId String
-  text         String
+  // Nullable, not empty-string — a message is either text, an image, or both, never neither (see
+  // SupportChatsService's send methods, which reject a message with both fields blank).
+  text         String?
+  imageUrl     String?
   createdAt    DateTime              @default(now())
   readAt       DateTime?
 

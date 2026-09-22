@@ -3,14 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import AdminShell from '@/components/AdminShell';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, ApiError, uploadFile } from '@/lib/api';
 
 const POLL_INTERVAL_MS = 4000;
 
 interface ChatMessage {
   id: string;
   senderType: 'CUSTOMER' | 'BUSINESS' | 'RIDER' | 'ADMIN';
-  text: string;
+  text: string | null;
+  imageUrl: string | null;
   createdAt: string;
 }
 
@@ -34,9 +35,11 @@ export default function AdminSupportChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cursorRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadChat = useCallback(() => {
     apiFetch<SupportChat>(`/admin/support/chats/${params.id}`).then(setChat).catch(() => setChat(null));
@@ -87,6 +90,22 @@ export default function AdminSupportChatPage() {
       setError(err instanceof ApiError ? err.message : 'No se pudo enviar el mensaje.');
     } finally {
       setSending(false);
+    }
+  }
+
+  async function attachImage(file: File | undefined) {
+    if (!file) return;
+    setAttaching(true);
+    setError(null);
+    try {
+      const { url } = await uploadFile(file);
+      await apiFetch(`/admin/support/chats/${params.id}/messages`, { method: 'POST', body: JSON.stringify({ imageUrl: url }) });
+      await poll();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo enviar la imagen.');
+    } finally {
+      setAttaching(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
 
@@ -142,6 +161,14 @@ export default function AdminSupportChatPage() {
               fontSize: 13,
             }}
           >
+            {m.imageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={m.imageUrl}
+                alt="Imagen adjunta"
+                style={{ maxWidth: '100%', borderRadius: 8, display: 'block', marginBottom: m.text ? 6 : 0 }}
+              />
+            )}
             {m.text}
           </div>
         ))}
@@ -150,6 +177,24 @@ export default function AdminSupportChatPage() {
 
       {chat.status === 'OPEN' ? (
         <div style={{ maxWidth: 640, display: 'flex', gap: 8 }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={(e) => attachImage(e.target.files?.[0])}
+          />
+          <button
+            type="button"
+            className="bingo-button secondary"
+            style={{ width: 'auto', padding: '0 12px' }}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={attaching}
+            aria-label="Adjuntar imagen"
+            title="Adjuntar imagen"
+          >
+            {attaching ? '…' : '📎'}
+          </button>
           <input
             className="bingo-input"
             value={text}
