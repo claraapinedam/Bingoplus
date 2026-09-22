@@ -41,6 +41,9 @@ function CaseFormContent() {
   if (created) {
     return (
       <>
+        <button className="bingo-button secondary small" style={{ marginBottom: 16, width: 'auto' }} onClick={() => router.push('/help')}>
+          ← Ayuda
+        </button>
         <header className="dashboard-page-header">
           <div className="dashboard-page-title">Caso enviado</div>
         </header>
@@ -60,6 +63,9 @@ function CaseFormContent() {
 
   return (
     <>
+      <button className="bingo-button secondary small" style={{ marginBottom: 16, width: 'auto' }} onClick={() => router.push('/help')}>
+        ← Ayuda
+      </button>
       <header className="dashboard-page-header">
         <div className="dashboard-page-title">Soporte con la aplicación</div>
       </header>

@@ -120,14 +120,31 @@ function ChatContent() {
   }
 
   if (chat === undefined) {
-    return <p style={{ color: '#7f8ea3', fontSize: 13 }}>Cargando…</p>;
+    return (
+      <>
+        <button className="bingo-button secondary small" style={{ marginBottom: 16, width: 'auto' }} onClick={() => router.push('/help')}>
+          ← Ayuda
+        </button>
+        <p style={{ color: '#7f8ea3', fontSize: 13 }}>Cargando…</p>
+      </>
+    );
   }
   if (!chat) {
-    return <div className="bingo-error-banner">No encontramos este chat.</div>;
+    return (
+      <>
+        <button className="bingo-button secondary small" style={{ marginBottom: 16, width: 'auto' }} onClick={() => router.push('/help')}>
+          ← Ayuda
+        </button>
+        <div className="bingo-error-banner">No encontramos este chat.</div>
+      </>
+    );
   }
 
   return (
     <>
+      <button className="bingo-button secondary small" style={{ marginBottom: 16, width: 'auto' }} onClick={() => router.push('/help')}>
+        ← Ayuda
+      </button>
       <header className="dashboard-page-header">
         <div className="dashboard-page-title">Chat de soporte</div>
       </header>
@@ -199,13 +216,6 @@ function ChatContent() {
             )}
           </div>
         )}
-
-        <button
-          onClick={() => router.push('/help')}
-          style={{ display: 'block', marginTop: 16, background: 'none', border: 'none', color: 'var(--bingo-teal)', fontWeight: 700, fontSize: 13, cursor: 'pointer', padding: 0 }}
-        >
-          ← Volver a Ayuda
-        </button>
       </div>
     </>
   );

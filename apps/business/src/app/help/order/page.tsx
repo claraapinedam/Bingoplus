@@ -45,6 +45,9 @@ function OrderPickerContent() {
 
   return (
     <>
+      <button className="bingo-button secondary small" style={{ marginBottom: 16, width: 'auto' }} onClick={() => router.push('/help')}>
+        ← Ayuda
+      </button>
       <header className="dashboard-page-header">
         <div className="dashboard-page-title">Soporte con un pedido</div>
       </header>

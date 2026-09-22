@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import RiderShell from '@/components/RiderShell';
 
 // Same "keep it simple" hardcoded FAQ as Customer/Business, Rider-flavored questions.
@@ -14,11 +15,15 @@ const FAQS = [
 ];
 
 export default function HelpPage() {
+  const router = useRouter();
   const [showOptions, setShowOptions] = useState(false);
 
   return (
     <RiderShell>
       <header className="bingo-header">
+        <button className="bingo-button secondary small" style={{ marginBottom: 10 }} onClick={() => router.push('/profile')}>
+          ← Perfil
+        </button>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
         <div className="bingo-header-sub" style={{ marginTop: 4 }}>Ayuda</div>

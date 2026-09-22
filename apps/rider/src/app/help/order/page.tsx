@@ -42,6 +42,9 @@ export default function SupportDeliveryPickerPage() {
   return (
     <RiderShell>
       <header className="bingo-header">
+        <button className="bingo-button secondary small" style={{ marginBottom: 10 }} onClick={() => router.push('/help')}>
+          ← Ayuda
+        </button>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo%20para%20fondo%20osc.png" alt="BINGO+" className="bingo-logo-img" />
         <div className="bingo-header-sub" style={{ marginTop: 4 }}>Soporte con un pedido</div>
