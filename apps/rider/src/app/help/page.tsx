@@ -57,6 +57,11 @@ export default function HelpPage() {
             </div>
           )}
         </div>
+
+        <a href="/help/cases" className="bingo-card" style={{ display: 'block', marginTop: 12, textDecoration: 'none' }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Mis casos de soporte</div>
+          <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 2 }}>Revisa el estado y las respuestas a los casos que enviaste.</div>
+        </a>
       </div>
     </RiderShell>
   );

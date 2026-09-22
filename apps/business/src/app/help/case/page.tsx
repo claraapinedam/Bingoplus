@@ -53,7 +53,10 @@ function CaseFormContent() {
           <div style={{ fontSize: 13, color: '#54617a', marginTop: 6 }}>
             Tu número de caso es <strong>{created.code}</strong>. Nuestro equipo lo revisará pronto.
           </div>
-          <button className="bingo-button" style={{ marginTop: 16 }} onClick={() => router.push('/help')}>
+          <button className="bingo-button" style={{ marginTop: 16 }} onClick={() => router.push(`/help/case/${created.id}`)}>
+            Ver mi caso
+          </button>
+          <button className="bingo-button secondary" style={{ marginTop: 8 }} onClick={() => router.push('/help')}>
             Volver a Ayuda
           </button>
         </div>
