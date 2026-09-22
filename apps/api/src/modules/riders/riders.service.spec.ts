@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { RiderAccountStatus, RiderAvailabilityStatus } from '@prisma/client';
+import { RiderAccountStatus, RiderAvailabilityStatus, RiderDocumentStatus } from '@prisma/client';
 import { RidersService } from './riders.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RiderContractsService } from '../contracts/rider-contracts.service';
@@ -25,7 +25,15 @@ describe('RidersService', () => {
   });
 
   it('approves a pending rider into APPROVED (not straight to ACTIVE) and generates a contract', async () => {
-    prisma.rider.findUnique.mockResolvedValue({ id: 'r1', accountStatus: RiderAccountStatus.PENDING_APPROVAL });
+    prisma.rider.findUnique.mockResolvedValue({
+      id: 'r1',
+      accountStatus: RiderAccountStatus.PENDING_APPROVAL,
+      documents: [
+        { id: 'd1', status: RiderDocumentStatus.VERIFIED },
+        { id: 'd2', status: RiderDocumentStatus.VERIFIED },
+        { id: 'd3', status: RiderDocumentStatus.VERIFIED },
+      ],
+    });
     prisma.rider.update.mockResolvedValue({ id: 'r1', accountStatus: RiderAccountStatus.APPROVED });
     const result = await service.approve('r1');
     expect(prisma.rider.update).toHaveBeenCalledWith({
@@ -34,6 +42,34 @@ describe('RidersService', () => {
     });
     expect(riderContracts.createForApprovedRider).toHaveBeenCalledWith('r1');
     expect(result.accountStatus).toBe(RiderAccountStatus.APPROVED);
+  });
+
+  it('rejects approval when any document is still PENDING', async () => {
+    prisma.rider.findUnique.mockResolvedValue({
+      id: 'r1',
+      accountStatus: RiderAccountStatus.PENDING_APPROVAL,
+      documents: [
+        { id: 'd1', status: RiderDocumentStatus.VERIFIED },
+        { id: 'd2', status: RiderDocumentStatus.PENDING },
+      ],
+    });
+    await expect(service.approve('r1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.rider.update).not.toHaveBeenCalled();
+    expect(riderContracts.createForApprovedRider).not.toHaveBeenCalled();
+  });
+
+  it('rejects approval when a document was REJECTED — the rider needs to re-submit it, not slip through', async () => {
+    prisma.rider.findUnique.mockResolvedValue({
+      id: 'r1',
+      accountStatus: RiderAccountStatus.PENDING_APPROVAL,
+      documents: [{ id: 'd1', status: RiderDocumentStatus.REJECTED }],
+    });
+    await expect(service.approve('r1')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects approval when the rider has no documents on file at all', async () => {
+    prisma.rider.findUnique.mockResolvedValue({ id: 'r1', accountStatus: RiderAccountStatus.PENDING_APPROVAL, documents: [] });
+    await expect(service.approve('r1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('only reactivates riders that are SUSPENDED', async () => {

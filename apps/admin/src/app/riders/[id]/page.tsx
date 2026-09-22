@@ -169,6 +169,10 @@ export default function AdminRiderDetailPage() {
     );
   }
 
+  // Mirrors RidersService.approve()'s own guard server-side — disabled here purely so the admin
+  // sees why before clicking, not as the real enforcement (that's still the backend's job).
+  const allDocumentsVerified = rider.documents.length > 0 && rider.documents.every((d) => d.status === 'VERIFIED');
+
   return (
     <AdminShell>
       <BackButton onClick={() => router.back()} />
@@ -184,12 +188,22 @@ export default function AdminRiderDetailPage() {
         </span>
         {rider.accountStatus === 'PENDING_APPROVAL' && (
           <>
-            <button className="bingo-button small" disabled={busy} onClick={() => runAction('approve')}>
+            <button
+              className="bingo-button small"
+              disabled={busy || !allDocumentsVerified}
+              title={allDocumentsVerified ? undefined : 'Verifica todos los documentos antes de aprobar.'}
+              onClick={() => runAction('approve')}
+            >
               Aprobar
             </button>
             <button className="bingo-button danger small" disabled={busy} onClick={() => runStatusAction('REJECTED')}>
               Rechazar
             </button>
+            {!allDocumentsVerified && (
+              <span style={{ fontSize: 12, color: 'var(--bingo-error)' }}>
+                Faltan documentos por verificar — revisa la sección "Documentos" abajo.
+              </span>
+            )}
           </>
         )}
         {rider.accountStatus === 'APPROVED' && (
