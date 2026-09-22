@@ -52,8 +52,12 @@ interface Slot {
   endTime: string;
 }
 
+// Never `.toISOString()` — that converts to UTC first, which silently rolls "today" over to
+// tomorrow once local time passes UTC midnight (e.g. 19:00+ in Ecuador's UTC-5), even though it's
+// still today locally. That would make "today" unselectable/wrong in the date picker every evening.
 function todayString(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function newIdempotencyKey(): string {

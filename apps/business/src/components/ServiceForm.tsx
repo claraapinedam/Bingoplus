@@ -66,6 +66,19 @@ const SERVICE_TYPES = [
   { value: 'OTHER', label: 'Otro' },
 ];
 
+// Mirrors ServicesService's SERVICE_TYPE_CATEGORY_SLUGS on the backend — each service type only
+// makes sense for a business actually registered under the matching BusinessCategory, so the
+// dropdown only offers the subset the business picked at onboarding instead of every type.
+const SERVICE_TYPE_CATEGORY_SLUGS: Record<string, string> = {
+  VETERINARY: 'veterinarios',
+  GROOMING: 'grooming',
+  DAYCARE: 'guarderias',
+  BOARDING: 'hospedajes',
+  DOG_WALKING: 'paseadores',
+  TRAINING: 'adiestradores',
+  OTHER: 'otros-pet-services',
+};
+
 interface Species {
   id: string;
   name: string;
@@ -78,14 +91,22 @@ export default function ServiceForm({
   submitting,
   submitLabel,
   onSubmit,
+  categorySlugs,
 }: {
   initial?: Partial<ServiceFormValues>;
   submitting: boolean;
   submitLabel: string;
   onSubmit: (values: ServiceFormValues) => void;
+  /** The business's own onboarding categories — restricts which service types are offerable here. */
+  categorySlugs: string[];
 }) {
+  const availableTypes = SERVICE_TYPES.filter((t) => categorySlugs.includes(SERVICE_TYPE_CATEGORY_SLUGS[t.value]));
+  // Falls back to every type only if the business somehow has none of the matching categories —
+  // shouldn't happen for a business that can reach this form at all, but never renders a dead-empty select.
+  const typeOptions = availableTypes.length > 0 ? availableTypes : SERVICE_TYPES;
+
   const [species, setSpecies] = useState<Species[]>([]);
-  const [type, setType] = useState(initial?.type ?? 'VETERINARY');
+  const [type, setType] = useState(initial?.type ?? typeOptions[0].value);
   const [name, setName] = useState(initial?.name ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [price, setPrice] = useState(initial?.price?.toString() ?? '');
@@ -143,7 +164,7 @@ export default function ServiceForm({
       <div>
         <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Tipo de servicio</label>
         <select className="bingo-input" required value={type} onChange={(e) => setType(e.target.value)}>
-          {SERVICE_TYPES.map((t) => (
+          {typeOptions.map((t) => (
             <option key={t.value} value={t.value}>
               {t.label}
             </option>

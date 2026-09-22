@@ -20,6 +20,10 @@ describe('ServicesService', () => {
         count: jest.fn().mockResolvedValue(0),
       },
       businessCapability: { findUnique: jest.fn() },
+      // Defaults to "yes, the business has this category" so every pre-existing test (which isn't
+      // about this validation) doesn't need to know about it — the dedicated describe block below
+      // overrides this per-test to exercise the rejection path.
+      businessCategoryLink: { findFirst: jest.fn().mockResolvedValue({ businessId: 'biz-1', categoryId: 'cat-1' }) },
       $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     };
     capabilities = { set: jest.fn().mockResolvedValue({ id: 'cap1' }) };
@@ -111,6 +115,40 @@ describe('ServicesService', () => {
       expect(prisma.service.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ locationType: 'BOTH' }) }),
       );
+    });
+  });
+
+  describe('create/update — type must match one of the business\'s own categories', () => {
+    it('rejects a type whose category the business never picked at onboarding', async () => {
+      prisma.businessCategoryLink.findFirst.mockResolvedValue(null);
+      await expect(
+        service.create('biz-1', { type: 'VETERINARY', name: 'Consulta', price: 10, durationMinutes: 30 } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.service.create).not.toHaveBeenCalled();
+      expect(prisma.businessCategoryLink.findFirst).toHaveBeenCalledWith({
+        where: { businessId: 'biz-1', category: { slug: 'veterinarios' } },
+      });
+    });
+
+    it('accepts a type once the business has the matching category', async () => {
+      prisma.businessCategoryLink.findFirst.mockResolvedValue({ businessId: 'biz-1', categoryId: 'cat-vet' });
+      prisma.service.create.mockResolvedValue({ id: 'svc-1' });
+      await service.create('biz-1', { type: 'VETERINARY', name: 'Consulta', price: 10, durationMinutes: 30 } as any);
+      expect(prisma.service.create).toHaveBeenCalled();
+    });
+
+    it('re-validates on update only when type is actually being changed', async () => {
+      prisma.service.findUnique.mockResolvedValue({ id: 'svc-1', businessId: 'biz-1', type: 'GROOMING', operatingDays: [] });
+      prisma.service.update.mockResolvedValue({ id: 'svc-1' });
+      await service.update('biz-1', 'svc-1', { name: 'Nuevo nombre' } as any);
+      expect(prisma.businessCategoryLink.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('rejects switching a service to a type the business is not categorized for', async () => {
+      prisma.service.findUnique.mockResolvedValue({ id: 'svc-1', businessId: 'biz-1', type: 'GROOMING', operatingDays: [] });
+      prisma.businessCategoryLink.findFirst.mockResolvedValue(null);
+      await expect(service.update('biz-1', 'svc-1', { type: 'TRAINING' } as any)).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.service.update).not.toHaveBeenCalled();
     });
   });
 

@@ -8,6 +8,20 @@ import { CreateServiceDto } from './dto/create-service.dto';
 /** DAYCARE/BOARDING are booked by date range (see BookingsService), never a time slot — they must
  * declare which weekdays they actually operate so a check-in/check-out range knows what to count. */
 const DAY_UNIT_TYPES: ServiceType[] = [ServiceType.DAYCARE, ServiceType.BOARDING];
+
+/** Each ServiceType maps 1:1 onto the BusinessCategory slug a business must have picked at
+ * onboarding to offer it — a business only categorized as "Grooming" shouldn't be able to create a
+ * VETERINARY service, since "Tipo de servicio" is meant to reflect what the business actually is,
+ * not an open menu. "tiendas" has no entry: a products-only category never grants a service type. */
+const SERVICE_TYPE_CATEGORY_SLUGS: Record<ServiceType, string> = {
+  [ServiceType.VETERINARY]: 'veterinarios',
+  [ServiceType.DAYCARE]: 'guarderias',
+  [ServiceType.BOARDING]: 'hospedajes',
+  [ServiceType.GROOMING]: 'grooming',
+  [ServiceType.DOG_WALKING]: 'paseadores',
+  [ServiceType.TRAINING]: 'adiestradores',
+  [ServiceType.OTHER]: 'otros-pet-services',
+};
 import { UpdateServiceDto } from './dto/update-service.dto';
 import {
   ListAdminServicesQueryDto,
@@ -159,6 +173,7 @@ export class ServicesService {
   async create(businessId: string, dto: CreateServiceDto) {
     this.validateAgeRange(dto.minAgeMonths, dto.maxAgeMonths);
     this.validateOperatingDays(dto.type, dto.operatingDays);
+    await this.validateTypeMatchesCategory(businessId, dto.type);
     const speciesIds = await this.resolveSpeciesIds(dto.speciesSlugs);
     const locationType = await this.resolveLocationType(businessId, dto.locationType);
     return this.prisma.service.create({
@@ -187,6 +202,9 @@ export class ServicesService {
     const effectiveType = dto.type ?? current.type;
     if (dto.operatingDays !== undefined || dto.type !== undefined) {
       this.validateOperatingDays(effectiveType, dto.operatingDays ?? current.operatingDays);
+    }
+    if (dto.type !== undefined) {
+      await this.validateTypeMatchesCategory(businessId, dto.type);
     }
     const { speciesSlugs, locationType: dtoLocationType, ...rest } = dto;
     const speciesIds = await this.resolveSpeciesIds(speciesSlugs);
@@ -221,6 +239,20 @@ export class ServicesService {
   private validateOperatingDays(type: ServiceType, operatingDays?: string[]) {
     if (DAY_UNIT_TYPES.includes(type) && (!operatingDays || operatingDays.length === 0)) {
       throw new BadRequestException('operatingDays is required for DAYCARE/BOARDING services');
+    }
+  }
+
+  /** A service's type must match one of the business's own onboarding categories — see
+   * SERVICE_TYPE_CATEGORY_SLUGS. Mirrors the owner-facing form only offering the matching subset. */
+  private async validateTypeMatchesCategory(businessId: string, type: ServiceType) {
+    const requiredSlug = SERVICE_TYPE_CATEGORY_SLUGS[type];
+    const link = await this.prisma.businessCategoryLink.findFirst({
+      where: { businessId, category: { slug: requiredSlug } },
+    });
+    if (!link) {
+      throw new BadRequestException(
+        `This business isn't registered under the "${requiredSlug}" category, so it can't create a "${type}" service`,
+      );
     }
   }
 

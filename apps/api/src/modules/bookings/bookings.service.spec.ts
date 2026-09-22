@@ -10,10 +10,22 @@ import { BookingSlotUnavailableException } from '../../common/exceptions/booking
 const DOG_SPECIES = { id: 'species-dog', slug: 'dog', name: 'Perro' };
 const CAT_SPECIES = { id: 'species-cat', slug: 'cat', name: 'Gato' };
 
+/** Formats a Date's LOCAL calendar date as "YYYY-MM-DD" — deliberately never `.toISOString()`,
+ * which converts to UTC first: whenever the suite runs late enough in the evening that local time
+ * is already past UTC midnight (anywhere west of UTC, e.g. `new Date()` at 19:20 in UTC-5 is
+ * already 00:20 UTC the *next* day), that conversion silently shifts every "today"/"+N days"
+ * fixture forward by a day and desyncs it from what setDate() actually computed in local time. */
+function toLocalDateString(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function futureDateString(daysAhead = 30): string {
   const d = new Date();
   d.setDate(d.getDate() + daysAhead);
-  return d.toISOString().slice(0, 10);
+  return toLocalDateString(d);
 }
 
 /** A Monday at least 30 days out, regardless of what day the suite happens to run on — needed to
@@ -23,13 +35,13 @@ function futureMondayDateString(): string {
   d.setDate(d.getDate() + 30);
   const diffToMonday = (8 - d.getDay()) % 7 || 7;
   d.setDate(d.getDate() + diffToMonday);
-  return d.toISOString().slice(0, 10);
+  return toLocalDateString(d);
 }
 
 function addDaysToDateString(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T00:00:00`);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return toLocalDateString(d);
 }
 
 describe('BookingsService', () => {

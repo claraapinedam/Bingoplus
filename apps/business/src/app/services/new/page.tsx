@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import DashboardShell from '@/components/DashboardShell';
+import DashboardShell, { useBusiness } from '@/components/DashboardShell';
 import ServiceForm, { ServiceFormValues } from '@/components/ServiceForm';
 import { apiFetch, ApiError, getActiveBusinessId } from '@/lib/api';
 
 function NewServiceContent() {
   const router = useRouter();
+  const { business } = useBusiness();
   const businessId = getActiveBusinessId();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +38,12 @@ function NewServiceContent() {
         <div className="dashboard-page-title">Nuevo servicio</div>
       </header>
       {error && <div className="bingo-error-banner" style={{ marginBottom: 14, maxWidth: 640 }}>{error}</div>}
-      <ServiceForm submitting={saving} submitLabel="Crear servicio" onSubmit={handleSubmit} />
+      <ServiceForm
+        submitting={saving}
+        submitLabel="Crear servicio"
+        onSubmit={handleSubmit}
+        categorySlugs={business.categories.map((c) => c.slug)}
+      />
     </>
   );
 }

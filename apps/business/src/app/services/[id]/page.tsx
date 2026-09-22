@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import DashboardShell from '@/components/DashboardShell';
+import DashboardShell, { useBusiness } from '@/components/DashboardShell';
 import EmptyState from '@/components/EmptyState';
 import ServiceForm, { ServiceFormValues } from '@/components/ServiceForm';
 import { apiFetch, ApiError, getActiveBusinessId } from '@/lib/api';
@@ -28,6 +28,7 @@ interface Service {
 function ServiceDetailContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { business } = useBusiness();
   const businessId = getActiveBusinessId();
   const [service, setService] = useState<Service | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
@@ -144,6 +145,7 @@ function ServiceDetailContent() {
         submitting={saving}
         submitLabel="Guardar cambios"
         onSubmit={handleSubmit}
+        categorySlugs={business.categories.map((c) => c.slug)}
       />
     </>
   );
