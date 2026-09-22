@@ -49,6 +49,20 @@ describe('PayoutsService', () => {
         expect.objectContaining({ riderId: 'r2', riderName: 'Beto Diaz', amount: 5.25, earningsCount: 1 }),
       ]);
     });
+
+    it('keeps a fully-paid rider in the list at amount 0 instead of vanishing (they must stay clickable for their Pagado history)', async () => {
+      // First call (by riderId, no where) — every rider with ANY earnings history, paid or not.
+      prisma.riderEarning.groupBy
+        .mockResolvedValueOnce([{ riderId: 'r1', _count: { _all: 2 } }])
+        // Second call (where PENDING/payoutId null) — nothing currently pending for r1.
+        .mockResolvedValueOnce([]);
+      prisma.rider.findMany.mockResolvedValue([{ id: 'r1', user: { firstName: 'Ana', lastName: 'Lopez', email: 'ana@x.com' } }]);
+
+      const result = await service.listPendingRiders();
+
+      expect(result.total).toBe(0);
+      expect(result.items).toEqual([expect.objectContaining({ riderId: 'r1', riderName: 'Ana Lopez', amount: 0, earningsCount: 0 })]);
+    });
   });
 
   describe('markRidersPaid', () => {
@@ -142,6 +156,18 @@ describe('PayoutsService', () => {
         expect.objectContaining({ businessId: 'b1', tradeName: 'Tienda Uno', gmv: 100, commissionRate: 0.2, amount: 80 }),
       );
       expect(result.total).toBe(80);
+    });
+
+    it('keeps a fully-paid business in the list at amount 0 instead of vanishing, even with no live commission rate', async () => {
+      // First call (by businessId, no payoutId filter) — every business with ANY qualifying order ever.
+      prisma.order.groupBy.mockResolvedValueOnce([{ businessId: 'b1' }]).mockResolvedValueOnce([]);
+      prisma.business.findMany.mockResolvedValue([{ id: 'b1', tradeName: 'Tienda Uno' }]);
+      prisma.commission.findMany.mockResolvedValue([]); // no live rate at all — must not exclude a $0 business
+
+      const result = await service.listPendingBusinesses();
+
+      expect(result.total).toBe(0);
+      expect(result.items).toEqual([expect.objectContaining({ businessId: 'b1', tradeName: 'Tienda Uno', gmv: 0, amount: 0 })]);
     });
   });
 

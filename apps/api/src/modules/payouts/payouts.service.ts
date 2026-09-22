@@ -34,35 +34,42 @@ export class PayoutsService {
 
   // ───────────────────────────── Riders ─────────────────────────────
 
-  /** One line item per rider with an outstanding balance — net delivery earnings
-   * (RiderEarning.netAmount, already net of BINGO+'s commission and tax withholding, see
-   * DeliveryFareConfigService.splitRiderEarning) that are still PENDING and not yet swept into a
-   * Payout. */
+  /** One line item per rider that has *ever* had earnings — not just those currently owed. A rider
+   * whose whole balance just got marked paid still needs a row here (with amount 0) so admin can
+   * click through to their Pagado history; only showing payees with an outstanding balance made
+   * them vanish from this list the moment they were fully paid, with no way back to their
+   * history. The accumulated total at the top still only sums what's actually pending. */
   async listPendingRiders() {
-    const grouped = await this.prisma.riderEarning.groupBy({
+    const allGrouped = await this.prisma.riderEarning.groupBy({ by: ['riderId'], _count: { _all: true } });
+    if (allGrouped.length === 0) return { total: 0, items: [] };
+
+    const pendingGrouped = await this.prisma.riderEarning.groupBy({
       by: ['riderId'],
       where: { status: RiderEarningStatus.PENDING, payoutId: null },
       _sum: { netAmount: true },
       _count: { _all: true },
     });
-    if (grouped.length === 0) return { total: 0, items: [] };
+    const pendingByRider = new Map(
+      pendingGrouped.map((g) => [g.riderId, { amount: Number(g._sum.netAmount ?? 0), count: g._count._all }]),
+    );
 
-    const riderIds = grouped.map((g) => g.riderId);
+    const riderIds = allGrouped.map((g) => g.riderId);
     const riders = await this.prisma.rider.findMany({
       where: { id: { in: riderIds } },
       select: { id: true, user: { select: { firstName: true, lastName: true, email: true } } },
     });
     const riderById = new Map(riders.map((r) => [r.id, r]));
 
-    const items = grouped
-      .map((g) => {
-        const rider = riderById.get(g.riderId);
+    const items = riderIds
+      .map((riderId) => {
+        const rider = riderById.get(riderId);
+        const pending = pendingByRider.get(riderId);
         return {
-          riderId: g.riderId,
+          riderId,
           riderName: rider ? `${rider.user.firstName} ${rider.user.lastName}`.trim() : 'Rider',
           riderEmail: rider?.user.email ?? null,
-          earningsCount: g._count._all,
-          amount: Number(g._sum.netAmount ?? 0),
+          earningsCount: pending?.count ?? 0,
+          amount: pending?.amount ?? 0,
         };
       })
       .sort((a, b) => b.amount - a.amount);
@@ -199,12 +206,17 @@ export class PayoutsService {
 
   // ───────────────────────────── Businesses ─────────────────────────────
 
-  /** One line item per business with an outstanding balance — real GMV (Order.subtotal, net of
-   * discount/pre-tax, same base BusinessesService.listCommissionsForAdmin sums) on paid/completed
-   * orders not yet swept into a Payout, times that business's current commission rate. A business
-   * with no live Commission row is left out entirely (never guess a rate, same rule
-   * listCommissionsForAdmin follows for its `estimatedRevenue`) — in practice every approved
-   * business has one (BusinessesService.approve always creates it).
+  /** One line item per business that has *ever* had a paid/completed order — not just those
+   * currently owed. A business whose whole balance just got marked paid still needs a row here
+   * (with amount 0) so admin can click through to their Pagado history; only showing payees with
+   * an outstanding balance made them vanish from this list the moment they were fully paid, with
+   * no way back to their history. The accumulated total at the top still only sums what's
+   * actually pending.
+   *
+   * The "never guess a rate" rule (skip a business with no live Commission row, same rule
+   * listCommissionsForAdmin follows for its `estimatedRevenue`) only actually matters while that
+   * business has a nonzero pending amount to compute — a fully-paid business with no *current*
+   * rate still needs to be visible for its history, just with commissionRate shown as 0.
    *
    * Membership fees (MembershipPlan/BusinessMembership/Subscription/Invoice) are deliberately NOT
    * netted out of this figure — the schema itself documents Membership billing as "a financial
@@ -213,15 +225,23 @@ export class PayoutsService {
    * this owed-amount silently diverge from GMV × rate the moment a business's plan price changed,
    * for no product requirement asked for. */
   async listPendingBusinesses() {
-    const grouped = await this.prisma.order.groupBy({
+    const allGrouped = await this.prisma.order.groupBy({
+      by: ['businessId'],
+      where: { status: { in: PayoutsService.PAID_ORDER_STATUSES } },
+    });
+    if (allGrouped.length === 0) return { total: 0, items: [] };
+
+    const pendingGrouped = await this.prisma.order.groupBy({
       by: ['businessId'],
       where: { status: { in: PayoutsService.PAID_ORDER_STATUSES }, payoutId: null },
       _sum: { subtotal: true },
       _count: { _all: true },
     });
-    if (grouped.length === 0) return { total: 0, items: [] };
+    const pendingByBusiness = new Map(
+      pendingGrouped.map((g) => [g.businessId, { gmv: Number(g._sum.subtotal ?? 0), count: g._count._all }]),
+    );
 
-    const businessIds = grouped.map((g) => g.businessId);
+    const businessIds = allGrouped.map((g) => g.businessId);
     const [businesses, commissions] = await Promise.all([
       this.prisma.business.findMany({ where: { id: { in: businessIds } }, select: { id: true, tradeName: true } }),
       this.prisma.commission.findMany({
@@ -235,16 +255,21 @@ export class PayoutsService {
       if (!rateByBusiness.has(c.businessId)) rateByBusiness.set(c.businessId, Number(c.rate));
     }
 
-    const items = grouped
-      .filter((g) => rateByBusiness.has(g.businessId))
-      .map((g) => {
-        const business = businessById.get(g.businessId);
-        const gmv = Number(g._sum.subtotal ?? 0);
-        const rate = rateByBusiness.get(g.businessId)!;
+    const items = businessIds
+      .filter((businessId) => {
+        const pending = pendingByBusiness.get(businessId);
+        if (!pending || pending.gmv === 0) return true; // nothing to guess — safe to show at $0
+        return rateByBusiness.has(businessId); // has a real pending amount — still refuse to guess a rate
+      })
+      .map((businessId) => {
+        const business = businessById.get(businessId);
+        const pending = pendingByBusiness.get(businessId);
+        const gmv = pending?.gmv ?? 0;
+        const rate = rateByBusiness.get(businessId) ?? 0;
         return {
-          businessId: g.businessId,
+          businessId,
           tradeName: business?.tradeName ?? 'Negocio',
-          ordersCount: g._count._all,
+          ordersCount: pending?.count ?? 0,
           gmv,
           commissionRate: rate,
           amount: Math.round(gmv * (1 - rate) * 100) / 100,
