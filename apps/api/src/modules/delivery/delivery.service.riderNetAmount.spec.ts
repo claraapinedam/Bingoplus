@@ -36,6 +36,7 @@ describe('DeliveryService riderNetAmount enrichment', () => {
       unused,
       unused,
       unused,
+      unused,
       fareConfig as unknown as DeliveryFareConfigService,
     );
   });

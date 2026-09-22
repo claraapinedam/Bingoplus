@@ -11,6 +11,8 @@ import { PricingConfigService } from '../pricing/pricing-config.service';
 import { SetPricingConfigDto } from '../pricing/dto/set-pricing-config.dto';
 import { DeliveryFareConfigService } from '../delivery/delivery-fare-config.service';
 import { SetDeliveryFareConfigDto } from '../delivery/dto/set-delivery-fare-config.dto';
+import { DispatchService } from '../delivery/dispatch.service';
+import { SetRiderDispatchConfigDto } from '../delivery/dto/set-rider-dispatch-config.dto';
 import { BusinessesService } from '../businesses/businesses.service';
 import { SetDefaultCommissionRateDto } from './dto/set-default-commission-rate.dto';
 import { ContractTemplateService } from '../contracts/contract-template.service';
@@ -29,6 +31,7 @@ export class AdminSettingsController {
     private readonly ranking: BusinessRankingService,
     private readonly pricingConfig: PricingConfigService,
     private readonly deliveryFareConfig: DeliveryFareConfigService,
+    private readonly dispatchConfig: DispatchService,
     private readonly businesses: BusinessesService,
     private readonly contractTemplates: ContractTemplateService,
   ) {}
@@ -74,6 +77,19 @@ export class AdminSettingsController {
       throw new BadRequestException('nightStartHour and nightEndHour cannot be the same hour');
     }
     return this.deliveryFareConfig.set(dto, admin.id);
+  }
+
+  /** Dispatch V2 — riders/matching, never a pricing/commission concern. Previously read-only (stuck
+   * at schema defaults); this is the write path admin was missing. */
+  @Get('dispatch-config')
+  getDispatchConfig() {
+    return this.dispatchConfig.getConfig();
+  }
+
+  @Audit('settings.dispatch-config.update', 'RiderDispatchConfig')
+  @Patch('dispatch-config')
+  setDispatchConfig(@CurrentUser() admin: AuthenticatedUser, @Body() dto: SetRiderDispatchConfigDto) {
+    return this.dispatchConfig.set(dto, admin.id);
   }
 
   /** The business's own commission is Commission.rate, frozen per-business once its contract is

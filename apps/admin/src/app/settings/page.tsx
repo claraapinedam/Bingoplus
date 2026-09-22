@@ -33,6 +33,22 @@ interface DeliveryFareConfig {
   riderTaxWithholdingPercent: number;
 }
 
+/** Rider matching/dispatch — never a pricing/commission concern (see DELIVERY_FARE_LABELS above
+ * for that). radiusExpansionKm is edited as a comma-separated list of km steps. */
+interface DispatchConfig {
+  distanceWeight: number;
+  ratingWeight: number;
+  availabilityWeight: number;
+  maxSearchRadiusKm: number;
+  assignmentTimeoutSeconds: number;
+  etaWeight: number;
+  maxCandidatesForEta: number;
+  locationStaleThresholdSeconds: number;
+  radiusExpansionKm: number[];
+  retryBackoffSeconds: number;
+  maxDispatchAttempts: number;
+}
+
 const WEIGHT_LABELS: { key: keyof RankingWeights; label: string }[] = [
   { key: 'speciesMatch', label: 'Coincidencia de especie' },
   { key: 'distance', label: 'Distancia' },
@@ -58,6 +74,19 @@ const DELIVERY_FARE_LABELS: { key: keyof DeliveryFareConfig; label: string; hint
   { key: 'surgeMultiplier', label: 'Multiplicador por demanda alta', hint: '1 = sin aumento, 1.5 = +50%' },
   { key: 'bingoCommissionPercent', label: '% que se queda BINGO+', hint: 'ej. 0.2 = 20% de la tarifa' },
   { key: 'riderTaxWithholdingPercent', label: '% de impuesto retenido al rider', hint: 'ej. 0.08 = 8%, sobre lo que queda tras la comisión' },
+];
+
+const DISPATCH_CONFIG_LABELS: { key: Exclude<keyof DispatchConfig, 'radiusExpansionKm'>; label: string; hint: string; step?: string }[] = [
+  { key: 'etaWeight', label: 'Peso del tiempo real de llegada (ETA)', hint: 'ej. 0.6 = criterio principal de emparejamiento' },
+  { key: 'distanceWeight', label: 'Peso de la distancia', hint: 'filtro barato antes de calcular el ETA real' },
+  { key: 'ratingWeight', label: 'Peso de la calificación', hint: '' },
+  { key: 'availabilityWeight', label: 'Peso de disponibilidad', hint: 'reservado, la disponibilidad ya es un filtro obligatorio' },
+  { key: 'maxSearchRadiusKm', label: 'Radio máximo de búsqueda (km)', hint: '' },
+  { key: 'maxCandidatesForEta', label: 'Candidatos evaluados con ETA real', hint: 'de los más cercanos, cuántos reciben la llamada a Maps', step: '1' },
+  { key: 'locationStaleThresholdSeconds', label: 'Antigüedad máxima de ubicación (segundos)', hint: 'un rider con GPS más viejo que esto no se ofrece', step: '1' },
+  { key: 'assignmentTimeoutSeconds', label: 'Tiempo para responder una oferta (segundos)', hint: 'pasado esto, se reasigna a otro repartidor', step: '1' },
+  { key: 'retryBackoffSeconds', label: 'Espera antes de reintentar (segundos)', hint: 'si no se encontró repartidor, cuánto esperar antes de buscar de nuevo', step: '1' },
+  { key: 'maxDispatchAttempts', label: 'Intentos máximos de despacho', hint: 'límite de seguridad — nunca falla el pedido, solo deja de reintentar solo', step: '1' },
 ];
 
 // Number inputs bound directly to a number state fight the user over leading/trailing
@@ -112,18 +141,23 @@ export default function AdminSettingsPage() {
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
   const [commissionRate, setCommissionRate] = useState<number | null>(null);
   const [deliveryFare, setDeliveryFare] = useState<DeliveryFareConfig | null>(null);
+  const [dispatchConfig, setDispatchConfig] = useState<DispatchConfig | null>(null);
+  const [radiusExpansionText, setRadiusExpansionText] = useState('');
   const [weightsBusy, setWeightsBusy] = useState(false);
   const [pricingBusy, setPricingBusy] = useState(false);
   const [commissionBusy, setCommissionBusy] = useState(false);
   const [deliveryFareBusy, setDeliveryFareBusy] = useState(false);
+  const [dispatchBusy, setDispatchBusy] = useState(false);
   const [weightsMsg, setWeightsMsg] = useState<string | null>(null);
   const [pricingMsg, setPricingMsg] = useState<string | null>(null);
   const [commissionMsg, setCommissionMsg] = useState<string | null>(null);
   const [deliveryFareMsg, setDeliveryFareMsg] = useState<string | null>(null);
+  const [dispatchMsg, setDispatchMsg] = useState<string | null>(null);
   const [weightsErr, setWeightsErr] = useState<string | null>(null);
   const [pricingErr, setPricingErr] = useState<string | null>(null);
   const [commissionErr, setCommissionErr] = useState<string | null>(null);
   const [deliveryFareErr, setDeliveryFareErr] = useState<string | null>(null);
+  const [dispatchErr, setDispatchErr] = useState<string | null>(null);
   // Defense in depth only — the backend's RolesGuard is the real gate (AdminSettingsController
   // never grants RoleName.USER). AdminShell's nav already hides the link for that role.
   const [restricted, setRestricted] = useState(false);
@@ -138,6 +172,12 @@ export default function AdminSettingsPage() {
     apiFetch<PricingConfig>('/admin/settings/pricing').then(setPricing).catch(() => setPricing(null));
     apiFetch<{ rate: number }>('/admin/settings/default-commission-rate').then((r) => setCommissionRate(r.rate)).catch(() => setCommissionRate(null));
     apiFetch<DeliveryFareConfig>('/admin/settings/delivery-fare').then(setDeliveryFare).catch(() => setDeliveryFare(null));
+    apiFetch<DispatchConfig>('/admin/settings/dispatch-config')
+      .then((config) => {
+        setDispatchConfig(config);
+        setRadiusExpansionText(config.radiusExpansionKm.join(', '));
+      })
+      .catch(() => setDispatchConfig(null));
   }, []);
 
   if (restricted) {
@@ -225,6 +265,42 @@ export default function AdminSettingsPage() {
       setDeliveryFareErr(err instanceof ApiError ? err.message : 'No se pudo guardar.');
     } finally {
       setDeliveryFareBusy(false);
+    }
+  }
+
+  function parseRadiusExpansion(text: string): number[] | null {
+    const parts = text
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    if (parts.length === 0) return null;
+    const parsed = parts.map(Number);
+    if (parsed.some((n) => Number.isNaN(n) || !Number.isInteger(n) || n < 1)) return null;
+    return parsed;
+  }
+
+  async function saveDispatchConfig() {
+    if (!dispatchConfig) return;
+    const radiusExpansionKm = parseRadiusExpansion(radiusExpansionText);
+    if (!radiusExpansionKm) {
+      setDispatchErr('Los pasos de radio deben ser números enteros positivos separados por comas (ej. 2, 4, 6, 8).');
+      return;
+    }
+    setDispatchBusy(true);
+    setDispatchErr(null);
+    setDispatchMsg(null);
+    try {
+      const saved = await apiFetch<DispatchConfig>('/admin/settings/dispatch-config', {
+        method: 'PATCH',
+        body: JSON.stringify({ ...dispatchConfig, radiusExpansionKm }),
+      });
+      setDispatchConfig(saved);
+      setRadiusExpansionText(saved.radiusExpansionKm.join(', '));
+      setDispatchMsg('Configuración de despacho actualizada.');
+    } catch (err) {
+      setDispatchErr(err instanceof ApiError ? err.message : 'No se pudo guardar.');
+    } finally {
+      setDispatchBusy(false);
     }
   }
 
@@ -360,6 +436,54 @@ export default function AdminSettingsPage() {
 
               <button className="bingo-button" disabled={deliveryFareBusy} onClick={saveDeliveryFare}>
                 {deliveryFareBusy ? 'Guardando…' : 'Guardar tarifas'}
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="bingo-card">
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>Emparejamiento de repartidores</h2>
+          <p style={{ fontSize: 12, color: '#7f8ea3', margin: '0 0 12px' }}>
+            Cómo se busca y asigna un repartidor a una entrega — nunca afecta precios ni comisiones. El ETA real
+            (tiempo estimado de llegada) es el criterio principal; la distancia es solo un filtro barato inicial.
+          </p>
+
+          {dispatchConfig === null ? (
+            <p>Cargando…</p>
+          ) : (
+            <>
+              {DISPATCH_CONFIG_LABELS.map((f) => (
+                <div key={f.key} style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>
+                    {f.label} {f.hint && <span style={{ fontWeight: 400, color: '#9aa5b1' }}>({f.hint})</span>}
+                  </label>
+                  <NumberField
+                    min={0}
+                    step={f.step}
+                    value={dispatchConfig[f.key]}
+                    onChange={(value) => setDispatchConfig({ ...dispatchConfig, [f.key]: value })}
+                  />
+                </div>
+              ))}
+
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>
+                  Pasos de expansión de radio (km){' '}
+                  <span style={{ fontWeight: 400, color: '#9aa5b1' }}>(se intentan en orden hasta encontrar un candidato)</span>
+                </label>
+                <input
+                  className="bingo-input"
+                  value={radiusExpansionText}
+                  placeholder="2, 4, 6, 8"
+                  onChange={(e) => setRadiusExpansionText(e.target.value)}
+                />
+              </div>
+
+              {dispatchErr && <div style={{ color: 'var(--bingo-error)', fontSize: 13, marginBottom: 10 }}>{dispatchErr}</div>}
+              {dispatchMsg && <div style={{ color: 'var(--bingo-success)', fontSize: 13, marginBottom: 10 }}>{dispatchMsg}</div>}
+
+              <button className="bingo-button" disabled={dispatchBusy} onClick={saveDispatchConfig}>
+                {dispatchBusy ? 'Guardando…' : 'Guardar emparejamiento'}
               </button>
             </>
           )}

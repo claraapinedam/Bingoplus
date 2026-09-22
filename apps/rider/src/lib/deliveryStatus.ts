@@ -65,4 +65,5 @@ export const API_ERROR_MESSAGES: Record<string, string> = {
   RIDER_ACCOUNT_NOT_ACTIVE: 'Tu cuenta debe estar aprobada y activa para conectarte.',
   RIDER_LOCATION_REQUIRED: 'Comparte tu ubicación antes de conectarte.',
   INVALID_DELIVERY_TRANSITION: 'Esta acción ya no está disponible para esta entrega.',
+  OFFER_NO_LONGER_AVAILABLE: 'Esta oferta ya no está disponible — probablemente se reasignó a otro repartidor.',
 };

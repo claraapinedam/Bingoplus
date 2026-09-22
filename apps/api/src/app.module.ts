@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './prisma/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -47,6 +48,10 @@ import { SupportModule } from './modules/support/support.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Delivery Dispatch V2 — the first scheduler in this codebase (OfferTimeoutSweeper,
+    // SearchingRiderRetrySweeper). A plain DB-polling @Cron, not per-delivery timers, so nothing is
+    // lost across a Render restart/redeploy.
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     UsersModule,

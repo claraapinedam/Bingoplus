@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   DeliveryAssignmentAction,
   DeliveryAssignmentSource,
@@ -16,6 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryEligibilityService } from './delivery-eligibility.service';
 import { DeliveryStateMachine } from './delivery-state-machine';
 import { DispatchService } from './dispatch.service';
+import { DispatchOrchestratorService } from './dispatch-orchestrator.service';
 import { DeliveryReassignmentService } from './delivery-reassignment.service';
 import { DeliveryProofService } from './delivery-proof.service';
 import { DeliverySyncService } from './delivery-sync.service';
@@ -56,6 +57,7 @@ export class DeliveryService {
     private readonly eligibility: DeliveryEligibilityService,
     private readonly stateMachine: DeliveryStateMachine,
     private readonly dispatch: DispatchService,
+    private readonly dispatchOrchestrator: DispatchOrchestratorService,
     private readonly reassignment: DeliveryReassignmentService,
     private readonly proof: DeliveryProofService,
     private readonly sync: DeliverySyncService,
@@ -118,7 +120,7 @@ export class DeliveryService {
       });
       await this.proof.generateOtp(tx, created.id);
       await tx.delivery.update({ where: { id: created.id }, data: { status: DeliveryStatus.SEARCHING_RIDER } });
-      const assignedRiderId = await this.dispatch.dispatch(tx, created.id, pickupCoords.latitude, pickupCoords.longitude);
+      const assignedRiderId = await this.dispatchOrchestrator.dispatch(tx, created.id, pickupCoords.latitude, pickupCoords.longitude);
 
       return { delivery: await tx.delivery.findUniqueOrThrow({ where: { id: created.id }, include: DELIVERY_INCLUDE }), assignedRiderId };
     }).then(({ delivery, assignedRiderId }) => {
@@ -181,11 +183,28 @@ export class DeliveryService {
   }
 
   /** Same ownership-checked lookup as getForRider (used internally by every action method below),
-   * but enriched with riderNetAmount for the Rider App's delivery detail / accept screen. */
+   * but enriched with riderNetAmount for the Rider App's delivery detail / accept screen. Also
+   * enriched (plan item 10) with the rider-to-pickup distance/ETA that EtaRankingService already
+   * computed when this rider was offered the delivery (from the ASSIGNED DeliveryAssignmentHistory
+   * row — never recomputed here), plus assignmentTimeoutSeconds so the offer screen can render a
+   * live countdown. Note Delivery.estimatedDistanceKm/estimatedDurationMinutes are a different
+   * number — the whole pickup→customer route, not rider→pickup — so they're never reused for this. */
   async getForRiderDetail(riderId: string, deliveryId: string) {
     const delivery = await this.getForRider(riderId, deliveryId);
     const [withEarning] = await this.withRiderNetAmount([delivery]);
-    return withEarning;
+    const [assignment, config] = await Promise.all([
+      this.prisma.deliveryAssignmentHistory.findFirst({
+        where: { deliveryId, riderId, action: DeliveryAssignmentAction.ASSIGNED },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.dispatch.getConfig(),
+    ]);
+    return {
+      ...withEarning,
+      pickupDistanceKm: assignment?.estimatedDistanceKm != null ? Number(assignment.estimatedDistanceKm) : null,
+      pickupEtaMinutes: assignment?.estimatedETAMinutes ?? null,
+      assignmentTimeoutSeconds: config.assignmentTimeoutSeconds,
+    };
   }
 
   /** RIDER_ASSIGNED -> RIDER_ACCEPTED -> GOING_TO_PICKUP: accepting already implies starting
@@ -201,10 +220,24 @@ export class DeliveryService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.delivery.update({
-        where: { id: deliveryId },
+      // Concurrency fix (plan §6): a conditional updateMany guarded on the expected current state
+      // — the same race-safe pattern already used below in complete(). Without this guard, a
+      // rider's own accept() and a system-driven reassignment (e.g. OfferTimeoutSweeper firing at
+      // the same instant) could both read status=RIDER_ASSIGNED under READ COMMITTED and both
+      // proceed to write, corrupting Rider.availabilityStatus/Delivery.status. Whichever commits
+      // first wins; the loser gets a clean OFFER_NO_LONGER_AVAILABLE instead of silent corruption.
+      const { count } = await tx.delivery.updateMany({
+        where: { id: deliveryId, status: DeliveryStatus.RIDER_ASSIGNED, riderId },
         data: { status: DeliveryStatus.RIDER_ACCEPTED, acceptedAt: new Date() },
       });
+      if (count === 0) {
+        throw new ConflictException({
+          error: {
+            code: 'OFFER_NO_LONGER_AVAILABLE',
+            message: 'This delivery is no longer available to you — it may have already been reassigned.',
+          },
+        });
+      }
       await tx.deliveryAssignmentHistory.create({
         data: { deliveryId, riderId, action: DeliveryAssignmentAction.ACCEPTED, source: 'AUTO' },
       });

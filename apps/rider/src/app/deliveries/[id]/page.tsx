@@ -59,6 +59,32 @@ interface DeliveryDetail {
   order: { id: string; orderNumber: string };
   route: { polyline: string } | null;
   rider: { vehicles: { type: string }[] } | null;
+  // Offer-screen fields (Dispatch V2) — the rider→pickup distance/ETA EtaRankingService computed
+  // when this offer was made, plus how long the rider has to respond before OfferTimeoutSweeper
+  // reassigns it. Different from estimatedDistanceKm/estimatedDurationMinutes above, which is the
+  // whole pickup→customer route, not rider→pickup.
+  pickupDistanceKm: number | null;
+  pickupEtaMinutes: number | null;
+  assignmentTimeoutSeconds: number | null;
+  assignedAt: string | null;
+}
+
+function useOfferCountdown(assignedAt: string | null, assignmentTimeoutSeconds: number | null, active: boolean): number | null {
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!active || !assignedAt || !assignmentTimeoutSeconds) {
+      setSecondsLeft(null);
+      return;
+    }
+    const deadline = new Date(assignedAt).getTime() + assignmentTimeoutSeconds * 1000;
+    const tick = () => setSecondsLeft(Math.max(0, Math.round((deadline - Date.now()) / 1000)));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [active, assignedAt, assignmentTimeoutSeconds]);
+
+  return secondsLeft;
 }
 
 export default function DeliveryDetailPage() {
@@ -166,6 +192,12 @@ export default function DeliveryDetailPage() {
       },
     );
   }, [mapsLoaded, myLocation, delivery]);
+
+  const offerSecondsLeft = useOfferCountdown(
+    delivery?.assignedAt ?? null,
+    delivery?.assignmentTimeoutSeconds ?? null,
+    delivery?.status === 'RIDER_ASSIGNED',
+  );
 
   async function runAction(action: string, body?: object) {
     setBusy(true);
@@ -293,6 +325,27 @@ export default function DeliveryDetailPage() {
           </span>
           <span style={{ fontWeight: 800 }}>{currencyFormatter.format(Number(delivery.riderNetAmount))}</span>
         </div>
+
+        {delivery.status === 'RIDER_ASSIGNED' && (delivery.pickupDistanceKm != null || delivery.pickupEtaMinutes != null || offerSecondsLeft != null) && (
+          <div className="bingo-card" style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 13 }}>
+              {delivery.pickupDistanceKm != null && <span>{delivery.pickupDistanceKm.toFixed(1)} km hasta el negocio</span>}
+              {delivery.pickupEtaMinutes != null && <span> · ~{delivery.pickupEtaMinutes} min</span>}
+            </div>
+            {offerSecondsLeft != null && (
+              <span
+                className="bingo-badge"
+                style={{
+                  background: offerSecondsLeft <= 10 ? 'var(--bingo-error)' : '#f2f4f7',
+                  color: offerSecondsLeft <= 10 ? 'white' : 'var(--bingo-coral)',
+                  fontWeight: 800,
+                }}
+              >
+                {offerSecondsLeft}s
+              </span>
+            )}
+          </div>
+        )}
 
         {error && <div className="bingo-error-banner" style={{ marginTop: 12 }}>{error}</div>}
 

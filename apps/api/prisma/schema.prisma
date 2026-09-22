@@ -1232,6 +1232,15 @@ model DeliveryAssignmentHistory {
   source     DeliveryAssignmentSource
   createdAt  DateTime                 @default(now())
 
+  // Dispatch V2: populated by DispatchService.assign() at ASSIGNED-row-write time from whatever
+  // EtaRankingService already computed for the winning candidate — the data analytics (acceptance
+  // rate, avg ETA, attempts per delivery) needs. Nullable/optional because older rows (and any
+  // non-ASSIGNED action) never had this computed. attemptNumber = count of prior ASSIGNED rows for
+  // this delivery + 1; "response time" stays a derived query, not a stored column.
+  estimatedDistanceKm Decimal? @db.Decimal(8, 2)
+  estimatedETAMinutes Int?
+  attemptNumber       Int?
+
   delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   rider    Rider?   @relation(fields: [riderId], references: [id])
 
@@ -1368,14 +1377,28 @@ model RiderEarning {
 // §19: dispatch weighting/timeout, admin-configurable — append-only history like
 // PricingConfiguration, so a weighting change stays auditable and dispatch never hardcodes them.
 model RiderDispatchConfig {
-  id                       String   @id @default(cuid())
-  distanceWeight           Decimal  @default(0.5) @db.Decimal(5, 4)
-  ratingWeight             Decimal  @default(0.3) @db.Decimal(5, 4)
-  availabilityWeight       Decimal  @default(0.2) @db.Decimal(5, 4)
-  maxSearchRadiusKm        Decimal  @default(10) @db.Decimal(6, 2)
-  assignmentTimeoutSeconds Int      @default(60)
-  updatedBy                String?
-  createdAt                DateTime @default(now())
+  id                       String  @id @default(cuid())
+  distanceWeight           Decimal @default(0.5) @db.Decimal(5, 4)
+  ratingWeight             Decimal @default(0.3) @db.Decimal(5, 4)
+  availabilityWeight       Decimal @default(0.2) @db.Decimal(5, 4)
+  maxSearchRadiusKm        Decimal @default(10) @db.Decimal(6, 2)
+  assignmentTimeoutSeconds Int     @default(60)
+
+  // Dispatch V2 (offer timeout + ETA ranking + progressive radius expansion) — all admin-tunable,
+  // never hardcoded, same append-only-config convention as the fields above.
+  etaWeight                     Decimal @default(0.6) @db.Decimal(5, 4)
+  maxCandidatesForEta           Int     @default(8)
+  locationStaleThresholdSeconds Int     @default(120)
+  // Postgres array, same pattern as Service.operatingDays — each step tried in order by
+  // DispatchOrchestratorService until one yields a candidate.
+  radiusExpansionKm             Int[]   @default([2, 4, 6, 8])
+  retryBackoffSeconds           Int     @default(15)
+  // A ceiling on total ASSIGNED attempts across a delivery's whole retry lifetime — a delivery
+  // never auto-FAILS from this alone, it just stops auto-retrying and needs manual admin attention.
+  maxDispatchAttempts           Int     @default(20)
+
+  updatedBy String?
+  createdAt DateTime @default(now())
 }
 
 // ───────────────────────────── Services & bookings (Phase 7) ─────────────────────────────

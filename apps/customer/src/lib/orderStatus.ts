@@ -29,10 +29,10 @@ export const ORDER_STATUS_COLORS: Record<string, string> = {
  * Customer App UI; FASE 4 only guarantees the API contract these would bind to). */
 export const DELIVERY_STATUS_LABELS: Record<string, string> = {
   PENDING: 'Preparando envío',
-  SEARCHING_RIDER: 'Buscando repartidor',
-  RIDER_ASSIGNED: 'Repartidor asignado',
+  SEARCHING_RIDER: 'Buscando el mejor repartidor cercano...',
+  RIDER_ASSIGNED: 'Repartidor asignado, esperando confirmación',
   RIDER_ACCEPTED: 'Repartidor confirmado',
-  GOING_TO_PICKUP: 'Repartidor en camino a la tienda',
+  GOING_TO_PICKUP: 'Tu repartidor está llegando al negocio',
   ARRIVED_AT_PICKUP: 'Repartidor en la tienda',
   PICKED_UP: 'Pedido recogido',
   IN_TRANSIT: 'En camino',
