@@ -16,9 +16,27 @@ interface ProductDetail {
   category: { name: string };
   business: { id: string; tradeName: string; city: string };
   species: { id: string; name: string }[];
+  // Same field the backend's TaxCalculationService keys off at checkout — STANDARD is taxed at
+  // PricingConfiguration.defaultTaxPercent, ZERO is always 0%. Shown here so the tax is never a
+  // surprise at the final checkout screen.
+  taxCategory: 'STANDARD' | 'ZERO';
 }
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
+
+/** Read-only preview of the platform's current general tax rate — same rate
+ * PriceCalculationService/TaxCalculationService apply server-side at checkout. Never hardcoded
+ * here: PricingConfiguration.defaultTaxPercent can change (e.g. an SRI-mandated rate change), so
+ * this always reflects whatever the backend would actually charge right now. */
+function useDefaultTaxPercent() {
+  const [percent, setPercent] = useState<number | null>(null);
+  useEffect(() => {
+    apiFetch<{ defaultTaxPercent: number }>('/public/pricing/tax-rate')
+      .then((r) => setPercent(r.defaultTaxPercent))
+      .catch(() => setPercent(null));
+  }, []);
+  return percent;
+}
 
 export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
@@ -30,6 +48,7 @@ export default function ProductDetailPage() {
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const taxPercent = useDefaultTaxPercent();
 
   useEffect(() => {
     apiFetch<ProductDetail>(`/public/products/${params.id}`)
@@ -123,6 +142,43 @@ export default function ProductDetailPage() {
               </span>
             )}
             {currencyFormatter.format(effectivePrice)}
+          </div>
+
+          {/* §"que no le sorprenda en el checkout": el desglose de impuestos se muestra aquí, al
+              cargar el producto, en vez de recién en la confirmación del checkout. Usa la misma
+              tasa (PricingConfiguration.defaultTaxPercent) que el backend aplicará realmente —
+              nunca un valor inventado en el frontend — y respeta taxCategory (ZERO = 0%). */}
+          <div className="bingo-card" style={{ marginTop: 12, padding: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--bingo-navy)', marginBottom: 6 }}>
+              Desglose de precio {quantity > 1 ? `(${quantity} unid.)` : ''}
+            </div>
+            {(() => {
+              const lineSubtotal = effectivePrice * quantity;
+              const isZeroRated = product.taxCategory === 'ZERO';
+              const taxAmount = isZeroRated || taxPercent === null ? 0 : lineSubtotal * taxPercent;
+              const lineTotal = lineSubtotal + taxAmount;
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a' }}>
+                    <span>Valor del producto</span>
+                    <span>{currencyFormatter.format(lineSubtotal)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a', marginTop: 4 }}>
+                    <span>
+                      Impuesto {isZeroRated ? '(exento)' : taxPercent !== null ? `(${Math.round(taxPercent * 100)}%)` : ''}
+                    </span>
+                    <span>{taxPercent === null && !isZeroRated ? '—' : currencyFormatter.format(taxAmount)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 800, marginTop: 8 }}>
+                    <span>Total estimado</span>
+                    <span>{currencyFormatter.format(lineTotal)}</span>
+                  </div>
+                  <p style={{ fontSize: 11, color: '#9aa5b1', marginTop: 6, marginBottom: 0 }}>
+                    No incluye envío ni tarifa de servicio — esos se calculan en el checkout.
+                  </p>
+                </>
+              );
+            })()}
           </div>
 
           {product.description && (

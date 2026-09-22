@@ -5,9 +5,11 @@ import { TaxCalculationService } from './tax-calculation.service';
 import { DiscountService } from './discount.service';
 import { StockService } from './stock.service';
 import { DeliveryFareModule } from '../delivery/delivery-fare.module';
+import { PublicPricingController } from './public-pricing.controller';
 
 @Module({
   imports: [DeliveryFareModule],
+  controllers: [PublicPricingController],
   providers: [PricingConfigService, PriceCalculationService, TaxCalculationService, DiscountService, StockService],
   exports: [PricingConfigService, PriceCalculationService, TaxCalculationService, DiscountService, StockService],
 })

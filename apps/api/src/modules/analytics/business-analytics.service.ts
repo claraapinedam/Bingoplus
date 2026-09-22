@@ -40,7 +40,16 @@ export class BusinessAnalyticsService {
     const where: Prisma.OrderWhereInput = { businessId, createdAt: { gte: range.from, lte: range.to } };
 
     const [revenueAgg, completedCount, cancelledCount, byFulfillment, topProductsRaw] = await Promise.all([
-      this.prisma.order.aggregate({ where: { ...where, status: { not: OrderStatus.CANCELLED } }, _sum: { total: true }, _count: { _all: true } }),
+      // §"business must never see service/delivery fees": Business-facing "revenue" is the
+      // business's own share (subtotal − discount + tax), never Order.total — that field also
+      // carries the platform's serviceFee and the rider's deliveryFee, money that never reaches
+      // this business. Admin analytics (admin-analytics.service.ts) is untouched and still uses
+      // the full Order.total — this fix is business-app-facing only.
+      this.prisma.order.aggregate({
+        where: { ...where, status: { not: OrderStatus.CANCELLED } },
+        _sum: { subtotal: true, discount: true, tax: true },
+        _count: { _all: true },
+      }),
       this.prisma.order.count({ where: { ...where, status: OrderStatus.COMPLETED } }),
       this.prisma.order.count({ where: { ...where, status: OrderStatus.CANCELLED } }),
       this.prisma.order.groupBy({ by: ['fulfillmentType'], where: { ...where, status: { not: OrderStatus.CANCELLED } }, _count: { _all: true } }),
@@ -59,7 +68,8 @@ export class BusinessAnalyticsService {
     const productNameById = new Map(products.map((p) => [p.id, p.name]));
 
     const ordersCount = revenueAgg._count._all;
-    const revenue = Number(revenueAgg._sum.total ?? 0);
+    const revenue =
+      Number(revenueAgg._sum.subtotal ?? 0) - Number(revenueAgg._sum.discount ?? 0) + Number(revenueAgg._sum.tax ?? 0);
 
     return {
       ordersCount,

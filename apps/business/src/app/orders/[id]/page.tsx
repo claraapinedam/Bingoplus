@@ -228,12 +228,14 @@ export default function BusinessOrderDetailPage() {
 
         <h2 className="bingo-section-title">Resumen</h2>
         <div className="bingo-card">
+          {/* El negocio solo debe ver lo que le compete: el valor del producto y su impuesto —
+              nunca la tarifa de servicio ni el envío, que son ingresos de la plataforma/repartidor,
+              no del negocio. Por eso "Total" aquí se calcula explícitamente como
+              subtotal − descuento + impuestos, nunca order.total (que sí incluye esas tarifas). */}
           {[
             ['Subtotal', Number(order.subtotal)],
             ['Descuento', -Number(order.discount)],
             ['Impuestos', Number(order.tax)],
-            ['Tarifa de servicio', Number(order.serviceFee)],
-            ['Envío', Number(order.deliveryFee)],
           ].map(([label, value]) => (
             <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a' }}>
               <span>{label}</span>
@@ -242,7 +244,7 @@ export default function BusinessOrderDetailPage() {
           ))}
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 800, marginTop: 8 }}>
             <span>Total</span>
-            <span>{currencyFormatter.format(Number(order.total))}</span>
+            <span>{currencyFormatter.format(Number(order.subtotal) - Number(order.discount) + Number(order.tax))}</span>
           </div>
           {order.payment && (
             <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 8 }}>

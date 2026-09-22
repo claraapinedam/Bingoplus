@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch, clearTokens, getAccessToken, getActiveBusinessId } from '@/lib/api';
 import { getBusinessProfile, getBusinessContract, BusinessContract, BusinessProfile, CapabilityMap } from '@/lib/business';
+import NewOrderAlerts from './NewOrderAlerts';
 
 interface BusinessContextValue {
   business: BusinessProfile;
@@ -190,6 +191,9 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
   return (
     <BusinessContext.Provider value={{ business, reload: load }}>
+      {/* Always mounted while an ACTIVE business dashboard is showing — not tied to any one page —
+          so a new-order push reaches the business regardless of which screen is currently open. */}
+      <NewOrderAlerts businessId={business.id} />
       <div className="dashboard-shell">
         <div className="dashboard-mobile-topbar">
           {/* eslint-disable-next-line @next/next/no-img-element */}

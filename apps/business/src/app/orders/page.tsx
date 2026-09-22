@@ -15,11 +15,21 @@ interface OrderSummary {
   orderNumber: string;
   status: string;
   fulfillmentType: 'PICKUP' | 'DELIVERY';
-  total: string | number;
+  // order.total also carries the platform's serviceFee and the rider's deliveryFee — money the
+  // business never receives, so the list must never display it directly. subtotal/discount/tax
+  // are what's actually relevant to the business (see businessTotal below).
+  subtotal: string | number;
+  discount: string | number;
+  tax: string | number;
   createdAt: string;
   items: { id: string; quantity: number }[];
   user: { firstName: string; lastName: string };
   payment: { status: string } | null;
+}
+
+/** subtotal − discount + tax — the business-relevant figure, excluding serviceFee/deliveryFee. */
+function businessTotal(o: OrderSummary): number {
+  return Number(o.subtotal) - Number(o.discount) + Number(o.tax);
 }
 
 type SortKey = 'createdAt' | 'total';
@@ -77,8 +87,8 @@ function OrdersContent() {
         )
       : orders;
     const sorted = [...filtered].sort((a, b) => {
-      const av = sortKey === 'total' ? Number(a.total) : new Date(a.createdAt).getTime();
-      const bv = sortKey === 'total' ? Number(b.total) : new Date(b.createdAt).getTime();
+      const av = sortKey === 'total' ? businessTotal(a) : new Date(a.createdAt).getTime();
+      const bv = sortKey === 'total' ? businessTotal(b) : new Date(b.createdAt).getTime();
       return sortDir === 'asc' ? av - bv : bv - av;
     });
     return sorted;
@@ -146,7 +156,7 @@ function OrdersContent() {
                     {new Date(o.createdAt).toLocaleString('es-EC', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   </td>
                   <td>{o.fulfillmentType === 'PICKUP' ? 'Retiro' : 'Entrega'}</td>
-                  <td style={{ fontWeight: 700 }}>{currencyFormatter.format(Number(o.total))}</td>
+                  <td style={{ fontWeight: 700 }}>{currencyFormatter.format(businessTotal(o))}</td>
                   <td>
                     <span className="bingo-badge" style={{ background: '#f2f4f7', color: ORDER_STATUS_COLORS[o.status] ?? '#54617a' }}>
                       {ORDER_STATUS_LABELS[o.status] ?? o.status}

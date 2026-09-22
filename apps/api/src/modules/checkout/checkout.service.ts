@@ -8,6 +8,7 @@ import { StockService } from '../pricing/stock.service';
 import { PaymentService } from '../payments/payment.service';
 import { OrderStateMachine } from '../orders/order-state-machine';
 import { NotificationService } from '../notifications/notification.service';
+import { BusinessNotificationGateway } from '../notifications/business-notification.gateway';
 import { ProductOutOfStockException } from '../../common/exceptions/product-out-of-stock.exception';
 import { generateOrderNumber } from '../orders/order-number.util';
 import { CheckoutValidateDto, CreatePaymentDto } from './dto/checkout.dto';
@@ -27,6 +28,7 @@ export class CheckoutService {
     private readonly stateMachine: OrderStateMachine,
     private readonly config: ConfigService,
     private readonly notifications: NotificationService,
+    private readonly businessNotificationGateway: BusinessNotificationGateway,
   ) {}
 
   /** §11: MVP is USD-only, but every price is stored per-record (never a global constant) — a
@@ -219,6 +221,9 @@ export class CheckoutService {
           entityType: 'Order',
           entityId: order.id,
         });
+        // Realtime push, on top of the DB notification above — reaches the Business App
+        // immediately (any page, via DashboardShell's listener), no polling required.
+        this.businessNotificationGateway.emitNewOrder(order.businessId, { id: order.id, orderNumber: order.orderNumber });
       }
     } else if (
       paymentStatus === PaymentStatus.FAILED &&
