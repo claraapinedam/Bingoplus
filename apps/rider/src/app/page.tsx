@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import RiderShell from '@/components/RiderShell';
 import { apiFetch, ApiError, getUserLocation } from '@/lib/api';
-import { connectSocket, disconnectSocket } from '@/lib/socket';
+import { connectSocket } from '@/lib/socket';
 import { API_ERROR_MESSAGES, DELIVERY_STATUS_LABELS, RIDER_ACTIVE_STATUSES } from '@/lib/deliveryStatus';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
@@ -52,8 +52,10 @@ export default function RiderHomePage() {
   }, [load]);
 
   // Realtime: a new offer lands via `delivery.offer` on the rider's personal room (auto-joined
-  // server-side on connect — see DeliveryGateway.handleConnection). Falls back to nothing extra
-  // needed since `load()` above already ran once; a manual refresh always still works.
+  // server-side on connect — see DeliveryGateway.handleConnection). The socket connection itself
+  // is owned globally by RiderShell (it must survive navigating away from Home — a rider on any
+  // other screen still needs to receive an offer immediately, not just after they happen to come
+  // back here), this effect only attaches Home's own listeners to whatever socket is already live.
   useEffect(() => {
     const socket = connectSocket();
     if (!socket) return;
@@ -70,8 +72,6 @@ export default function RiderHomePage() {
       socket.off('delivery.offer', onOffer);
     };
   }, [load]);
-
-  useEffect(() => () => disconnectSocket(), []);
 
   async function toggleAvailability() {
     if (!profile) return;

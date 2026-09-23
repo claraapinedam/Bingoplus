@@ -109,6 +109,16 @@ export default function OrderDetailPage() {
     loadDelivery();
   }, [load, loadReviewContext, loadDelivery]);
 
+  // Order.status itself has no realtime push (only Delivery does, via the socket below) — a
+  // business confirming/preparing/marking an order ready previously only ever reached the
+  // customer on their next manual refresh. Same short-polling fallback this codebase already uses
+  // for support chat; stops once the order reaches a terminal state.
+  useEffect(() => {
+    if (!order || order.status === 'COMPLETED' || order.status === 'CANCELLED') return;
+    const interval = setInterval(load, 10000);
+    return () => clearInterval(interval);
+  }, [order?.status, load]);
+
   useEffect(() => {
     if (!delivery?.id) return;
     const socket = connectSocket();

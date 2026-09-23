@@ -224,7 +224,7 @@ export default function ProductDetailPage() {
 
           {added ? (
             <div style={{ marginTop: 20, display: 'flex', gap: 10 }}>
-              <button className="bingo-button secondary" onClick={() => setAdded(false)}>
+              <button className="bingo-button secondary" onClick={() => router.push(`/stores/${product.business.id}`)}>
                 Seguir comprando
               </button>
               <a href="/cart" className="bingo-button" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

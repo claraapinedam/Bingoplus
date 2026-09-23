@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch, decodeRoles, getAccessToken, watchUserLocation } from '@/lib/api';
+import { connectSocket } from '@/lib/socket';
 
 // Safely under RiderDispatchConfig.locationStaleThresholdSeconds (120s default) — a rider sitting
 // idle as "Disponible" must keep refreshing its location or it silently drops out of every
@@ -88,6 +89,22 @@ export default function RiderShell({ children }: { children: React.ReactNode }) 
     });
     return stopWatch;
   }, [availabilityStatus]);
+
+  // A new offer must reach the rider immediately regardless of which screen they're on — Home's
+  // own `delivery.offer` listener only fires while Home itself is mounted. This one lives here so
+  // it's always active, and jumps the rider to Home (where the offer/countdown UI already lives)
+  // instead of duplicating that UI. Uses the same shared socket Home connects to — Socket.IO
+  // supports multiple listeners on one connection, so both fire harmlessly if Home is also open.
+  useEffect(() => {
+    if (!ready) return;
+    const socket = connectSocket();
+    if (!socket) return;
+    const onOffer = () => router.push('/');
+    socket.on('delivery.offer', onOffer);
+    return () => {
+      socket.off('delivery.offer', onOffer);
+    };
+  }, [ready, router]);
 
   if (!ready) return null;
 

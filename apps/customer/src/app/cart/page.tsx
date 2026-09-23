@@ -9,7 +9,10 @@ interface CartItem {
   id: string;
   quantity: number;
   unitPriceSnapshot: string | number;
-  product: { name: string; stock: number };
+  // Same field the product page's price preview already keys off — carried through here too so
+  // the tax estimate doesn't disappear between "add to cart" and "view cart" (checkout itself
+  // still computes the authoritative total; this is only a running preview, same as the product page).
+  product: { name: string; stock: number; taxCategory: 'STANDARD' | 'ZERO' };
   variant: { stock: number } | null;
 }
 
@@ -22,10 +25,23 @@ interface Cart {
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
 
+/** Same live rate the product page already previews with, and the backend actually applies at
+ * checkout (PricingConfiguration.defaultTaxPercent) — never hardcoded here. */
+function useDefaultTaxPercent() {
+  const [percent, setPercent] = useState<number | null>(null);
+  useEffect(() => {
+    apiFetch<{ defaultTaxPercent: number }>('/public/pricing/tax-rate')
+      .then((r) => setPercent(r.defaultTaxPercent))
+      .catch(() => setPercent(null));
+  }, []);
+  return percent;
+}
+
 export default function CartPage() {
   const [cart, setCart] = useState<Cart | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [busyItem, setBusyItem] = useState<string | null>(null);
+  const taxPercent = useDefaultTaxPercent();
 
   const load = useCallback(() => {
     apiFetch<Cart | null>('/me/cart')
@@ -133,15 +149,31 @@ export default function CartPage() {
               );
             })}
 
-            <div className="bingo-card" style={{ marginTop: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-                <span>Subtotal</span>
-                <strong>{currencyFormatter.format(cart.subtotal)}</strong>
-              </div>
-              <p style={{ fontSize: 12, color: '#7f8ea3', marginTop: 6 }}>
-                Delivery, comisiones e impuestos se calculan en el checkout.
-              </p>
-            </div>
+            {(() => {
+              const estimatedTax = cart.items.reduce((sum, item) => {
+                if (item.product.taxCategory === 'ZERO' || taxPercent === null) return sum;
+                return sum + Number(item.unitPriceSnapshot) * item.quantity * taxPercent;
+              }, 0);
+              return (
+                <div className="bingo-card" style={{ marginTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
+                    <span>Subtotal</span>
+                    <span>{currencyFormatter.format(cart.subtotal)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginTop: 4 }}>
+                    <span>Impuesto {taxPercent !== null ? `(${Math.round(taxPercent * 100)}%)` : ''}</span>
+                    <span>{taxPercent === null ? '—' : currencyFormatter.format(estimatedTax)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, marginTop: 8, paddingTop: 8, borderTop: '1px solid #eef1f5' }}>
+                    <span>Total estimado</span>
+                    <span>{currencyFormatter.format(cart.subtotal + estimatedTax)}</span>
+                  </div>
+                  <p style={{ fontSize: 12, color: '#7f8ea3', marginTop: 6 }}>
+                    Delivery y comisiones se calculan en el checkout.
+                  </p>
+                </div>
+              );
+            })()}
 
             <a href="/checkout" className="bingo-button" style={{ marginTop: 16, display: 'block', textAlign: 'center' }}>
               Ir al checkout
