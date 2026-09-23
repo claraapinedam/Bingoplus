@@ -812,29 +812,35 @@ enum PaymentStatus {
   PARTIALLY_REFUNDED
 }
 
-// FASE 9 §1 — exactly one of orderId/bookingId is set, never both, never neither. Both stay
-// optional at the Prisma level (a single FK can't conditionally point at two tables) with a
-// raw-SQL CHECK constraint added by the migration as the real DB-level guard — see
-// migration.sql for `payment_exactly_one_target`.
+// FASE 9 §1 / memberships-card-payment — exactly one of orderId/bookingId/membershipPaymentId is
+// set, never more than one, never none. All three stay optional at the Prisma level (a single FK
+// can't conditionally point at three tables) with a raw-SQL CHECK constraint added by the
+// migration as the real DB-level guard — see migration.sql for `payment_exactly_one_target`.
+// membershipPaymentId reuses this exact same real-payment machinery for a business's membership
+// card charge (see MembershipsService.createMembershipCardPayment) — CASH-equivalent manual
+// deposit/transfer for a membership never creates a Payment row at all, exactly like a Booking's
+// CASH_PAYMENT_PROVIDER row is the one case that's written directly instead.
 model Payment {
-  id                String        @id @default(cuid())
-  orderId           String?       @unique
-  bookingId         String?       @unique
-  provider          String
-  providerPaymentId String?
+  id                  String        @id @default(cuid())
+  orderId             String?       @unique
+  bookingId           String?       @unique
+  membershipPaymentId String?       @unique
+  provider            String
+  providerPaymentId   String?
   // Client-supplied idempotency key (§21) — a retried "create payment" request with the same
   // key returns the existing Payment instead of creating a second one.
-  idempotencyKey    String?       @unique
-  amount            Decimal       @db.Decimal(12, 2)
-  currency          String        @default("USD")
-  status            PaymentStatus @default(PENDING)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  idempotencyKey      String?       @unique
+  amount              Decimal       @db.Decimal(12, 2)
+  currency            String        @default("USD")
+  status              PaymentStatus @default(PENDING)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
-  order        Order?        @relation(fields: [orderId], references: [id])
-  booking      Booking?      @relation(fields: [bookingId], references: [id])
-  transactions Transaction[]
-  refunds      Refund[]
+  order             Order?             @relation(fields: [orderId], references: [id])
+  booking           Booking?           @relation(fields: [bookingId], references: [id])
+  membershipPayment MembershipPayment? @relation(fields: [membershipPaymentId], references: [id])
+  transactions      Transaction[]
+  refunds           Refund[]
 }
 
 enum TransactionType {
@@ -2115,35 +2121,38 @@ enum MembershipPaymentStatus {
   REJECTED
 }
 
-// Deposito/transferencia/pago-con-tarjeta as a plain label the business picks when it uploads
-// proof of payment — never a real card-charging integration (owner explicitly decided against
-// one). "CARD" here just means "I paid by card somewhere else (e.g. in person) and this is my
-// confirmation of it", handled identically to the other two methods.
+// DEPOSIT/TRANSFER are the manual-receipt methods (business uploads proof, admin verifies) — see
+// submitPayment. CARD used to be just a label on that same manual flow (owner originally scoped
+// out real card-charging); the owner has since asked for a real charge, so CARD now means a real
+// Sandbox `Payment` was created/confirmed via PaymentService (see
+// MembershipsService.createMembershipCardPayment/confirmMembershipCardPayment) — there is never a
+// receiptUrl on a CARD row, only a linked `Payment` (this model's `payment` relation).
 enum MembershipPaymentMethod {
   DEPOSIT
   TRANSFER
   CARD
 }
 
-// Manual proof-of-payment for a business's membership billing period (owner's decision: deposit
-// receipt + admin verification, deliberately NOT a card charge — this codebase's payment system
-// is still Sandbox-only, no real gateway integrated). Snapshots periodStart/periodEnd/amount at
-// submission time rather than requiring a pre-existing Subscription row, because nothing in this
-// codebase auto-generates Subscription rows per billing period yet (Subscription/Invoice exist as
-// a schema shape — see MembershipsService's own comment — but no rollover engine writes to them).
-// `subscriptionId` is populated once MembershipsService.verifyPayment creates the real Subscription
-// row this payment settles; null while PENDING/REJECTED. Mirrors Refund's PENDING->COMPLETED shape
-// (RefundService.completeManual) — a business submits, it sits PENDING, an admin reviews the
-// receipt image and marks VERIFIED or REJECTED (with a reason).
+// A business's due amount for one membership billing period, and how it got settled. Snapshots
+// periodStart/periodEnd/amount at generation/submission time rather than requiring a pre-existing
+// Subscription row, because nothing in this codebase auto-generates Subscription rows per billing
+// period yet (Subscription/Invoice exist as a schema shape — see MembershipsService's own comment
+// — but no rollover engine writes to them). `subscriptionId` is populated once the period is
+// actually settled — see MembershipsService.settlePeriod, the one place both a manually-verified
+// receipt (verifyPayment) and a successful card charge (confirmMembershipCardPayment) end up, so
+// neither duplicates the other's Subscription-creation / currentPeriodStart-End advance / status
+// flip. Null while PENDING/REJECTED. Mirrors Refund's PENDING->COMPLETED shape
+// (RefundService.completeManual) for the manual-receipt half of this — a business submits, it sits
+// PENDING, an admin reviews the receipt image and marks VERIFIED or REJECTED (with a reason).
 //
 // A row's lifecycle now starts two possible ways (see MembershipPastDueSweeper /
 // MembershipsService.submitPayment): (1) auto-generated the moment currentPeriodEnd is reached —
 // PENDING, receiptUrl/method both null, dueDate = generatedAt + 5 days; or (2) created directly by
 // a proactive submission before the cutoff ever fires — PENDING, receiptUrl/method set immediately,
 // dueDate = submittedAt + 5 days. Either way `dueDate` is the one authoritative deadline: once it
-// passes with the row still PENDING-without-a-receipt or REJECTED (and nothing newer submitted for
-// the same period), the business loses customer-facing visibility — see
-// membership-visibility.util.ts — until an admin verifies a payment for it.
+// passes with the row still PENDING-without-a-receipt-and-without-a-card-attempt or REJECTED (and
+// nothing newer submitted for the same period), the business loses customer-facing visibility —
+// see membership-visibility.util.ts — until the period is settled.
 model MembershipPayment {
   id              String                   @id @default(cuid())
   membershipId    String
@@ -2153,26 +2162,33 @@ model MembershipPayment {
   amount          Decimal                  @db.Decimal(12, 2)
   currency        String                   @default("USD")
   // Nullable: null until the business actually uploads proof (auto-generated placeholder rows
-  // start out this way).
+  // start out this way). Always null on a CARD row — see `payment` below instead.
   receiptUrl      String?
-  // Set together with receiptUrl at submission time — never at auto-generation time, since there
-  // is no method until someone actually pays.
+  // Set at submission time for DEPOSIT/TRANSFER (together with receiptUrl), or the moment a card
+  // charge is initiated for CARD (see createMembershipCardPayment) — never at auto-generation
+  // time, since there is no method until someone actually starts paying.
   method          MembershipPaymentMethod?
   // The single authoritative deadline for this billing period (generatedAt/submittedAt + 5 days).
   // Nullable only for defensiveness against pre-existing rows from before this field existed.
   dueDate         DateTime?
-  status          MembershipPaymentStatus @default(PENDING)
-  // The BusinessUser who submitted this proof — plain id, no relation, same convention as
-  // Refund.requestedBy.
+  status          MembershipPaymentStatus  @default(PENDING)
+  // The BusinessUser who submitted this proof, or who initiated the card charge — plain id, no
+  // relation, same convention as Refund.requestedBy.
   submittedBy     String?
   rejectionReason String?
+  // Who settled this row: an admin's id for a manually-verified receipt, or the
+  // CARD_AUTO_REVIEWER sentinel (MembershipsService) for a self-service card charge — never
+  // blank once VERIFIED, so VERIFIED rows always show how/by-whom in admin history.
   reviewedBy      String?
   reviewedAt      DateTime?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
 
   membership   BusinessMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   subscription Subscription?      @relation(fields: [subscriptionId], references: [id])
+  // The real Sandbox Payment for a CARD charge against this period (see Payment.membershipPaymentId)
+  // — null for DEPOSIT/TRANSFER rows and for a not-yet-attempted CARD row.
+  payment      Payment?
 
   @@index([membershipId])
   @@index([subscriptionId])

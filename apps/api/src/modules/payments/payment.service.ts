@@ -24,14 +24,20 @@ export class PaymentService {
 
   /**
    * Idempotent: a retried create with the same idempotencyKey returns the original Payment (§21).
-   * FASE 9 §1: `target` is exactly one of `{ orderId }` / `{ bookingId }` — the type itself makes
-   * "both" or "neither" impossible to construct at any call site, on top of the DB-level CHECK
-   * constraint (`payment_exactly_one_target`) that guards it even if a caller went around
-   * TypeScript (e.g. a raw query).
+   * FASE 9 §1 / memberships-card-payment: `target` is exactly one of `{ orderId }` /
+   * `{ bookingId }` / `{ membershipPaymentId }` — the type itself makes "more than one" or "none"
+   * impossible to construct at any call site, on top of the DB-level CHECK constraint
+   * (`payment_exactly_one_target`) that guards it even if a caller went around TypeScript (e.g. a
+   * raw query). membershipPaymentId targets a business's membership card charge — see
+   * MembershipsService.createMembershipCardPayment, which mirrors BookingsService.
+   * createBookingPayment exactly.
    */
   async createPayment(
     tx: Prisma.TransactionClient,
-    target: { orderId: string; bookingId?: never } | { bookingId: string; orderId?: never },
+    target:
+      | { orderId: string; bookingId?: never; membershipPaymentId?: never }
+      | { bookingId: string; orderId?: never; membershipPaymentId?: never }
+      | { membershipPaymentId: string; orderId?: never; bookingId?: never },
     amount: Prisma.Decimal,
     currency: string,
     idempotencyKey: string,
@@ -39,12 +45,13 @@ export class PaymentService {
     const existing = await tx.payment.findUnique({ where: { idempotencyKey } });
     if (existing) return existing;
 
-    const referenceId = target.orderId ?? target.bookingId!;
+    const referenceId = target.orderId ?? target.bookingId ?? target.membershipPaymentId!;
     const result = await this.provider.createPayment({ referenceId, amount, currency, idempotencyKey });
     return tx.payment.create({
       data: {
         orderId: target.orderId,
         bookingId: target.bookingId,
+        membershipPaymentId: target.membershipPaymentId,
         provider: this.provider.name,
         providerPaymentId: result.providerPaymentId,
         idempotencyKey,

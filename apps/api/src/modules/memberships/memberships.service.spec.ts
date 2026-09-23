@@ -1,11 +1,22 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { AdminCouponStatus, BusinessMembershipStatus, MembershipPaymentMethod, MembershipPaymentStatus } from '@prisma/client';
-import { MembershipsService } from './memberships.service';
+import {
+  AdminCouponStatus,
+  BusinessMembershipStatus,
+  MembershipPaymentMethod,
+  MembershipPaymentStatus,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
+import { CARD_AUTO_REVIEWER, MembershipsService } from './memberships.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PaymentService } from '../payments/payment.service';
+import { PricingConfigService } from '../pricing/pricing-config.service';
 
 describe('MembershipsService', () => {
   let service: MembershipsService;
   let prisma: any;
+  let payments: any;
+  let pricingConfig: any;
 
   beforeEach(() => {
     prisma = {
@@ -23,10 +34,31 @@ describe('MembershipsService', () => {
         create: jest.fn((args: any) => ({ id: 'payment-1', ...args.data })),
         update: jest.fn((args: any) => ({ id: args.where.id, ...args.data })),
       },
+      payment: {
+        findFirst: jest.fn(),
+      },
       subscription: { create: jest.fn((args: any) => ({ id: 'sub-1', ...args.data })) },
       $transaction: jest.fn((cb: any) => cb(prisma)),
     };
-    service = new MembershipsService(prisma as unknown as PrismaService);
+    payments = {
+      createPayment: jest.fn((_tx: any, target: any, amount: any, currency: string) => ({
+        id: 'card-payment-1',
+        ...target,
+        amount,
+        currency,
+        provider: 'sandbox',
+        status: PaymentStatus.PENDING,
+      })),
+      confirmPayment: jest.fn(),
+    };
+    pricingConfig = {
+      get: jest.fn().mockResolvedValue({ serviceFeePercent: 0, serviceFeeFixed: 0, defaultTaxPercent: 0 }),
+    };
+    service = new MembershipsService(
+      prisma as unknown as PrismaService,
+      payments as unknown as PaymentService,
+      pricingConfig as unknown as PricingConfigService,
+    );
   });
 
   describe('membership states', () => {
@@ -278,11 +310,54 @@ describe('MembershipsService', () => {
         });
         prisma.membershipPayment.findFirst.mockResolvedValue(null);
 
-        await service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.CARD);
+        await service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.TRANSFER);
 
         const data = prisma.membershipPayment.create.mock.calls[0][0].data;
         expect(data.periodStart).toEqual(membershipWithOpenPeriod.createdAt);
         expect(data.periodEnd).toEqual(membershipWithOpenPeriod.trialEndsAt);
+      });
+
+      // CARD used to be just a label on this same manual-receipt flow; it's now a real charge (see
+      // createMembershipCardPayment) and must never accept a receipt upload again.
+      it('rejects method CARD outright — a real card charge never goes through the manual-receipt endpoint', async () => {
+        await expect(
+          service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.CARD),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.businessMembership.findUnique).not.toHaveBeenCalled();
+        expect(prisma.membershipPayment.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses a manual receipt while a card charge is in progress (not yet FAILED) for the same period', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipWithOpenPeriod);
+        prisma.membershipPayment.findFirst.mockResolvedValue({
+          id: 'card-attempt-1',
+          status: MembershipPaymentStatus.PENDING,
+          receiptUrl: null,
+          method: MembershipPaymentMethod.CARD,
+          payment: { status: PaymentStatus.PENDING },
+        });
+
+        await expect(
+          service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.DEPOSIT),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.membershipPayment.update).not.toHaveBeenCalled();
+      });
+
+      it('allows falling back to a manual receipt once the card attempt has FAILED', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipWithOpenPeriod);
+        prisma.membershipPayment.findFirst.mockResolvedValue({
+          id: 'card-attempt-1',
+          status: MembershipPaymentStatus.PENDING,
+          receiptUrl: null,
+          method: MembershipPaymentMethod.CARD,
+          payment: { status: PaymentStatus.FAILED },
+        });
+
+        await service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.DEPOSIT);
+
+        const updateCall = prisma.membershipPayment.update.mock.calls[0][0];
+        expect(updateCall.where.id).toBe('card-attempt-1');
+        expect(updateCall.data.method).toBe(MembershipPaymentMethod.DEPOSIT);
       });
 
       it('inherits the original dueDate (never resets the clock) when resubmitting after a rejection', async () => {
@@ -456,6 +531,184 @@ describe('MembershipsService', () => {
         const membershipUpdate = prisma.businessMembership.update.mock.calls[0][0].data;
         expect(membershipUpdate.status).toBe(BusinessMembershipStatus.ACTIVE);
         expect(membershipUpdate.currentPeriodStart).toEqual(pendingPayment.periodEnd);
+        expect(membershipUpdate.currentPeriodEnd.toISOString()).toBe('2026-04-01T00:00:00.000Z');
+      });
+    });
+
+    describe('createMembershipCardPayment', () => {
+      const membershipForCard = { id: 'm1', businessId: 'b1' };
+      const duePayment = {
+        id: 'due-1',
+        membershipId: 'm1',
+        status: MembershipPaymentStatus.PENDING,
+        amount: new Prisma.Decimal(25),
+        currency: 'USD',
+        receiptUrl: null,
+        payment: null as any,
+      };
+
+      it('throws when the business has no membership yet', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(null);
+        await expect(service.createMembershipCardPayment('b1', 'user-1', 'idem-1')).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+      });
+
+      it('refuses to charge when there is no due (PENDING) MembershipPayment record — no "pay early" here', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.membershipPayment.findFirst.mockResolvedValue(null);
+
+        await expect(service.createMembershipCardPayment('b1', 'user-1', 'idem-1')).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(payments.createPayment).not.toHaveBeenCalled();
+      });
+
+      it('refuses to charge when the current period is already VERIFIED (settled, nothing due)', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.membershipPayment.findFirst.mockResolvedValue({ ...duePayment, status: MembershipPaymentStatus.VERIFIED });
+
+        await expect(service.createMembershipCardPayment('b1', 'user-1', 'idem-1')).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(payments.createPayment).not.toHaveBeenCalled();
+      });
+
+      it('refuses to charge when a manual receipt is already awaiting review for this period', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.membershipPayment.findFirst.mockResolvedValue({ ...duePayment, receiptUrl: 'https://x/receipt.png' });
+
+        await expect(service.createMembershipCardPayment('b1', 'user-1', 'idem-1')).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(payments.createPayment).not.toHaveBeenCalled();
+      });
+
+      it('returns the existing Payment idempotently when a card attempt already exists for this period', async () => {
+        const existingPayment = { id: 'existing-card-payment', status: PaymentStatus.PENDING };
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.membershipPayment.findFirst.mockResolvedValue({ ...duePayment, payment: existingPayment });
+
+        const result = await service.createMembershipCardPayment('b1', 'user-1', 'idem-1');
+
+        expect(result).toBe(existingPayment);
+        expect(payments.createPayment).not.toHaveBeenCalled();
+      });
+
+      it('charges the due amount plus a service-fee-only surcharge — never tax — using PricingConfiguration', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.membershipPayment.findFirst.mockResolvedValue(duePayment);
+        // 5% service fee + $1 fixed, and a non-zero tax rate that must NEVER be read into the total.
+        pricingConfig.get.mockResolvedValue({ serviceFeePercent: 0.05, serviceFeeFixed: 1, defaultTaxPercent: 0.15 });
+
+        await service.createMembershipCardPayment('b1', 'user-1', 'idem-1');
+
+        // due 25 * 0.05 = 1.25 + 1 fixed = 2.25 service fee -> total 27.25 (no tax line at all)
+        const createCall = payments.createPayment.mock.calls[0];
+        const [, target, amount] = createCall;
+        expect(target).toEqual({ membershipPaymentId: 'due-1' });
+        expect(amount.toString()).toBe('27.25');
+      });
+
+      it('marks the due MembershipPayment method=CARD and records who initiated it before creating the Payment', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.membershipPayment.findFirst.mockResolvedValue(duePayment);
+
+        await service.createMembershipCardPayment('b1', 'user-1', 'idem-1');
+
+        const updateCall = prisma.membershipPayment.update.mock.calls[0][0];
+        expect(updateCall.where.id).toBe('due-1');
+        expect(updateCall.data).toEqual({ method: MembershipPaymentMethod.CARD, submittedBy: 'user-1' });
+      });
+
+      it('never mutates a REJECTED row — creates a fresh one inheriting its dueDate, exactly like submitPayment', async () => {
+        const membershipWithPlan = { ...membershipForCard, plan: { price: 25, currency: 'USD' } };
+        const rejectedRow = {
+          id: 'rejected-1',
+          status: MembershipPaymentStatus.REJECTED,
+          receiptUrl: 'https://x/blurry.png',
+          dueDate: new Date('2026-01-20T00:00:00Z'),
+          payment: null as any,
+        };
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipWithPlan);
+        prisma.membershipPayment.findFirst.mockResolvedValue(rejectedRow);
+        prisma.adminCouponRedemption.findMany.mockResolvedValueOnce([]);
+
+        await service.createMembershipCardPayment('b1', 'user-1', 'idem-1');
+
+        expect(prisma.membershipPayment.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: 'rejected-1' } }),
+        );
+        const createCall = prisma.membershipPayment.create.mock.calls[0][0].data;
+        expect(createCall.dueDate).toBe(rejectedRow.dueDate);
+        expect(createCall.amount.toString()).toBe('25');
+        expect(payments.createPayment).toHaveBeenCalled();
+      });
+    });
+
+    describe('confirmMembershipCardPayment', () => {
+      const membershipForCard = { id: 'm1', businessId: 'b1', plan: { billingFrequency: 'MONTHLY' } };
+      const cardMembershipPayment = {
+        id: 'due-1',
+        membershipId: 'm1',
+        periodStart: new Date('2026-01-31T00:00:00Z'),
+        periodEnd: new Date('2026-03-02T00:00:00Z'),
+        amount: 25,
+        currency: 'USD',
+      };
+      const cardPayment = { id: 'card-payment-1', status: PaymentStatus.PENDING, membershipPayment: cardMembershipPayment };
+
+      it('throws when no card payment was ever initiated for this membership', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.payment.findFirst.mockResolvedValue(null);
+        await expect(service.confirmMembershipCardPayment('b1')).rejects.toBeInstanceOf(NotFoundException);
+        expect(payments.confirmPayment).not.toHaveBeenCalled();
+      });
+
+      it('is idempotent — a repeated confirm on an already-PAID charge never re-confirms or re-settles', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.payment.findFirst.mockResolvedValue({ ...cardPayment, status: PaymentStatus.PAID });
+
+        const result = await service.confirmMembershipCardPayment('b1');
+
+        expect(payments.confirmPayment).not.toHaveBeenCalled();
+        expect(prisma.subscription.create).not.toHaveBeenCalled();
+        expect(result.membershipPayment).toBe(cardMembershipPayment);
+      });
+
+      it('on a FAILED confirmation, leaves the membership/period completely untouched', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.payment.findFirst.mockResolvedValue(cardPayment);
+        payments.confirmPayment.mockResolvedValue({ ...cardPayment, status: PaymentStatus.FAILED });
+
+        await service.confirmMembershipCardPayment('b1', true);
+
+        expect(prisma.subscription.create).not.toHaveBeenCalled();
+        expect(prisma.businessMembership.update).not.toHaveBeenCalled();
+        expect(prisma.membershipPayment.update).not.toHaveBeenCalled();
+      });
+
+      it('on success, settles the period through the exact same path verifyPayment uses (settlePeriod): Subscription created, MembershipPayment VERIFIED with the CARD_AUTO_REVIEWER sentinel and method CARD, membership advanced to ACTIVE', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipForCard);
+        prisma.payment.findFirst.mockResolvedValue(cardPayment);
+        payments.confirmPayment.mockResolvedValue({ ...cardPayment, status: PaymentStatus.PAID });
+
+        await service.confirmMembershipCardPayment('b1');
+
+        const subData = prisma.subscription.create.mock.calls[0][0].data;
+        expect(subData.membershipId).toBe('m1');
+        expect(subData.periodStart).toEqual(cardMembershipPayment.periodStart);
+        expect(subData.periodEnd).toEqual(cardMembershipPayment.periodEnd);
+
+        const paymentUpdate = prisma.membershipPayment.update.mock.calls[0][0].data;
+        expect(paymentUpdate.status).toBe(MembershipPaymentStatus.VERIFIED);
+        expect(paymentUpdate.reviewedBy).toBe(CARD_AUTO_REVIEWER);
+        expect(paymentUpdate.method).toBe(MembershipPaymentMethod.CARD);
+        expect(paymentUpdate.subscriptionId).toBe('sub-1');
+
+        const membershipUpdate = prisma.businessMembership.update.mock.calls[0][0].data;
+        expect(membershipUpdate.status).toBe(BusinessMembershipStatus.ACTIVE);
+        expect(membershipUpdate.currentPeriodStart).toEqual(cardMembershipPayment.periodEnd);
         expect(membershipUpdate.currentPeriodEnd.toISOString()).toBe('2026-04-01T00:00:00.000Z');
       });
     });

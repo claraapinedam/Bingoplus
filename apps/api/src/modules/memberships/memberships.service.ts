@@ -7,10 +7,13 @@ import {
   MembershipPaymentMethod,
   MembershipPaymentStatus,
   MembershipPlanStatus,
+  PaymentStatus,
   Prisma,
   SubscriptionStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PaymentService } from '../payments/payment.service';
+import { PricingConfigService } from '../pricing/pricing-config.service';
 import { CreateMembershipPlanDto, UpdateMembershipPlanDto } from './dto/membership-plan.dto';
 import { isMembershipStatusGoodStanding } from './membership-visibility.util';
 
@@ -27,6 +30,11 @@ const YEAR_MS = 365 * DAY_MS;
 export const MEMBERSHIP_PAYMENT_GRACE_DAYS = 5;
 export const MEMBERSHIP_PAYMENT_GRACE_MS = MEMBERSHIP_PAYMENT_GRACE_DAYS * DAY_MS;
 
+/** `MembershipPayment.reviewedBy` sentinel for a period settled by a successful card charge —
+ * distinguishes "an admin actually looked at this" (a real admin user id, set by verifyPayment)
+ * from "the business paid by card and the platform settled it automatically" in admin history. */
+export const CARD_AUTO_REVIEWER = 'system:card-payment';
+
 /**
  * Membership → Subscription → Invoice is a financial domain kept separate from Marketplace
  * Orders (RULE 17) — a business pays BINGO+ for Directory presence here, it never goes through
@@ -36,7 +44,11 @@ export const MEMBERSHIP_PAYMENT_GRACE_MS = MEMBERSHIP_PAYMENT_GRACE_DAYS * DAY_M
  */
 @Injectable()
 export class MembershipsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly payments: PaymentService,
+    private readonly pricingConfig: PricingConfigService,
+  ) {}
 
   // ── Plans (Admin) ────────────────────────────────────────────────────────
 
@@ -79,7 +91,10 @@ export class MembershipsService {
       include: {
         plan: true,
         subscriptions: { orderBy: { createdAt: 'desc' }, take: 5 },
-        payments: { orderBy: { createdAt: 'desc' }, take: 10 },
+        // `payment` (singular) is the CARD row's own real Payment, if any — lets the business app
+        // show "your card charge is processing/failed" without a second round-trip (see
+        // createMembershipCardPayment/confirmMembershipCardPayment).
+        payments: { orderBy: { createdAt: 'desc' }, take: 10, include: { payment: true } },
       },
     });
   }
@@ -210,7 +225,10 @@ export class MembershipsService {
     });
   }
 
-  // ── Membership payments (manual deposit + receipt, RULE: no card-charging infra exists yet) ──
+  // ── Membership payments — DEPOSIT/TRANSFER stay manual (receipt upload + admin verification);
+  // CARD is a real charge through the same PaymentService/Sandbox provider CheckoutService and
+  // BookingsService already use (see createMembershipCardPayment/confirmMembershipCardPayment
+  // below, and settlePeriod for the one place both paths converge). ──────────────────────────
 
   private periodLengthMs(plan: { billingFrequency: BillingFrequency }): number {
     return plan.billingFrequency === BillingFrequency.YEARLY ? YEAR_MS : MONTH_MS;
@@ -339,6 +357,15 @@ export class MembershipsService {
     receiptUrl: string,
     method: MembershipPaymentMethod,
   ) {
+    // CARD is a real charge now (see createMembershipCardPayment) — it never accepts a manual
+    // receipt upload, which is the whole point of the owner's complaint this flow used to paper
+    // over ("selecting tarjeta just asked for a proof-of-payment image").
+    if (method === MembershipPaymentMethod.CARD) {
+      throw new BadRequestException(
+        'El pago con tarjeta se procesa directamente — usa POST .../membership/payments/card en vez de subir un comprobante.',
+      );
+    }
+
     const membership = await this.prisma.businessMembership.findUnique({
       where: { businessId },
       include: { plan: true },
@@ -350,11 +377,20 @@ export class MembershipsService {
     const existingForPeriod = await this.prisma.membershipPayment.findFirst({
       where: { membershipId: membership.id, periodStart, periodEnd },
       orderBy: { createdAt: 'desc' },
+      include: { payment: true },
     });
 
     if (existingForPeriod?.status === MembershipPaymentStatus.PENDING) {
       if (existingForPeriod.receiptUrl) {
         throw new BadRequestException('There is already a payment proof pending review for this membership.');
+      }
+      // A card charge was started (and hasn't failed) for this exact period — let it resolve
+      // (succeed/fail) before allowing a fallback manual receipt, so the two flows never race on
+      // the same MembershipPayment row.
+      if (existingForPeriod.method === MembershipPaymentMethod.CARD && existingForPeriod.payment?.status !== PaymentStatus.FAILED) {
+        throw new BadRequestException(
+          'Ya iniciaste un pago con tarjeta para este período. Espera a que se complete o falle antes de subir un comprobante.',
+        );
       }
       return this.prisma.membershipPayment.update({
         where: { id: existingForPeriod.id },
@@ -401,13 +437,63 @@ export class MembershipsService {
   }
 
   /**
+   * The one place a period actually gets settled — shared by verifyPayment (admin manually
+   * verifies a deposit/transfer receipt) and confirmMembershipCardPayment (a card charge succeeds)
+   * so neither duplicates: creates the real Subscription row for the period just paid (the only
+   * place in this codebase that ever writes a Subscription row — see the model-shape gap
+   * documented on MembershipPayment), advances BusinessMembership.currentPeriodStart/End to the
+   * next period, and clears any PAST_DUE (or TRIAL) back to ACTIVE — the "unblock access" half of
+   * the 5-day rule, enforced automatically everywhere MembershipsService.hasBenefit is consulted.
+   * Caller already owns the transaction and already checked payment.status === PENDING.
+   */
+  private async settlePeriod(
+    tx: Prisma.TransactionClient,
+    payment: { id: string; membershipId: string; periodStart: Date; periodEnd: Date; amount: Prisma.Decimal; currency: string },
+    plan: { billingFrequency: BillingFrequency },
+    reviewedBy: string,
+    method?: MembershipPaymentMethod,
+  ) {
+    const nextPeriodStart = payment.periodEnd;
+    const nextPeriodEnd = new Date(nextPeriodStart.getTime() + this.periodLengthMs(plan));
+
+    const subscription = await tx.subscription.create({
+      data: {
+        membershipId: payment.membershipId,
+        periodStart: payment.periodStart,
+        periodEnd: payment.periodEnd,
+        amount: payment.amount,
+        currency: payment.currency,
+        status: SubscriptionStatus.ACTIVE,
+      },
+    });
+
+    const updated = await tx.membershipPayment.update({
+      where: { id: payment.id },
+      data: {
+        status: MembershipPaymentStatus.VERIFIED,
+        reviewedBy,
+        reviewedAt: new Date(),
+        subscriptionId: subscription.id,
+        ...(method ? { method } : {}),
+      },
+    });
+
+    await tx.businessMembership.update({
+      where: { id: payment.membershipId },
+      data: {
+        status: BusinessMembershipStatus.ACTIVE,
+        currentPeriodStart: nextPeriodStart,
+        currentPeriodEnd: nextPeriodEnd,
+      },
+    });
+
+    return updated;
+  }
+
+  /**
    * Admin confirms the deposit actually happened (mirrors RefundService.completeManual exactly —
-   * no payment-provider call, this only records that it happened). This is what actually settles
-   * the period: it creates the real Subscription row for the period just paid (the only place in
-   * this codebase that ever writes a Subscription row — see the model-shape gap documented on
-   * MembershipPayment), advances BusinessMembership.currentPeriodStart/End to the next period, and
-   * clears any PAST_DUE (or TRIAL) back to ACTIVE — the "unblock access" half of the 5-day rule,
-   * enforced automatically everywhere MembershipsService.hasBenefit is consulted.
+   * no payment-provider call, this only records that it happened) and settles the period via
+   * settlePeriod.
    */
   async verifyPayment(paymentId: string, reviewedBy: string) {
     const payment = await this.prisma.membershipPayment.findUnique({
@@ -419,42 +505,132 @@ export class MembershipsService {
       throw new BadRequestException('This payment was already reviewed.');
     }
 
-    const nextPeriodStart = payment.periodEnd;
-    const nextPeriodEnd = new Date(nextPeriodStart.getTime() + this.periodLengthMs(payment.membership.plan));
+    return this.prisma.$transaction((tx) => this.settlePeriod(tx, payment, payment.membership.plan, reviewedBy));
+  }
+
+  // ── Membership card payment (real charge — see PaymentService/Sandbox provider) ────────────
+
+  /** subtotal × PricingConfiguration.serviceFeePercent + serviceFeeFixed — the EXACT same formula
+   * PriceCalculationService.calculate uses for a Marketplace order's service fee, reusing the same
+   * shared config/service rather than duplicating it. Deliberately never touches
+   * defaultTaxPercent: a membership card charge is BINGO+ billing the business directly, not a
+   * taxable customer sale, so no tax line applies here — only the service fee. */
+  private async computeServiceFee(dueAmount: Prisma.Decimal): Promise<Prisma.Decimal> {
+    const config = await this.pricingConfig.get();
+    return dueAmount.mul(config.serviceFeePercent).plus(config.serviceFeeFixed);
+  }
+
+  /**
+   * Business chooses "pagar con tarjeta" for its current due membership period. Resolves the due
+   * row the exact same way submitPayment does (resolveDuePeriod, most recent row for that exact
+   * period) so the manual and card flows never disagree about which row — or which period — is
+   * "the" due one, and REJECTED is handled identically to submitPayment: never mutate a rejected
+   * row (preserves its audit trail), create a fresh PENDING one inheriting its dueDate. Charges
+   * the due amount plus a service-fee-only surcharge (never tax — see computeServiceFee).
+   * Deliberately never fabricates a row when nothing is due yet (VERIFIED, or no row at all) —
+   * there is no "pay early" behavior here (unlike the legacy submitPayment path), matching the
+   * owner's explicit "the pagar UI belongs inside the generated record" correction. Mirrors
+   * BookingsService.createBookingPayment's idempotent-retry shape via Payment.membershipPaymentId's
+   * unique constraint.
+   */
+  async createMembershipCardPayment(businessId: string, submittedBy: string, idempotencyKey: string) {
+    const membership = await this.prisma.businessMembership.findUnique({
+      where: { businessId },
+      include: { plan: true },
+    });
+    if (!membership) throw new NotFoundException('This business has no membership yet');
+
+    const { periodStart, periodEnd } = this.resolveDuePeriod(membership);
+    const existingForPeriod = await this.prisma.membershipPayment.findFirst({
+      where: { membershipId: membership.id, periodStart, periodEnd },
+      orderBy: { createdAt: 'desc' },
+      include: { payment: true },
+    });
+
+    if (!existingForPeriod || existingForPeriod.status === MembershipPaymentStatus.VERIFIED) {
+      throw new BadRequestException('No hay ningún pago de membresía pendiente para tu negocio en este momento.');
+    }
+
+    let target = existingForPeriod;
+    if (target.status === MembershipPaymentStatus.PENDING) {
+      if (target.payment) {
+        // Same card attempt retried (e.g. a resumed page) — return what's there instead of
+        // hitting Payment.membershipPaymentId's unique constraint with a second row.
+        return target.payment;
+      }
+      if (target.receiptUrl) {
+        throw new BadRequestException(
+          'Ya hay un comprobante manual en revisión para este período — no se puede pagar también con tarjeta.',
+        );
+      }
+    } else {
+      // REJECTED — a fresh due amount (coupons may have changed since the rejection), a fresh
+      // row, but the original dueDate: exactly submitPayment's own REJECTED-resubmission rule.
+      const amount = await this.computeDueAmount(membership.id, membership.plan.price);
+      target = await this.prisma.membershipPayment.create({
+        data: {
+          membershipId: membership.id,
+          periodStart,
+          periodEnd,
+          amount,
+          currency: membership.plan.currency,
+          dueDate: target.dueDate,
+        },
+        include: { payment: true },
+      });
+    }
+
+    const serviceFee = await this.computeServiceFee(target.amount);
+    const total = target.amount.plus(serviceFee);
+    const targetId = target.id;
 
     return this.prisma.$transaction(async (tx) => {
-      const subscription = await tx.subscription.create({
-        data: {
-          membershipId: payment.membershipId,
-          periodStart: payment.periodStart,
-          periodEnd: payment.periodEnd,
-          amount: payment.amount,
-          currency: payment.currency,
-          status: SubscriptionStatus.ACTIVE,
-        },
+      await tx.membershipPayment.update({
+        where: { id: targetId },
+        data: { method: MembershipPaymentMethod.CARD, submittedBy },
       });
-
-      const updated = await tx.membershipPayment.update({
-        where: { id: paymentId },
-        data: {
-          status: MembershipPaymentStatus.VERIFIED,
-          reviewedBy,
-          reviewedAt: new Date(),
-          subscriptionId: subscription.id,
-        },
-      });
-
-      await tx.businessMembership.update({
-        where: { id: payment.membershipId },
-        data: {
-          status: BusinessMembershipStatus.ACTIVE,
-          currentPeriodStart: nextPeriodStart,
-          currentPeriodEnd: nextPeriodEnd,
-        },
-      });
-
-      return updated;
+      return this.payments.createPayment(tx, { membershipPaymentId: targetId }, total, target.currency, idempotencyKey);
     });
+  }
+
+  /**
+   * Confirms the Sandbox charge for the business's in-progress card payment and, on success,
+   * settles the period through the exact same settlePeriod() a manually-verified receipt uses —
+   * see the class comment on settlePeriod. A failed charge deliberately leaves the
+   * MembershipPayment exactly as it was (still PENDING, method CARD) so the business can retry —
+   * mirrors BookingsService.confirmBookingPayment's "no auto side effects on failure" rule.
+   */
+  async confirmMembershipCardPayment(businessId: string, simulateFailure?: boolean) {
+    const membership = await this.prisma.businessMembership.findUnique({
+      where: { businessId },
+      include: { plan: true },
+    });
+    if (!membership) throw new NotFoundException('This business has no membership yet');
+
+    // Found via the Payment row itself (not filtered to a still-PENDING MembershipPayment) so a
+    // repeated/late confirm click on an already-settled charge is idempotent instead of 404ing —
+    // same shape as BookingsService.confirmBookingPayment's early PAID return.
+    const payment = await this.prisma.payment.findFirst({
+      where: { membershipPayment: { membershipId: membership.id } },
+      orderBy: { createdAt: 'desc' },
+      include: { membershipPayment: true },
+    });
+    if (!payment) {
+      throw new NotFoundException('No hay ningún pago con tarjeta iniciado para tu membresía.');
+    }
+    if (payment.status === PaymentStatus.PAID) {
+      return { payment, membershipPayment: payment.membershipPayment };
+    }
+
+    const result = await this.payments.confirmPayment(payment.id, simulateFailure ? 'failure' : 'success');
+    if (result.status !== PaymentStatus.PAID) {
+      return { payment: result, membershipPayment: payment.membershipPayment };
+    }
+
+    const membershipPayment = await this.prisma.$transaction((tx) =>
+      this.settlePeriod(tx, payment.membershipPayment!, membership.plan, CARD_AUTO_REVIEWER, MembershipPaymentMethod.CARD),
+    );
+    return { payment: result, membershipPayment };
   }
 
   async rejectPayment(paymentId: string, reviewedBy: string, reason?: string) {

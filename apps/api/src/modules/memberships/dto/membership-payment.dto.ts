@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 import { MembershipPaymentMethod, MembershipPaymentStatus } from '@prisma/client';
 
 /** Business submits the receipt URL + payment method for the current due period — amount/period
@@ -29,6 +29,24 @@ export class RejectMembershipPaymentDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+}
+
+/** Same idempotency-key shape as CreateBookingPaymentDto — a retried request with the same key
+ * never double-charges (see PaymentService.createPayment). */
+export class CreateMembershipCardPaymentDto {
+  @ApiProperty({ description: 'Client-generated — a retried request with the same key never double-charges' })
+  @IsString()
+  idempotencyKey!: string;
+}
+
+/** Same shape as ConfirmBookingPaymentDto. */
+export class ConfirmMembershipCardPaymentDto {
+  @ApiPropertyOptional({
+    description: 'Sandbox-only test hook — forces the simulated payment to fail instead of succeed',
+  })
+  @IsOptional()
+  @IsBoolean()
+  simulateFailure?: boolean;
 }
 
 export class ListMembershipPaymentsQueryDto {

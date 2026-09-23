@@ -6,7 +6,11 @@ import { Audit } from '../../common/decorators/audit.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { MembershipsService } from './memberships.service';
 import { RedeemAdminCouponDto } from './dto/redeem-admin-coupon.dto';
-import { SubmitMembershipPaymentDto } from './dto/membership-payment.dto';
+import {
+  ConfirmMembershipCardPaymentDto,
+  CreateMembershipCardPaymentDto,
+  SubmitMembershipPaymentDto,
+} from './dto/membership-payment.dto';
 
 @ApiTags('public/membership-plans')
 @Controller('public/membership-plans')
@@ -45,5 +49,24 @@ export class BusinessMembershipController {
     @Body() dto: SubmitMembershipPaymentDto,
   ) {
     return this.memberships.submitPayment(businessId, user.id, dto.receiptUrl, dto.method);
+  }
+
+  @Audit('membership.payment.create-card', 'MembershipPayment')
+  @Post('payments/card')
+  createCardPayment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('businessId') businessId: string,
+    @Body() dto: CreateMembershipCardPaymentDto,
+  ) {
+    return this.memberships.createMembershipCardPayment(businessId, user.id, dto.idempotencyKey);
+  }
+
+  @Audit('membership.payment.confirm-card', 'MembershipPayment')
+  @Post('payments/card/confirm')
+  confirmCardPayment(
+    @Param('businessId') businessId: string,
+    @Body() dto: ConfirmMembershipCardPaymentDto,
+  ) {
+    return this.memberships.confirmMembershipCardPayment(businessId, dto.simulateFailure);
   }
 }
