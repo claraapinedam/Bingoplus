@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, PaymentStatus, RefundStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentService } from '../payments/payment.service';
 
@@ -38,5 +38,41 @@ export class RefundService {
 
   listForOrder(orderId: string) {
     return this.prisma.refund.findMany({ where: { orderId }, orderBy: { createdAt: 'desc' } });
+  }
+
+  /**
+   * Marks a PENDING refund as done once an admin has actually handled it (e.g. a bank transfer
+   * outside the platform) — distinct from refundOrder() above, which calls the payment provider
+   * directly. There's no provider call to make here: this only records that it happened, the same
+   * way completing a manual off-system refund would in any system, and updates Payment.status
+   * with the same REFUNDED-vs-PARTIALLY_REFUNDED logic PaymentService.refundPayment already uses
+   * on its own completion path, so the two ways a refund can finish stay consistent.
+   */
+  async completeManual(refundId: string) {
+    const refund = await this.prisma.refund.findUnique({ where: { id: refundId } });
+    if (!refund) throw new NotFoundException('Refund not found');
+    if (refund.status !== RefundStatus.PENDING) {
+      throw new BadRequestException({
+        error: { code: 'REFUND_NOT_PENDING', message: 'This refund was already resolved.' },
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.refund.update({ where: { id: refundId }, data: { status: RefundStatus.COMPLETED } });
+
+      const alreadyRefunded = await tx.refund.aggregate({
+        where: { paymentId: refund.paymentId, status: RefundStatus.COMPLETED },
+        _sum: { amount: true },
+      });
+      const payment = await tx.payment.findUniqueOrThrow({ where: { id: refund.paymentId } });
+      const totalRefunded = alreadyRefunded._sum.amount ?? new Prisma.Decimal(0);
+      const isFullyRefunded = totalRefunded.gte(payment.amount);
+      await tx.payment.update({
+        where: { id: refund.paymentId },
+        data: { status: isFullyRefunded ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED },
+      });
+
+      return updated;
+    });
   }
 }

@@ -45,6 +45,7 @@ interface OrderDetail {
   user: { firstName: string; lastName: string };
   payment: { status: string } | null;
   deliveryAddressSnapshot: { label: string; line1: string; line2: string | null; city: string } | null;
+  refunds: { id: string; status: string; amount: string | number; createdAt: string }[];
 }
 
 interface DeliveryInfo {
@@ -139,6 +140,11 @@ export default function BusinessOrderDetailPage() {
   }
 
   const nextAction = getOrderNextAction(order.status, order.fulfillmentType);
+  // The latest Refund is the real signal once a Delivery is cancelled — Order.status has no way
+  // to express it (see OrderStateMachine), so it would otherwise keep reading "Listo para retirar".
+  const latestRefund = order.refunds[0] ?? null;
+  const pendingRefund = latestRefund?.status === 'PENDING' ? latestRefund : null;
+  const completedRefund = latestRefund?.status === 'COMPLETED' ? latestRefund : null;
 
   return (
     <DashboardShell>
@@ -157,9 +163,13 @@ export default function BusinessOrderDetailPage() {
       <div style={{ maxWidth: 640 }}>
         <span
           className="bingo-badge"
-          style={{ background: '#f2f4f7', color: ORDER_STATUS_COLORS[order.status] ?? '#54617a', fontSize: 13 }}
+          style={{
+            background: '#f2f4f7',
+            color: pendingRefund ? 'var(--bingo-warning, #b8860b)' : completedRefund ? '#54617a' : ORDER_STATUS_COLORS[order.status] ?? '#54617a',
+            fontSize: 13,
+          }}
         >
-          {ORDER_STATUS_LABELS[order.status] ?? order.status}
+          {pendingRefund ? 'Por reembolsar' : completedRefund ? 'Reembolsado' : ORDER_STATUS_LABELS[order.status] ?? order.status}
         </span>
         {order.cancelReason && (
           <div className="bingo-error-banner" style={{ marginTop: 10 }}>
@@ -167,12 +177,17 @@ export default function BusinessOrderDetailPage() {
           </div>
         )}
         {/* Order.status can never itself become CANCELLED once it reaches READY_FOR_PICKUP (see
-            OrderStateMachine) — a cancelled Delivery is the only signal, so it needs its own,
+            OrderStateMachine) — the latest Refund is the only signal, so it needs its own,
             equally prominent banner rather than being buried in the delivery info card below,
             where the badge above would keep saying "Listo para retirar" forever otherwise. */}
-        {delivery?.status === 'CANCELLED' && (
+        {pendingRefund && (
           <div className="bingo-error-banner" style={{ marginTop: 10 }}>
-            La entrega fue cancelada.
+            La entrega fue cancelada. {currencyFormatter.format(Number(pendingRefund.amount))} están por reembolsarse al cliente.
+          </div>
+        )}
+        {completedRefund && (
+          <div className="bingo-card" style={{ marginTop: 10, fontSize: 13, color: '#54617a' }}>
+            La entrega fue cancelada y ya se reembolsó {currencyFormatter.format(Number(completedRefund.amount))} al cliente.
           </div>
         )}
 

@@ -38,6 +38,7 @@ interface OrderDetail {
     estimatedDurationMinutes: number | null;
     rider: { user: { firstName: string; lastName: string } } | null;
   } | null;
+  refunds: { id: string; status: string; amount: string | number; createdAt: string }[];
 }
 
 export default function AdminOrderDetailPage() {
@@ -74,6 +75,13 @@ export default function AdminOrderDetailPage() {
     );
   }
 
+  // The latest Refund is the real signal once a Delivery is cancelled — Order.status has no way
+  // to express it (see OrderStateMachine's own header comment), so it would otherwise keep
+  // reading READY_FOR_PICKUP here forever with nothing to tell an admin a refund is even owed.
+  const latestRefund = order.refunds[0] ?? null;
+  const pendingRefund = latestRefund?.status === 'PENDING' ? latestRefund : null;
+  const completedRefund = latestRefund?.status === 'COMPLETED' ? latestRefund : null;
+
   return (
     <AdminShell>
       <BackButton onClick={() => router.back()} />
@@ -81,12 +89,33 @@ export default function AdminOrderDetailPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
         <h1 className="bingo-page-title" style={{ margin: 0 }}>{order.orderNumber}</h1>
         <span>{order.user.firstName} {order.user.lastName} · {order.business.tradeName}</span>
-        <span className={`bingo-badge badge-${order.status.toLowerCase()}`}>{order.status}</span>
+        {pendingRefund ? (
+          <span className="bingo-badge badge-cancelled">Por reembolsar</span>
+        ) : completedRefund ? (
+          <span className="bingo-badge badge-completed">Reembolsado</span>
+        ) : (
+          <span className={`bingo-badge badge-${order.status.toLowerCase()}`}>{order.status}</span>
+        )}
       </div>
 
       {order.cancelReason && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>
           Cancelado: {order.cancelReason}
+        </div>
+      )}
+      {pendingRefund && (
+        <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>
+          La entrega fue cancelada. {currencyFormatter.format(Number(pendingRefund.amount))} están por reembolsarse
+          {order.payment && (
+            <>
+              {' '}— <a href={`/payments/${order.payment.id}`} style={{ fontWeight: 700 }}>marcar como reembolsado</a>.
+            </>
+          )}
+        </div>
+      )}
+      {completedRefund && (
+        <div className="bingo-card" style={{ marginBottom: 16, color: '#54617a' }}>
+          La entrega fue cancelada y ya se reembolsó {currencyFormatter.format(Number(completedRefund.amount))}.
         </div>
       )}
 

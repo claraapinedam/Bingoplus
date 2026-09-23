@@ -48,4 +48,12 @@ export class AdminPaymentsController {
     }
     return this.refunds.refundOrder(payment.order.id, new Prisma.Decimal(dto.amount), dto.reason, admin.id);
   }
+
+  // Marks a refund that a cancelled Delivery created automatically (always PENDING — see
+  // DeliveryCancellationService) as done once the admin has actually handled it off-system.
+  @Audit('refund.complete', 'Refund')
+  @Post('refunds/:refundId/complete')
+  completeRefund(@Param('refundId') refundId: string) {
+    return this.refunds.completeManual(refundId);
+  }
 }

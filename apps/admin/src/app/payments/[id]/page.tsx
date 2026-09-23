@@ -46,6 +46,7 @@ export default function AdminPaymentDetailPage() {
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [completingId, setCompletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -77,6 +78,23 @@ export default function AdminPaymentDetailPage() {
       setError(err instanceof ApiError ? err.message : 'No se pudo procesar el reembolso.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  // A refund a cancelled Delivery created automatically is always PENDING (no payment provider
+  // call — see DeliveryCancellationService) because the actual refund happens off-system (e.g. a
+  // bank transfer). This just records that it's done, mirroring the payment-status update the
+  // provider-driven "Confirmar reembolso" flow above already applies on its own completion path.
+  async function completeRefund(refundId: string) {
+    setCompletingId(refundId);
+    setError(null);
+    try {
+      await apiFetch(`/admin/payments/refunds/${refundId}/complete`, { method: 'POST' });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No se pudo marcar el reembolso como completado.');
+    } finally {
+      setCompletingId(null);
     }
   }
 
@@ -148,6 +166,7 @@ export default function AdminPaymentDetailPage() {
                   <th>Motivo</th>
                   <th>Estado</th>
                   <th>Fecha</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -159,6 +178,17 @@ export default function AdminPaymentDetailPage() {
                       <span className={`bingo-badge badge-${r.status.toLowerCase()}`}>{r.status}</span>
                     </td>
                     <td style={{ fontSize: 12 }}>{new Date(r.createdAt).toLocaleString('es-EC')}</td>
+                    <td>
+                      {r.status === 'PENDING' && (
+                        <button
+                          className="bingo-button secondary small"
+                          disabled={completingId === r.id}
+                          onClick={() => completeRefund(r.id)}
+                        >
+                          {completingId === r.id ? 'Marcando…' : 'Marcar como reembolsado'}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

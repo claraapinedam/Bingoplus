@@ -1,17 +1,21 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { DeliveryAssignmentAction, DeliveryAssignmentSource, DeliveryStatus, RiderAvailabilityStatus } from '@prisma/client';
+import { DeliveryAssignmentAction, DeliveryAssignmentSource, DeliveryStatus, Prisma, RefundStatus, RiderAvailabilityStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryStateMachine } from './delivery-state-machine';
 import { DeliveryGateway } from './delivery.gateway';
 
 export type DeliveryCancellationActor = 'RIDER' | 'ADMIN' | 'SYSTEM';
 
+const REFUNDABLE_PAYMENT_STATUSES = ['PAID', 'PARTIALLY_REFUNDED'];
+
 /**
  * §54: distinguishes who cancelled and why (folded into the DeliveryAssignmentHistory `reason`
  * text, since actor-typed history is a schema addition left for the next refinement pass — see
- * Final Report). Never assumes a refund — Order-level cancellation/refund is already governed by
- * CancellationService/RefundService (FASE 3) and, structurally, can no longer run once a
- * Delivery exists (OrderStateMachine has no CANCELLED transition out of READY_FOR_PICKUP).
+ * Final Report). A cancelled delivery for an order that was already paid always owes a refund —
+ * this creates a PENDING Refund row for the outstanding amount directly (not via
+ * PaymentService.refundPayment, which calls the payment provider and completes instantly in
+ * Sandbox mode; here the actual refund is handled off-system, e.g. a bank transfer, so it must
+ * stay PENDING until an admin explicitly marks it done — see RefundService.completeManual).
  */
 @Injectable()
 export class DeliveryCancellationService {
@@ -53,6 +57,28 @@ export class DeliveryCancellationService {
           data: { availabilityStatus: RiderAvailabilityStatus.AVAILABLE },
         });
       }
+
+      const order = await tx.order.findUnique({ where: { id: delivery.orderId }, include: { payment: true } });
+      if (order?.payment && REFUNDABLE_PAYMENT_STATUSES.includes(order.payment.status)) {
+        const alreadyRefunded = await tx.refund.aggregate({
+          where: { paymentId: order.payment.id, status: RefundStatus.COMPLETED },
+          _sum: { amount: true },
+        });
+        const outstanding = order.payment.amount.minus(alreadyRefunded._sum.amount ?? new Prisma.Decimal(0));
+        if (outstanding.gt(0)) {
+          await tx.refund.create({
+            data: {
+              paymentId: order.payment.id,
+              orderId: order.id,
+              amount: outstanding,
+              reason: 'Entrega cancelada',
+              requestedBy: actor,
+              status: RefundStatus.PENDING,
+            },
+          });
+        }
+      }
+
       return tx.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
     });
 

@@ -50,6 +50,7 @@ interface OrderDetail {
   business: { id: string; tradeName: string; addressLine: string; city: string; latitude: number | null; longitude: number | null };
   payment: { status: string } | null;
   deliveryAddressSnapshot: { label: string; line1: string; line2: string | null; city: string } | null;
+  refunds: { id: string; status: string; amount: string | number; createdAt: string }[];
 }
 
 interface ReviewSummary {
@@ -113,13 +114,18 @@ export default function OrderDetailPage() {
     const socket = connectSocket();
     if (!socket) return;
     socket.emit('subscribe:delivery', { deliveryId: delivery.id });
-    const onUpdate = () => loadDelivery();
+    // A cancellation also creates a Refund on the Order (see DeliveryCancellationService), which
+    // is what the badge/banner below actually reads — refetch the order itself, not just delivery.
+    const onUpdate = () => {
+      loadDelivery();
+      load();
+    };
     socket.on('delivery.status.updated', onUpdate);
     return () => {
       socket.emit('unsubscribe:delivery', { deliveryId: delivery.id });
       socket.off('delivery.status.updated', onUpdate);
     };
-  }, [delivery?.id, loadDelivery]);
+  }, [delivery?.id, loadDelivery, load]);
 
   async function submitReview() {
     if (businessRating === 0 && riderRating === 0) return;
@@ -188,6 +194,11 @@ export default function OrderDetailPage() {
 
   const currentStepIndex = PICKUP_PROGRESS_STEPS.indexOf(order.status);
   const canCancel = CUSTOMER_CANCELLABLE_STATUSES.includes(order.status);
+  // The latest Refund is the real signal once a Delivery is cancelled — Order.status has no way
+  // to express it (see OrderStateMachine), so it would otherwise keep reading "Listo para retirar".
+  const latestRefund = order.refunds[0] ?? null;
+  const pendingRefund = latestRefund?.status === 'PENDING' ? latestRefund : null;
+  const completedRefund = latestRefund?.status === 'COMPLETED' ? latestRefund : null;
 
   return (
     <CustomerShell>
@@ -201,18 +212,27 @@ export default function OrderDetailPage() {
       <div className="bingo-content">
         <span
           className="bingo-badge"
-          style={{ background: '#f2f4f7', color: ORDER_STATUS_COLORS[order.status] ?? '#54617a', fontSize: 13 }}
+          style={{
+            background: '#f2f4f7',
+            color: pendingRefund ? 'var(--bingo-warning, #b8860b)' : completedRefund ? '#54617a' : ORDER_STATUS_COLORS[order.status] ?? '#54617a',
+            fontSize: 13,
+          }}
         >
-          {ORDER_STATUS_LABELS[order.status] ?? order.status}
+          {pendingRefund ? 'Por reembolsar' : completedRefund ? 'Reembolsado' : ORDER_STATUS_LABELS[order.status] ?? order.status}
         </span>
 
         {order.status === 'CANCELLED' ? (
           <div className="bingo-error-banner" style={{ marginTop: 10 }}>
             Este pedido fue cancelado{order.cancelReason ? `: ${order.cancelReason}` : '.'}
           </div>
-        ) : delivery?.status === 'CANCELLED' ? (
+        ) : pendingRefund ? (
           <div className="bingo-error-banner" style={{ marginTop: 10 }}>
-            La entrega de este pedido fue cancelada. Contacta a soporte si esperabas recibirlo.
+            La entrega de este pedido fue cancelada. Tienes {currencyFormatter.format(Number(pendingRefund.amount))} por reembolsar —
+            estamos gestionándolo.
+          </div>
+        ) : completedRefund ? (
+          <div className="bingo-card" style={{ marginTop: 10, fontSize: 13, color: '#54617a' }}>
+            Este pedido fue cancelado y ya se reembolsó {currencyFormatter.format(Number(completedRefund.amount))}.
           </div>
         ) : currentStepIndex >= 0 ? (
           <div className="bingo-card" style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between' }}>

@@ -22,6 +22,11 @@ const ORDER_INCLUDE = {
   user: { select: { firstName: true, lastName: true } },
   payment: true,
   address: true,
+  // Order.status structurally can't reflect a cancelled Delivery's refund (no transition out of
+  // READY_FOR_PICKUP but COMPLETED — see OrderStateMachine) — the latest Refund row is the real
+  // signal every order-detail screen (Customer/Business/Admin) now shows instead of a stale
+  // "Listo para retirar" once a refund is owed or already handled.
+  refunds: { orderBy: { createdAt: 'desc' }, select: { id: true, status: true, amount: true, createdAt: true } },
 } as const;
 
 /** Statuses a business may set directly via PATCH — payment-driven and terminal states are excluded (§32). */
