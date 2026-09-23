@@ -3,6 +3,7 @@ import { BusinessCapabilityType, BusinessStatus, Prisma, ServiceLocationType, Se
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
+import { membershipGoodStandingWhere } from '../memberships/membership-visibility.util';
 import { CreateServiceDto } from './dto/create-service.dto';
 
 /** DAYCARE/BOARDING are booked by date range (see BookingsService), never a time slot — they must
@@ -50,6 +51,7 @@ export class ServicesService {
         status: BusinessStatus.ACTIVE,
         deletedAt: null,
         capabilities: { some: { capability: BusinessCapabilityType.SERVICES, enabled: true } },
+        ...membershipGoodStandingWhere(),
       },
       ...(query.businessId ? { businessId: query.businessId } : {}),
       ...(query.type ? { type: query.type } : {}),
@@ -75,6 +77,7 @@ export class ServicesService {
           status: BusinessStatus.ACTIVE,
           deletedAt: null,
           capabilities: { some: { capability: BusinessCapabilityType.SERVICES, enabled: true } },
+          ...membershipGoodStandingWhere(),
         },
       },
       include: {

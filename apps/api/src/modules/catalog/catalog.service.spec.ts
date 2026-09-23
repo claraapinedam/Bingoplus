@@ -22,6 +22,15 @@ describe('CatalogService', () => {
     service = new CatalogService(prisma as unknown as PrismaService);
   });
 
+  describe('listPublicProducts — customer-facing visibility', () => {
+    it('requires the business membership to be in good standing (TRIAL/ACTIVE) alongside BusinessStatus.ACTIVE — a PAST_DUE-and-unpaid business is excluded, but a business with no membership row at all (e.g. a pure product-seller with no Directory Listing) is never excluded', async () => {
+      await service.listPublicProducts({} as any);
+      const where = prisma.product.findMany.mock.calls[0][0].where;
+      expect(where.business.OR).toEqual([{ membership: null }, { membership: { status: { in: ['TRIAL', 'ACTIVE'] } } }]);
+      expect(where.business.status).toBe('ACTIVE');
+    });
+  });
+
   describe('create', () => {
     it('rejects an unknown category slug', async () => {
       prisma.productCategory.findUnique.mockResolvedValue(null);

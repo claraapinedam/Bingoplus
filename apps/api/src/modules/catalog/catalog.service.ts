@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { BusinessCapabilityType, BusinessStatus, Prisma, ProductStatus } from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { membershipGoodStandingWhere } from '../memberships/membership-visibility.util';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateStockDto } from './dto/update-stock.dto';
@@ -33,6 +34,7 @@ export class CatalogService {
         status: BusinessStatus.ACTIVE,
         deletedAt: null,
         capabilities: { some: { capability: BusinessCapabilityType.SELLS_PRODUCTS, enabled: true } },
+        ...membershipGoodStandingWhere(),
       },
       ...(query.businessId ? { businessId: query.businessId } : {}),
       ...(query.category ? { category: { slug: query.category } } : {}),
@@ -96,6 +98,7 @@ export class CatalogService {
           status: BusinessStatus.ACTIVE,
           deletedAt: null,
           capabilities: { some: { capability: BusinessCapabilityType.SELLS_PRODUCTS, enabled: true } },
+          ...membershipGoodStandingWhere(),
         },
       },
       include: {

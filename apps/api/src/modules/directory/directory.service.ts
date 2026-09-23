@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { getOpeningStatus, haversineKm } from '@bingoplus/utils';
-import { BusinessCapabilityType, BusinessMembershipStatus, BusinessStatus } from '@prisma/client';
+import { BusinessCapabilityType, BusinessStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListDirectoryQueryDto } from './dto/list-directory-query.dto';
 import { getActiveOffersMap } from '../coupons/active-offers.util';
+import { membershipGoodStandingWhere } from '../memberships/membership-visibility.util';
 
 /** "Tiendas" and "Delivery" (retired, kept here only for any business that already has it — see
  * seed-helpers.ts) are the two retail-type BusinessCategory slugs — same partition
@@ -14,7 +15,6 @@ import { getActiveOffersMap } from '../coupons/active-offers.util';
  * "veterinarios") — it still shows here via that other category, only a retail-only business is
  * excluded. */
 const NON_DIRECTORY_CATEGORY_SLUGS = ['tiendas', 'delivery'];
-const GOOD_STANDING: BusinessMembershipStatus[] = [BusinessMembershipStatus.TRIAL, BusinessMembershipStatus.ACTIVE];
 
 /**
  * The Directory is a deliberately separate discovery surface from the Marketplace (RULE 5): a
@@ -39,9 +39,7 @@ export class DirectoryService {
         capabilities: {
           some: { capability: BusinessCapabilityType.DIRECTORY_LISTING, enabled: true },
         },
-        membership: {
-          status: { in: GOOD_STANDING },
-        },
+        ...membershipGoodStandingWhere(),
         categories: { some: { category: { slug: { notIn: NON_DIRECTORY_CATEGORY_SLUGS } } } },
         ...(category ? { categories: { some: { categoryId: category.id } } } : {}),
         ...(query.search ? { tradeName: { contains: query.search, mode: 'insensitive' } } : {}),

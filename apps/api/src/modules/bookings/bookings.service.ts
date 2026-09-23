@@ -9,6 +9,7 @@ import {
   Prisma,
   ServiceLocationType,
   ServiceType,
+  TransactionType,
 } from '@prisma/client';
 import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -17,6 +18,7 @@ import { NotificationService } from '../notifications/notification.service';
 import { PaymentService } from '../payments/payment.service';
 import { BookingSlotUnavailableException } from '../../common/exceptions/booking-slot-unavailable.exception';
 import { DEFAULT_SERVICE_CAPACITY } from '../services/services.service';
+import { isMembershipStatusGoodStanding } from '../memberships/membership-visibility.util';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { ListAdminBookingsQueryDto, ListBusinessBookingsQueryDto, ListCustomerBookingsQueryDto } from './dto/list-bookings-query.dto';
 import { CreateManualBookingBlockDto } from './dto/manual-block.dto';
@@ -38,7 +40,18 @@ const BOOKING_INCLUDE = {
   pet: { include: { species: true } },
   business: { select: { id: true, tradeName: true, city: true, addressLine: true, logoUrl: true, phone: true } },
   user: { select: { id: true, firstName: true, lastName: true, phone: true } },
+  // Booking payment state (§ cash/card choice) — surfaced on every booking read (customer,
+  // business, admin) via the existing 1:1 Payment relation rather than a second field on Booking
+  // itself, so there is exactly one place ("is there a Payment row, and what's its provider/
+  // status") that answers "is this booking paid, and how". See chooseCashPayment/markCashPaid.
+  payment: true,
 } satisfies Prisma.BookingInclude;
+
+/** Distinguishes a cash-to-the-business Payment row from a real Sandbox-processed one (whose
+ * `provider` is always `this.payments.providerName`, e.g. "sandbox") — see chooseCashPayment/
+ * markCashPaid. Never passed to PaymentService, which only ever deals in provider-processed
+ * payments; a CASH row is created/settled directly against the Payment table instead. */
+const CASH_PAYMENT_PROVIDER = 'CASH';
 
 function minutesToHHMM(totalMinutes: number): string {
   const h = Math.floor(totalMinutes / 60);
@@ -99,13 +112,16 @@ export class BookingsService {
   async getAvailableSlots(serviceId: string, dateStr: string) {
     const service = await this.prisma.service.findFirst({
       where: { id: serviceId, active: true, deletedAt: null },
-      include: { business: { select: { openingHours: true, status: true } } },
+      include: {
+        business: { select: { openingHours: true, status: true, membership: { select: { status: true } } } },
+      },
     });
     if (!service) throw new NotFoundException('Service not found');
     if (DAY_UNIT_TYPES.includes(service.type)) {
       throw new BadRequestException('This service is booked by date range (check-in/check-out), not a time slot');
     }
     if (service.business.status !== BusinessStatus.ACTIVE) return [];
+    if (!isMembershipStatusGoodStanding(service.business.membership?.status)) return [];
 
     const dayStart = new Date(`${dateStr}T00:00:00`);
     const hours = (service.business.openingHours as Record<string, { open?: string; close?: string }> | null)?.[
@@ -165,10 +181,16 @@ export class BookingsService {
 
     const service = await this.prisma.service.findUnique({
       where: { id: dto.serviceId },
-      include: { species: { include: { species: true } }, business: true },
+      include: {
+        species: { include: { species: true } },
+        business: { include: { membership: { select: { status: true } } } },
+      },
     });
     if (!service || !service.active || service.deletedAt) throw new NotFoundException('Service not found');
     if (service.business.status !== BusinessStatus.ACTIVE) {
+      throw new BadRequestException('This business is not currently accepting bookings');
+    }
+    if (!isMembershipStatusGoodStanding(service.business.membership?.status)) {
       throw new BadRequestException('This business is not currently accepting bookings');
     }
     const bookingsEnabled = await this.prisma.businessCapability.findUnique({
@@ -341,15 +363,28 @@ export class BookingsService {
     return updated;
   }
 
-  // ── Booking payment (§1) — reuses PaymentService exactly as CheckoutService does for Orders;
-  // confirmation reuses the existing confirm() business method rather than duplicating its
-  // PENDING-check/notification logic, so there is still only one place a booking becomes
-  // CONFIRMED. ──────────────────────────────────────────────────────────────
+  // ── Booking payment (§1) — a booking only becomes payable once the BUSINESS has confirmed it
+  // (see confirm() below); payment no longer drives confirmation the other way around (that
+  // coupling — a successful card payment silently confirming a still-PENDING booking — is what
+  // this phase inverts). Two payment methods, one uniform representation: the existing 1:1
+  // Payment relation (see BOOKING_INCLUDE's comment). CARD reuses PaymentService exactly as
+  // CheckoutService does for Orders (createPayment/confirmPayment against the real, if Sandbox,
+  // provider). CASH never touches PaymentService/the provider at all — chooseCashPayment/
+  // markCashPaid write the Payment row directly, since there is no provider-side transaction to
+  // create or confirm for money that changes hands in person. ─────────────────────────────
 
   async createBookingPayment(userId: string, bookingId: string, idempotencyKey: string) {
     const booking = await this.getForCustomer(userId, bookingId);
-    if (booking.status !== BookingStatus.PENDING) {
-      throw new BadRequestException('Only a pending booking can be paid online');
+    if (booking.status !== BookingStatus.CONFIRMED) {
+      throw new BadRequestException('Only a confirmed booking can be paid online — wait for the business to confirm it first');
+    }
+    if (booking.payment) {
+      if (booking.payment.provider === CASH_PAYMENT_PROVIDER) {
+        throw new BadRequestException('This booking is already set to be paid in cash to the business');
+      }
+      // Same method retried (e.g. a resumed/abandoned checkout) — return what's there instead of
+      // hitting the Payment.bookingId unique constraint with a second row for the same booking.
+      return booking.payment;
     }
     return this.prisma.$transaction((tx) =>
       this.payments.createPayment(tx, { bookingId: booking.id }, booking.price, 'USD', idempotencyKey),
@@ -368,8 +403,11 @@ export class BookingsService {
 
   async confirmBookingPayment(userId: string, bookingId: string, simulateFailure?: boolean) {
     const booking = await this.getForCustomer(userId, bookingId);
-    const payment = await this.prisma.payment.findUnique({ where: { bookingId: booking.id } });
+    const payment = booking.payment;
     if (!payment) throw new NotFoundException('No payment found for this booking');
+    if (payment.provider === CASH_PAYMENT_PROVIDER) {
+      throw new BadRequestException('This booking is set to be paid in cash — there is no online payment to confirm');
+    }
     if (payment.status === PaymentStatus.PAID) {
       return { payment, booking };
     }
@@ -378,15 +416,105 @@ export class BookingsService {
     return { payment: result, booking: await this.getForCustomer(userId, booking.id) };
   }
 
+  /**
+   * Customer's "pagar en efectivo" choice. Mirrors createBookingPayment's shape/guards (must
+   * already be CONFIRMED, idempotent against a repeat choice, mutually exclusive with CARD) but
+   * writes the Payment row directly instead of going through PaymentService — there is no
+   * provider-side payment to create for cash. Left PENDING until the business actually receives
+   * the cash and calls markCashPaid; never auto-marks itself paid.
+   */
+  async chooseCashPayment(userId: string, bookingId: string) {
+    const booking = await this.getForCustomer(userId, bookingId);
+    if (booking.status !== BookingStatus.CONFIRMED) {
+      throw new BadRequestException('Only a confirmed booking can select a payment method — wait for the business to confirm it first');
+    }
+    if (booking.payment) {
+      if (booking.payment.provider !== CASH_PAYMENT_PROVIDER) {
+        throw new BadRequestException('This booking is already set to be paid by card');
+      }
+      return booking.payment; // idempotent retry of the same choice
+    }
+    const payment = await this.prisma.payment.create({
+      data: {
+        bookingId: booking.id,
+        provider: CASH_PAYMENT_PROVIDER,
+        amount: booking.price,
+        currency: 'USD',
+        status: PaymentStatus.PENDING,
+      },
+    });
+    const ownerId = await this.getBusinessOwnerId(booking.businessId);
+    void this.notifications.notify({
+      userId: ownerId,
+      audience: NotificationAudience.BUSINESS,
+      event: 'booking.cash_payment_pending',
+      title: 'Pago en efectivo pendiente',
+      body: `${booking.user!.firstName} pagará en efectivo la reserva de "${booking.service.name}". Cóbralo antes de iniciar el servicio.`,
+      data: { bookingId: booking.id },
+    });
+    return payment;
+  }
+
+  /**
+   * Business confirms cash was actually received in person — the CASH counterpart to
+   * confirmBookingPayment(), but updates the Payment row directly rather than calling
+   * PaymentService.confirmPayment() (that method requires a providerPaymentId and calls out to
+   * the provider, neither of which exists for a cash payment). Deliberately never touches
+   * Booking.status: completion stays entirely BookingsService.complete()'s job, unchanged — a
+   * business marks cash received first, then separately marks the booking completed once the
+   * service is actually delivered, exactly as the owner described the flow.
+   */
+  async markCashPaid(businessId: string, bookingId: string) {
+    const booking = await this.getForBusiness(businessId, bookingId);
+    if (!booking.payment || booking.payment.provider !== CASH_PAYMENT_PROVIDER) {
+      throw new BadRequestException('This booking is not set to be paid in cash');
+    }
+    if (booking.payment.status === PaymentStatus.PAID) {
+      return booking; // idempotent
+    }
+    await this.prisma.$transaction([
+      this.prisma.payment.update({ where: { id: booking.payment.id }, data: { status: PaymentStatus.PAID } }),
+      this.prisma.transaction.create({
+        data: {
+          paymentId: booking.payment.id,
+          type: TransactionType.CHARGE,
+          amount: booking.payment.amount,
+          status: PaymentStatus.PAID,
+          providerRef: null,
+        },
+      }),
+    ]);
+    void this.notifications.notify({
+      userId: booking.userId!,
+      audience: NotificationAudience.CUSTOMER,
+      event: 'booking.payment_received',
+      title: 'Pago recibido',
+      body: `${booking.business.tradeName} confirmó tu pago en efectivo de "${booking.service.name}".`,
+      data: { bookingId: booking.id },
+    });
+    return this.getForBusiness(businessId, bookingId);
+  }
+
   /** Entry point for both the direct-confirm path and the webhook path (mirrors
-   * CheckoutService.syncOrderFromPaymentStatus). A failed payment deliberately leaves the booking
-   * PENDING — no auto-cancellation rule exists in the spec for this, and inventing one here would
-   * be exactly the "no inventar reglas financieras" violation the phase forbids. */
+   * CheckoutService.syncOrderFromPaymentStatus). Only ever reached for a CARD payment now — a
+   * CASH payment never goes through PaymentService/this sync at all (see markCashPaid). No longer
+   * confirms the booking on a successful payment: confirmation already happened earlier, by the
+   * business, independently (see confirm()) — paying by card at this point just marks an
+   * already-CONFIRMED booking's Payment PAID. A failed payment deliberately leaves the booking
+   * exactly as it was — no auto-cancellation rule exists in the spec for this, and inventing one
+   * here would be exactly the "no inventar reglas financieras" violation the phase forbids. */
   async syncFromPaymentStatus(bookingId: string, paymentStatus: PaymentStatus) {
-    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId }, include: { service: true } });
     if (!booking) return;
-    if (paymentStatus === PaymentStatus.PAID && booking.status === BookingStatus.PENDING) {
-      await this.confirm(booking.businessId, booking.id);
+    if (paymentStatus === PaymentStatus.PAID) {
+      void this.notifications.notify({
+        userId: booking.userId!,
+        audience: NotificationAudience.CUSTOMER,
+        event: 'booking.payment_received',
+        title: 'Pago recibido',
+        body: `Tu pago de "${booking.service.name}" fue procesado con éxito.`,
+        data: { bookingId: booking.id },
+      });
     } else if (paymentStatus === PaymentStatus.FAILED) {
       void this.notifications.notify({
         userId: booking.userId!,
@@ -535,11 +663,17 @@ export class BookingsService {
     if (services.length === 0) return { from: query.from, to: query.to, slots: [], bookings: [] };
 
     const rangeEnd = new Date(toDate.getTime() + 24 * 60 * 60000); // exclusive
+    // Deliberately NOT ACTIVE_STATUSES here — that list (PENDING/CONFIRMED) is for the
+    // capacity-blocking checks in create()/createManualBlock(), where a COMPLETED booking rightly
+    // no longer holds a future slot. The calendar is a display of what actually happened, so a
+    // COMPLETED booking must keep showing (and keep counting as occupied) in the day/slot it
+    // occupied — otherwise it silently vanishes from the calendar the moment the business marks it
+    // done. CANCELLED/NO_SHOW are excluded on purpose: a cancelled slot genuinely freed back up.
     const bookings = await this.prisma.booking.findMany({
       where: {
         businessId,
         serviceId: { in: services.map((s) => s.id) },
-        status: { in: ACTIVE_STATUSES },
+        status: { in: [...ACTIVE_STATUSES, BookingStatus.COMPLETED] },
         startTime: { lt: rangeEnd },
         endTime: { gt: fromDate },
       },
@@ -614,6 +748,11 @@ export class BookingsService {
     };
   }
 
+  /** Purely a status transition — deliberately knows nothing about payment. A booking becomes
+   * payable (see createBookingPayment/chooseCashPayment) only once it's CONFIRMED, but
+   * confirmation itself never depends on, waits for, or is triggered by payment; the business
+   * confirms independently of whether/how the customer ends up paying. The notification now tells
+   * the customer a payment method choice is waiting, since that's the very next thing to do. */
   async confirm(businessId: string, bookingId: string) {
     const booking = await this.getForBusiness(businessId, bookingId);
     if (booking.source === BookingSource.MANUAL) {
@@ -632,7 +771,7 @@ export class BookingsService {
       audience: NotificationAudience.CUSTOMER,
       event: 'booking.confirmed',
       title: 'Reserva confirmada',
-      body: `${updated.business.tradeName} confirmó tu reserva de "${updated.service.name}".`,
+      body: `${updated.business.tradeName} confirmó tu reserva de "${updated.service.name}". Ya puedes elegir cómo pagar: con tarjeta o en efectivo.`,
       data: { bookingId: updated.id },
     });
     return updated;

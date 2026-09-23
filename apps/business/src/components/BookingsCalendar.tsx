@@ -313,25 +313,34 @@ function OccupancyBadge({ occupied, capacity }: { occupied: number; capacity: nu
 
 function BookingChip({ booking, onCancel, onOpen }: { booking: CalendarBooking; onCancel: (id: string) => void; onOpen: (id: string) => void }) {
   const isManual = booking.source === 'MANUAL';
+  // A COMPLETED booking still occupied this slot — it must keep showing here as history, not
+  // disappear the moment the business marks it done (getCalendar() now keeps fetching it). Dimmed
+  // + a checkmark distinguishes "this already happened" from a still-upcoming occupant at a glance.
+  const isCompleted = booking.status === 'COMPLETED';
   return (
     <div
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: 4,
-        background: isManual ? '#fff3ea' : '#e8f7f2',
-        border: `1px solid ${isManual ? 'var(--bingo-coral)' : 'var(--bingo-teal)'}`,
+        background: isManual ? '#fff3ea' : isCompleted ? '#f2f4f7' : '#e8f7f2',
+        border: `1px solid ${isManual ? 'var(--bingo-coral)' : isCompleted ? '#c7cfda' : 'var(--bingo-teal)'}`,
         borderRadius: 6,
         padding: '2px 6px',
         fontSize: 11,
         marginTop: 3,
+        opacity: isCompleted ? 0.7 : 1,
         cursor: isManual ? 'default' : 'pointer',
       }}
-      title={isManual ? booking.reason ?? 'Bloqueo manual' : `${booking.customerName ?? ''} — ${booking.petName ?? ''}`}
+      title={
+        isManual
+          ? booking.reason ?? 'Bloqueo manual'
+          : `${booking.customerName ?? ''} — ${booking.petName ?? ''}${isCompleted ? ' (completada)' : ''}`
+      }
       onClick={() => !isManual && onOpen(booking.id)}
     >
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>
-        {isManual ? `🔒 ${booking.reason || 'Bloqueo manual'}` : booking.customerName ?? 'Reserva'}
+        {isManual ? `🔒 ${booking.reason || 'Bloqueo manual'}` : `${isCompleted ? '✓ ' : ''}${booking.customerName ?? 'Reserva'}`}
       </span>
       {isManual && (
         <button

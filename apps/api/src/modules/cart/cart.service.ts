@@ -9,6 +9,7 @@ import { getBusinessOnlineStatus } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CartBelongsToDifferentBusinessException } from '../../common/exceptions/cart-different-business.exception';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
+import { isMembershipStatusGoodStanding } from '../memberships/membership-visibility.util';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 
@@ -37,12 +38,15 @@ export class CartService {
   async addItem(userId: string, dto: AddCartItemDto) {
     const product = await this.prisma.product.findUnique({
       where: { id: dto.productId },
-      include: { business: true },
+      include: { business: { include: { membership: { select: { status: true } } } } },
     });
     if (!product || product.deletedAt || product.status !== ProductStatus.ACTIVE) {
       throw new NotFoundException('Product not found');
     }
     if (product.business.status !== BusinessStatus.ACTIVE || product.business.deletedAt) {
+      throw new BadRequestException('This business is not currently accepting orders');
+    }
+    if (!isMembershipStatusGoodStanding(product.business.membership?.status)) {
       throw new BadRequestException('This business is not currently accepting orders');
     }
     // Connect/disconnect toggle (manual override or, absent one, the business's own configured

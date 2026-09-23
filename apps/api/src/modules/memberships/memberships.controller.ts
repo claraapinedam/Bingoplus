@@ -44,6 +44,6 @@ export class BusinessMembershipController {
     @Param('businessId') businessId: string,
     @Body() dto: SubmitMembershipPaymentDto,
   ) {
-    return this.memberships.submitPayment(businessId, user.id, dto.receiptUrl);
+    return this.memberships.submitPayment(businessId, user.id, dto.receiptUrl, dto.method);
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
 import BackButton from '@/components/BackButton';
@@ -15,6 +15,16 @@ const STATUS_LABELS: Record<string, string> = {
   NO_SHOW: 'No asistió',
 };
 
+// A Payment's `provider` is either the real (Sandbox) card provider name or this literal for a
+// cash-to-the-business payment — see BookingsService.chooseCashPayment/markCashPaid on the API.
+const CASH_PROVIDER = 'CASH';
+
+interface BookingPayment {
+  id: string;
+  provider: string;
+  status: string;
+}
+
 interface BookingDetail {
   id: string;
   status: string;
@@ -27,14 +37,17 @@ interface BookingDetail {
   pet: { name: string } | null;
   business: { tradeName: string; city: string; addressLine: string; phone: string | null };
   atCustomerHome: boolean;
+  payment: BookingPayment | null;
 }
 
 export default function BookingDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const idempotencyKey = useRef(crypto.randomUUID());
   const [booking, setBooking] = useState<BookingDetail | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
   const [showCancelForm, setShowCancelForm] = useState(false);
 
   const load = useCallback(() => {
@@ -54,6 +67,42 @@ export default function BookingDetailPage() {
       setShowCancelForm(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cancelar la reserva.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // "Pagar con tarjeta": mirrors /checkout's create-payment + confirm pair (same Sandbox
+  // PaymentService flow, just re-targeted at a booking) — if a card Payment was already created
+  // for this booking (e.g. a previous attempt), skip straight to confirming it instead of trying
+  // to create a second one.
+  async function payWithCard() {
+    setBusy(true);
+    setPayError(null);
+    try {
+      if (!booking?.payment) {
+        await apiFetch(`/me/bookings/${params.id}/payment`, {
+          method: 'POST',
+          body: JSON.stringify({ idempotencyKey: idempotencyKey.current }),
+        });
+      }
+      await apiFetch(`/me/bookings/${params.id}/payment/confirm`, { method: 'POST', body: JSON.stringify({}) });
+      load();
+    } catch (err) {
+      setPayError(err instanceof ApiError ? err.message : 'No se pudo procesar el pago.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function payWithCash() {
+    setBusy(true);
+    setPayError(null);
+    try {
+      await apiFetch(`/me/bookings/${params.id}/pay-cash`, { method: 'POST', body: JSON.stringify({}) });
+      load();
+    } catch (err) {
+      setPayError(err instanceof ApiError ? err.message : 'No se pudo registrar la elección de pago.');
     } finally {
       setBusy(false);
     }
@@ -135,6 +184,60 @@ export default function BookingDetailPage() {
             )}
           </div>
         </div>
+
+        {booking.status === 'CONFIRMED' && (
+          <div className="bingo-card" style={{ marginTop: 16 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 10px' }}>Pago</h2>
+
+            {payError && <div className="bingo-error-banner" style={{ marginBottom: 12 }}>{payError}</div>}
+
+            {!booking.payment && (
+              <>
+                <p style={{ fontSize: 13, color: '#54617a', marginBottom: 10 }}>
+                  Tu reserva fue confirmada. Elige cómo quieres pagarla.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="bingo-button" style={{ width: 'auto' }} disabled={busy} onClick={payWithCard}>
+                    💳 Pagar con tarjeta
+                  </button>
+                  <button className="bingo-button secondary" style={{ width: 'auto' }} disabled={busy} onClick={payWithCash}>
+                    💵 Pagar en efectivo
+                  </button>
+                </div>
+                <p style={{ fontSize: 11, color: '#9aa5b1', marginTop: 8 }}>
+                  Pago de prueba (sandbox) — no se procesa ningún cargo real.
+                </p>
+              </>
+            )}
+
+            {booking.payment && booking.payment.provider === CASH_PROVIDER && booking.payment.status !== 'PAID' && (
+              <span className="bingo-badge" style={{ background: '#fff3ea', color: 'var(--bingo-coral)' }}>
+                💵 Efectivo — paga al negocio antes de que inicie el servicio
+              </span>
+            )}
+
+            {booking.payment && booking.payment.provider === CASH_PROVIDER && booking.payment.status === 'PAID' && (
+              <span className="bingo-badge" style={{ background: '#e7f8ef', color: '#1f9d55' }}>✅ Pagado en efectivo</span>
+            )}
+
+            {booking.payment && booking.payment.provider !== CASH_PROVIDER && booking.payment.status === 'PAID' && (
+              <span className="bingo-badge" style={{ background: '#e7f8ef', color: '#1f9d55' }}>✅ Pagado con tarjeta</span>
+            )}
+
+            {booking.payment && booking.payment.provider !== CASH_PROVIDER && booking.payment.status !== 'PAID' && (
+              <>
+                <span className="bingo-badge" style={{ background: '#fdeceb', color: 'var(--bingo-error)' }}>
+                  Pago con tarjeta no completado
+                </span>
+                <div>
+                  <button className="bingo-button" style={{ marginTop: 10, width: 'auto' }} disabled={busy} onClick={payWithCard}>
+                    Reintentar pago
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {canCancel && !showCancelForm && (
           <button

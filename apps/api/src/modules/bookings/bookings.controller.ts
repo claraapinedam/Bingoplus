@@ -68,6 +68,12 @@ export class CustomerBookingsController {
   confirmPayment(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: ConfirmBookingPaymentDto) {
     return this.bookingsService.confirmBookingPayment(user.id, id, dto.simulateFailure);
   }
+
+  @Audit('booking.choose-cash-payment', 'Booking')
+  @Post(':id/pay-cash')
+  chooseCashPayment(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.bookingsService.chooseCashPayment(user.id, id);
+  }
 }
 
 @ApiTags('business/bookings')
@@ -115,6 +121,12 @@ export class BusinessBookingsController {
   @Patch(':id/complete')
   complete(@Param('businessId') businessId: string, @Param('id') id: string) {
     return this.bookingsService.complete(businessId, id);
+  }
+
+  @Audit('booking.mark-cash-paid', 'Booking')
+  @Patch(':id/mark-paid')
+  markCashPaid(@Param('businessId') businessId: string, @Param('id') id: string) {
+    return this.bookingsService.markCashPaid(businessId, id);
   }
 
   @Audit('booking.no_show', 'Booking')

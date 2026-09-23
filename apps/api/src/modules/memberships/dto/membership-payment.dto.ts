@@ -1,16 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEnum, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
-import { MembershipPaymentStatus } from '@prisma/client';
+import { MembershipPaymentMethod, MembershipPaymentStatus } from '@prisma/client';
 
-/** Business submits the receipt URL for the current due period — amount/period are always
- * resolved server-side from the membership itself (MembershipsService.resolveDuePeriod), never
- * trusted from the client. */
+/** Business submits the receipt URL + payment method for the current due period — amount/period
+ * are always resolved server-side from the membership itself (MembershipsService.resolveDuePeriod
+ * / computeDueAmount), never trusted from the client. `method` is required here even though it's
+ * nullable on the model — it's only ever null on an auto-generated placeholder row nobody has
+ * paid yet. */
 export class SubmitMembershipPaymentDto {
-  @ApiProperty({ description: 'URL returned by POST /uploads for the deposit receipt image.' })
+  @ApiProperty({ description: 'URL returned by POST /uploads for the deposit/transfer/card-payment receipt image.' })
   @IsString()
   @IsUrl({ require_tld: false })
   receiptUrl!: string;
+
+  @ApiProperty({ enum: MembershipPaymentMethod })
+  @IsEnum(MembershipPaymentMethod)
+  method!: MembershipPaymentMethod;
 }
 
 export class RejectMembershipPaymentDto {

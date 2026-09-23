@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { UpdatePromotionDto } from './dto/update-promotion.dto';
 import { ListAdminPromotionsQueryDto, ListPublicPromotionsQueryDto } from './dto/list-promotions-query.dto';
+import { membershipGoodStandingWhere } from '../memberships/membership-visibility.util';
 
 const PROMOTION_INCLUDE = { targets: true } satisfies Prisma.PromotionInclude;
 
@@ -110,7 +111,11 @@ export class PromotionsService {
 
   async listActiveForCustomer(query: ListPublicPromotionsQueryDto) {
     const now = new Date();
-    const businessWhere: Prisma.BusinessWhereInput = { status: BusinessStatus.ACTIVE, deletedAt: null };
+    const businessWhere: Prisma.BusinessWhereInput = {
+      status: BusinessStatus.ACTIVE,
+      deletedAt: null,
+      ...membershipGoodStandingWhere(),
+    };
 
     let targetFilter: Prisma.PromotionWhereInput = {};
     if (query.productId) {

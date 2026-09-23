@@ -16,7 +16,7 @@ describe('CartService', () => {
     stock: 5,
     status: ProductStatus.ACTIVE,
     deletedAt: null,
-    business: { status: BusinessStatus.ACTIVE, deletedAt: null },
+    business: { status: BusinessStatus.ACTIVE, deletedAt: null, membership: { status: 'ACTIVE' } },
   };
 
   beforeEach(() => {
@@ -80,7 +80,13 @@ describe('CartService', () => {
       it('rejects a manually OFFLINE business even though it is ACTIVE and otherwise sellable', async () => {
         prisma.product.findUnique.mockResolvedValue({
           ...activeProduct,
-          business: { status: BusinessStatus.ACTIVE, deletedAt: null, openingHours: null, manualOverride: 'OFFLINE' },
+          business: {
+            status: BusinessStatus.ACTIVE,
+            deletedAt: null,
+            openingHours: null,
+            manualOverride: 'OFFLINE',
+            membership: { status: 'ACTIVE' },
+          },
         });
         const err = await service
           .addItem('user-1', { productId: 'p1', quantity: 1 } as any)
@@ -97,6 +103,7 @@ describe('CartService', () => {
             status: BusinessStatus.ACTIVE,
             deletedAt: null,
             manualOverride: null,
+            membership: { status: 'ACTIVE' },
             openingHours: {
               sun: closedAllDay, mon: closedAllDay, tue: closedAllDay, wed: closedAllDay,
               thu: closedAllDay, fri: closedAllDay, sat: closedAllDay,
@@ -118,6 +125,7 @@ describe('CartService', () => {
             status: BusinessStatus.ACTIVE,
             deletedAt: null,
             manualOverride: 'ONLINE',
+            membership: { status: 'ACTIVE' },
             openingHours: {
               sun: closedAllDay, mon: closedAllDay, tue: closedAllDay, wed: closedAllDay,
               thu: closedAllDay, fri: closedAllDay, sat: closedAllDay,

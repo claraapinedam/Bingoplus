@@ -13,9 +13,15 @@ import { BusinessNotificationGateway } from '../notifications/business-notificat
 import { ProductOutOfStockException } from '../../common/exceptions/product-out-of-stock.exception';
 import { generateOrderNumber } from '../orders/order-number.util';
 import { CheckoutValidateDto, CreatePaymentDto } from './dto/checkout.dto';
+import { isMembershipStatusGoodStanding } from '../memberships/membership-visibility.util';
 
 const CART_INCLUDE = {
-  items: { include: { product: { include: { business: true } }, variant: true } },
+  items: {
+    include: {
+      product: { include: { business: { include: { membership: { select: { status: true } } } } } },
+      variant: true,
+    },
+  },
 } satisfies Prisma.CartInclude;
 
 @Injectable()
@@ -273,6 +279,11 @@ export class CheckoutService {
 
     const business = cart.items[0].product.business;
     if (business.status !== BusinessStatus.ACTIVE || business.deletedAt) {
+      throw new BadRequestException({
+        error: { code: 'BUSINESS_NOT_ACTIVE', message: 'This business is not currently accepting orders.' },
+      });
+    }
+    if (!isMembershipStatusGoodStanding(business.membership?.status)) {
       throw new BadRequestException({
         error: { code: 'BUSINESS_NOT_ACTIVE', message: 'This business is not currently accepting orders.' },
       });

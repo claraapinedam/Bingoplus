@@ -14,6 +14,16 @@ const STATUS_LABELS: Record<string, string> = {
   NO_SHOW: 'No asistió',
 };
 
+// A Payment's `provider` is either the real (Sandbox) card provider name or this literal for a
+// cash-to-the-business payment — see BookingsService.chooseCashPayment/markCashPaid on the API.
+const CASH_PROVIDER = 'CASH';
+
+interface BookingPayment {
+  id: string;
+  provider: string;
+  status: string;
+}
+
 interface BookingDetail {
   id: string;
   status: string;
@@ -28,6 +38,7 @@ interface BookingDetail {
   pet: { name: string; species: { name: string } } | null;
   // Null for a MANUAL block — see BookingsService.createManualBlock.
   user: { firstName: string; lastName: string; phone: string | null } | null;
+  payment: BookingPayment | null;
 }
 
 function BookingDetailContent() {
@@ -51,7 +62,7 @@ function BookingDetailContent() {
     load();
   }, [load]);
 
-  async function runAction(action: 'confirm' | 'complete' | 'no-show') {
+  async function runAction(action: 'confirm' | 'complete' | 'no-show' | 'mark-paid') {
     if (!businessId) return;
     setBusy(true);
     setError(null);
@@ -95,6 +106,20 @@ function BookingDetailContent() {
   const canCancel = booking.status === 'PENDING' || booking.status === 'CONFIRMED';
   const canComplete = !isManual && booking.status === 'CONFIRMED';
   const canNoShow = !isManual && booking.status === 'CONFIRMED';
+  const canMarkCashPaid = booking.payment?.provider === CASH_PROVIDER && booking.payment.status !== 'PAID';
+  const paymentBadge = !booking.payment
+    ? !isManual && booking.status === 'CONFIRMED'
+      ? { label: 'Esperando elección de pago', bg: '#f2f4f7', color: undefined }
+      : null
+    : booking.payment.status === 'PAID'
+      ? {
+          label: booking.payment.provider === CASH_PROVIDER ? '✅ Pagado (efectivo)' : '✅ Pagado (tarjeta)',
+          bg: '#e7f8ef',
+          color: '#1f9d55',
+        }
+      : booking.payment.provider === CASH_PROVIDER
+        ? { label: '💵 Pendiente de pago (efectivo)', bg: '#fff3ea', color: 'var(--bingo-coral)' }
+        : { label: '💳 Pago con tarjeta pendiente', bg: '#fff3ea', color: 'var(--bingo-coral)' };
 
   return (
     <>
@@ -117,6 +142,11 @@ function BookingDetailContent() {
             {booking.atCustomerHome && (
               <span className="bingo-badge" style={{ background: '#fff3ea', color: 'var(--bingo-coral)', marginLeft: 6 }}>
                 🚗 A domicilio del cliente
+              </span>
+            )}
+            {paymentBadge && (
+              <span className="bingo-badge" style={{ background: paymentBadge.bg, color: paymentBadge.color, marginLeft: 6 }}>
+                {paymentBadge.label}
               </span>
             )}
           </div>
@@ -177,6 +207,11 @@ function BookingDetailContent() {
         {canNoShow && (
           <button className="bingo-button secondary" style={{ width: 'auto' }} disabled={busy} onClick={() => runAction('no-show')}>
             Marcar no asistió
+          </button>
+        )}
+        {canMarkCashPaid && (
+          <button className="bingo-button" style={{ width: 'auto' }} disabled={busy} onClick={() => runAction('mark-paid')}>
+            Marcar como pagado
           </button>
         )}
         {canCancel && !showCancelForm && (

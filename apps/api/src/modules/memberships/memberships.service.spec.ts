@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { AdminCouponStatus, BusinessMembershipStatus, MembershipPaymentStatus } from '@prisma/client';
+import { AdminCouponStatus, BusinessMembershipStatus, MembershipPaymentMethod, MembershipPaymentStatus } from '@prisma/client';
 import { MembershipsService } from './memberships.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -12,7 +12,11 @@ describe('MembershipsService', () => {
       businessMembership: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
       membershipPlan: { findFirst: jest.fn() },
       adminCoupon: { findUnique: jest.fn() },
-      adminCouponRedemption: { count: jest.fn().mockResolvedValue(0), create: jest.fn((args: any) => args.data) },
+      adminCouponRedemption: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn((args: any) => args.data),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       membershipPayment: {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
@@ -207,34 +211,63 @@ describe('MembershipsService', () => {
     describe('submitPayment', () => {
       it('throws when the business has no membership yet', async () => {
         prisma.businessMembership.findUnique.mockResolvedValue(null);
-        await expect(service.submitPayment('b1', 'user-1', 'https://x/receipt.png')).rejects.toBeInstanceOf(
-          NotFoundException,
-        );
+        await expect(
+          service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.DEPOSIT),
+        ).rejects.toBeInstanceOf(NotFoundException);
       });
 
-      it('refuses a second submission while one is already PENDING review', async () => {
+      it('refuses a second submission while one is already PENDING review with a receipt attached', async () => {
         prisma.businessMembership.findUnique.mockResolvedValue(membershipWithOpenPeriod);
-        prisma.membershipPayment.findFirst.mockResolvedValue({ id: 'existing-pending' });
+        prisma.membershipPayment.findFirst.mockResolvedValue({
+          id: 'existing-pending',
+          status: MembershipPaymentStatus.PENDING,
+          receiptUrl: 'https://x/already-submitted.png',
+        });
 
-        await expect(service.submitPayment('b1', 'user-1', 'https://x/receipt.png')).rejects.toBeInstanceOf(
-          BadRequestException,
-        );
+        await expect(
+          service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.DEPOSIT),
+        ).rejects.toBeInstanceOf(BadRequestException);
         expect(prisma.membershipPayment.create).not.toHaveBeenCalled();
+        expect(prisma.membershipPayment.update).not.toHaveBeenCalled();
       });
 
-      it('snapshots the current period and plan price onto a new PENDING payment', async () => {
+      it('attaches the receipt/method to an existing auto-generated PENDING row (no receipt yet) instead of creating a second row', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipWithOpenPeriod);
+        prisma.membershipPayment.findFirst.mockResolvedValue({
+          id: 'auto-generated-1',
+          status: MembershipPaymentStatus.PENDING,
+          receiptUrl: null,
+          dueDate: new Date('2026-03-07T00:00:00Z'),
+        });
+
+        await service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.TRANSFER);
+
+        expect(prisma.membershipPayment.create).not.toHaveBeenCalled();
+        const updateCall = prisma.membershipPayment.update.mock.calls[0][0];
+        expect(updateCall.where.id).toBe('auto-generated-1');
+        expect(updateCall.data).toEqual({
+          receiptUrl: 'https://x/receipt.png',
+          submittedBy: 'user-1',
+          method: MembershipPaymentMethod.TRANSFER,
+        });
+      });
+
+      it('snapshots the current period and plan price onto a new PENDING payment, with a fresh 5-day dueDate, when paying proactively before cutoff', async () => {
         prisma.businessMembership.findUnique.mockResolvedValue(membershipWithOpenPeriod);
         prisma.membershipPayment.findFirst.mockResolvedValue(null);
 
-        await service.submitPayment('b1', 'user-1', 'https://x/receipt.png');
+        const before = Date.now();
+        await service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.DEPOSIT);
 
         const data = prisma.membershipPayment.create.mock.calls[0][0].data;
         expect(data.membershipId).toBe('m1');
-        expect(data.amount).toBe(25);
+        expect(data.amount.toString()).toBe('25');
         expect(data.receiptUrl).toBe('https://x/receipt.png');
+        expect(data.method).toBe(MembershipPaymentMethod.DEPOSIT);
         expect(data.submittedBy).toBe('user-1');
         expect(data.periodStart).toEqual(membershipWithOpenPeriod.currentPeriodStart);
         expect(data.periodEnd).toEqual(membershipWithOpenPeriod.currentPeriodEnd);
+        expect(data.dueDate.getTime()).toBeGreaterThanOrEqual(before + 5 * 24 * 60 * 60 * 1000 - 1000);
       });
 
       it('falls back to the trial window as the first due period when no currentPeriodStart/End exist yet', async () => {
@@ -245,11 +278,127 @@ describe('MembershipsService', () => {
         });
         prisma.membershipPayment.findFirst.mockResolvedValue(null);
 
-        await service.submitPayment('b1', 'user-1', 'https://x/receipt.png');
+        await service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.CARD);
 
         const data = prisma.membershipPayment.create.mock.calls[0][0].data;
         expect(data.periodStart).toEqual(membershipWithOpenPeriod.createdAt);
         expect(data.periodEnd).toEqual(membershipWithOpenPeriod.trialEndsAt);
+      });
+
+      it('inherits the original dueDate (never resets the clock) when resubmitting after a rejection', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipWithOpenPeriod);
+        const originalDueDate = new Date('2026-01-20T00:00:00Z');
+        prisma.membershipPayment.findFirst.mockResolvedValue({
+          id: 'rejected-1',
+          status: MembershipPaymentStatus.REJECTED,
+          receiptUrl: 'https://x/blurry.png',
+          dueDate: originalDueDate,
+        });
+
+        await service.submitPayment('b1', 'user-1', 'https://x/clear.png', MembershipPaymentMethod.DEPOSIT);
+
+        expect(prisma.membershipPayment.update).not.toHaveBeenCalled();
+        const data = prisma.membershipPayment.create.mock.calls[0][0].data;
+        expect(data.dueDate).toBe(originalDueDate);
+      });
+
+      it('applies a live percentage-discount AdminCouponRedemption to the priced amount', async () => {
+        prisma.businessMembership.findUnique.mockResolvedValue(membershipWithOpenPeriod);
+        prisma.membershipPayment.findFirst.mockResolvedValue(null);
+        prisma.adminCouponRedemption.findMany.mockResolvedValueOnce([
+          {
+            coupon: { discountType: 'PERCENTAGE_DISCOUNT', discountValue: 20, expirationDate: new Date(Date.now() + 86_400_000) },
+          },
+        ]);
+
+        await service.submitPayment('b1', 'user-1', 'https://x/receipt.png', MembershipPaymentMethod.DEPOSIT);
+
+        const data = prisma.membershipPayment.create.mock.calls[0][0].data;
+        expect(data.amount.toString()).toBe('20'); // 25 - 20% = 20
+      });
+    });
+
+    describe('computeDueAmount — coupon-aware pricing', () => {
+      it('returns the plan price unchanged when there are no live discount redemptions', async () => {
+        prisma.adminCouponRedemption.findMany.mockResolvedValueOnce([]);
+        const amount = await service.computeDueAmount('m1', 25);
+        expect(amount.toString()).toBe('25');
+      });
+
+      it('applies a FIXED_AMOUNT_DISCOUNT redemption, floored at 0', async () => {
+        prisma.adminCouponRedemption.findMany.mockResolvedValueOnce([
+          { coupon: { discountType: 'FIXED_AMOUNT_DISCOUNT', discountValue: 100, expirationDate: new Date(Date.now() + 86_400_000) } },
+        ]);
+        const amount = await service.computeDueAmount('m1', 25);
+        expect(amount.toString()).toBe('0');
+      });
+
+      it('stacks multiple live discount redemptions in redemption order, each applied to the already-reduced amount', async () => {
+        prisma.adminCouponRedemption.findMany.mockResolvedValueOnce([
+          { coupon: { discountType: 'PERCENTAGE_DISCOUNT', discountValue: 50, expirationDate: new Date(Date.now() + 86_400_000) } },
+          { coupon: { discountType: 'FIXED_AMOUNT_DISCOUNT', discountValue: 5, expirationDate: new Date(Date.now() + 86_400_000) } },
+        ]);
+        // 100 -> 50% off -> 50 -> minus 5 -> 45 (NOT 100 - 50 - 5 = 45 coincidentally same here,
+        // so use a value where stacking vs. "off the original price" actually differ)
+        const amount = await service.computeDueAmount('m1', 100);
+        expect(amount.toString()).toBe('45');
+      });
+
+      it('stacking is order-dependent (proof it is not simply summing discounts off the original price)', async () => {
+        prisma.adminCouponRedemption.findMany.mockResolvedValueOnce([
+          { coupon: { discountType: 'FIXED_AMOUNT_DISCOUNT', discountValue: 10, expirationDate: new Date(Date.now() + 86_400_000) } },
+          { coupon: { discountType: 'PERCENTAGE_DISCOUNT', discountValue: 50, expirationDate: new Date(Date.now() + 86_400_000) } },
+        ]);
+        // 100 -> minus 10 -> 90 -> 50% off -> 45. "Off the original price" would give 100-10-50=40.
+        const amount = await service.computeDueAmount('m1', 100);
+        expect(amount.toString()).toBe('45');
+      });
+
+      it('never queries FREE_MONTHS/FREE_TRIAL_EXTENSION redemptions — only the two discount types', async () => {
+        prisma.adminCouponRedemption.findMany.mockResolvedValueOnce([]);
+        await service.computeDueAmount('m1', 25);
+        const where = prisma.adminCouponRedemption.findMany.mock.calls[0][0].where;
+        expect(where.coupon.discountType.in).toEqual(['PERCENTAGE_DISCOUNT', 'FIXED_AMOUNT_DISCOUNT']);
+      });
+    });
+
+    describe('generateDuePaymentIfMissing — cutoff auto-generation', () => {
+      const membershipDue = {
+        id: 'm1',
+        planId: 'plan-1',
+        plan: { price: 25, currency: 'USD' },
+        currentPeriodStart: new Date('2026-01-01T00:00:00Z'),
+        currentPeriodEnd: new Date('2026-02-01T00:00:00Z'),
+      };
+
+      it('does nothing when currentPeriodStart/End are not set yet', async () => {
+        const result = await service.generateDuePaymentIfMissing({ ...membershipDue, currentPeriodEnd: null });
+        expect(result).toBeNull();
+        expect(prisma.membershipPayment.create).not.toHaveBeenCalled();
+      });
+
+      it('does nothing when a payment row already exists for this exact period (e.g. paid proactively)', async () => {
+        prisma.membershipPayment.findFirst.mockResolvedValueOnce({ id: 'already-there' });
+        const result = await service.generateDuePaymentIfMissing(membershipDue);
+        expect(result).toBeNull();
+        expect(prisma.membershipPayment.create).not.toHaveBeenCalled();
+      });
+
+      it('creates a PENDING placeholder with no receipt/method and a dueDate 5 days out', async () => {
+        prisma.membershipPayment.findFirst.mockResolvedValueOnce(null);
+        prisma.adminCouponRedemption.findMany.mockResolvedValueOnce([]);
+
+        const before = Date.now();
+        await service.generateDuePaymentIfMissing(membershipDue);
+
+        const data = prisma.membershipPayment.create.mock.calls[0][0].data;
+        expect(data.membershipId).toBe('m1');
+        expect(data.periodStart).toEqual(membershipDue.currentPeriodStart);
+        expect(data.periodEnd).toEqual(membershipDue.currentPeriodEnd);
+        expect(data.amount.toString()).toBe('25');
+        expect(data.receiptUrl).toBeUndefined();
+        expect(data.method).toBeUndefined();
+        expect(data.dueDate.getTime()).toBeGreaterThanOrEqual(before + 5 * 24 * 60 * 60 * 1000 - 1000);
       });
     });
 

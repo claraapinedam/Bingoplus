@@ -24,6 +24,7 @@ import {
   PRODUCTS_DEPENDENT_CAPABILITIES,
 } from '../business-capabilities/business-capabilities.service';
 import { MembershipsService } from '../memberships/memberships.service';
+import { membershipGoodStandingWhere } from '../memberships/membership-visibility.util';
 import { getActiveOffersMap } from '../coupons/active-offers.util';
 import { CouponsService } from '../coupons/coupons.service';
 import { ContractsService } from '../contracts/contracts.service';
@@ -101,6 +102,7 @@ export class BusinessesService {
         capabilities: {
           some: { capability: BusinessCapabilityType.SELLS_PRODUCTS, enabled: true },
         },
+        ...membershipGoodStandingWhere(),
         ...(category ? { categories: { some: { categoryId: category.id } } } : {}),
         ...(query.search ? { tradeName: { contains: query.search, mode: 'insensitive' } } : {}),
         ...(speciesFilter
@@ -210,7 +212,7 @@ export class BusinessesService {
 
   async getPublicBusiness(businessId: string) {
     const business = await this.prisma.business.findFirst({
-      where: { id: businessId, status: BusinessStatus.ACTIVE, deletedAt: null },
+      where: { id: businessId, status: BusinessStatus.ACTIVE, deletedAt: null, ...membershipGoodStandingWhere() },
       include: { categories: { include: { category: true } } },
     });
     if (!business) throw new NotFoundException('Business not found');

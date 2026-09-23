@@ -14,13 +14,22 @@ const STATUS_LABELS: Record<string, string> = {
   REJECTED: 'Rechazado',
 };
 
+const METHOD_LABELS: Record<string, string> = {
+  DEPOSIT: 'Depósito bancario',
+  TRANSFER: 'Transferencia bancaria',
+  CARD: 'Pago con tarjeta',
+};
+
 interface MembershipPaymentDetail {
   id: string;
   periodStart: string;
   periodEnd: string;
   amount: string | number;
   currency: string;
-  receiptUrl: string;
+  // Null on an auto-generated row the cutoff sweeper created before the business uploaded anything.
+  receiptUrl: string | null;
+  method: 'DEPOSIT' | 'TRANSFER' | 'CARD' | null;
+  dueDate: string | null;
   status: 'PENDING' | 'VERIFIED' | 'REJECTED';
   rejectionReason: string | null;
   createdAt: string;
@@ -122,6 +131,14 @@ export default function AdminMembershipPaymentDetailPage() {
           <div style={{ fontSize: 13, marginBottom: 6 }}>
             Período: {new Date(payment.periodStart).toLocaleDateString('es-EC')} – {new Date(payment.periodEnd).toLocaleDateString('es-EC')}
           </div>
+          <div style={{ fontSize: 13, marginBottom: 6 }}>
+            Método: {payment.method ? METHOD_LABELS[payment.method] ?? payment.method : 'Sin comprobante todavía'}
+          </div>
+          {payment.dueDate && (
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              Fecha máxima de pago: {new Date(payment.dueDate).toLocaleDateString('es-EC')}
+            </div>
+          )}
           <div style={{ fontSize: 12, color: '#9aa5b1' }}>Enviado: {new Date(payment.createdAt).toLocaleString('es-EC')}</div>
           {payment.reviewedAt && (
             <div style={{ fontSize: 12, color: '#9aa5b1' }}>Revisado: {new Date(payment.reviewedAt).toLocaleString('es-EC')}</div>
@@ -132,21 +149,37 @@ export default function AdminMembershipPaymentDetailPage() {
         </div>
 
         <div className="bingo-card">
-          <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Comprobante de depósito</h2>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={payment.receiptUrl}
-            alt="Comprobante de depósito"
-            style={{ maxWidth: '100%', borderRadius: 10, border: '1px solid #e0e4ea' }}
-          />
-          <div style={{ marginTop: 8 }}>
-            <a href={payment.receiptUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--bingo-teal)', fontWeight: 700, fontSize: 13 }}>
-              Abrir en tamaño completo →
-            </a>
-          </div>
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Comprobante de pago</h2>
+          {payment.receiptUrl ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={payment.receiptUrl}
+                alt="Comprobante de pago"
+                style={{ maxWidth: '100%', borderRadius: 10, border: '1px solid #e0e4ea' }}
+              />
+              <div style={{ marginTop: 8 }}>
+                <a href={payment.receiptUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--bingo-teal)', fontWeight: 700, fontSize: 13 }}>
+                  Abrir en tamaño completo →
+                </a>
+              </div>
+            </>
+          ) : (
+            <p style={{ fontSize: 13, color: '#7f8ea3' }}>
+              Este registro se generó automáticamente al terminar el período de facturación. El negocio todavía no ha
+              subido un comprobante.
+            </p>
+          )}
         </div>
 
-        {payment.status === 'PENDING' && (
+        {payment.status === 'PENDING' && !payment.receiptUrl && (
+          <div className="bingo-card" style={{ gridColumn: 'span 2', color: '#7f8ea3', fontSize: 13 }}>
+            Nada que revisar todavía — este registro se generó automáticamente y el negocio no ha subido un
+            comprobante.
+          </div>
+        )}
+
+        {payment.status === 'PENDING' && payment.receiptUrl && (
           <div className="bingo-card" style={{ gridColumn: 'span 2' }}>
             <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Revisar</h2>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>

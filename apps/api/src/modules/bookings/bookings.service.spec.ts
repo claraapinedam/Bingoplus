@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { BookingStatus, BusinessStatus } from '@prisma/client';
+import { BookingStatus, BusinessStatus, PaymentStatus } from '@prisma/client';
 import { BookingsService } from './bookings.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
@@ -68,6 +68,8 @@ describe('BookingsService', () => {
       service: { findUnique: jest.fn(), findFirst: jest.fn() },
       businessCapability: { findUnique: jest.fn().mockResolvedValue({ enabled: true }) },
       business: { findUniqueOrThrow: jest.fn().mockResolvedValue({ ownerId: 'owner-1' }) },
+      payment: { create: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
+      transaction: { create: jest.fn() },
       $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn((arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma))),
     };
@@ -99,6 +101,7 @@ describe('BookingsService', () => {
       id: 'biz-1',
       ownerId: 'owner-1',
       status: BusinessStatus.ACTIVE,
+      membership: { status: 'ACTIVE' },
       openingHours: Object.fromEntries(['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].map((d) => [d, { open: '00:00', close: '23:59' }])),
     },
   };
@@ -425,7 +428,7 @@ describe('BookingsService', () => {
         id: 'svc-1',
         durationMinutes: 30,
         capacity: null,
-        business: { openingHours: null, status: BusinessStatus.ACTIVE },
+        business: { openingHours: null, status: BusinessStatus.ACTIVE, membership: { status: 'ACTIVE' } },
       });
       const slots = await service.getAvailableSlots('svc-1', futureDateString());
       expect(slots).toEqual([]);
@@ -438,7 +441,7 @@ describe('BookingsService', () => {
         id: 'svc-1',
         durationMinutes: 30,
         capacity: null,
-        business: { openingHours: { [weekday]: { open: '09:00', close: '11:00' } }, status: BusinessStatus.ACTIVE },
+        business: { openingHours: { [weekday]: { open: '09:00', close: '11:00' } }, status: BusinessStatus.ACTIVE, membership: { status: 'ACTIVE' } },
       });
       prisma.booking.findMany.mockResolvedValue([]);
       const slots = await service.getAvailableSlots('svc-1', date);
@@ -455,7 +458,7 @@ describe('BookingsService', () => {
         id: 'svc-1',
         durationMinutes: 30,
         capacity: 1,
-        business: { openingHours: { [weekday]: { open: '09:00', close: '09:30' } }, status: BusinessStatus.ACTIVE },
+        business: { openingHours: { [weekday]: { open: '09:00', close: '09:30' } }, status: BusinessStatus.ACTIVE, membership: { status: 'ACTIVE' } },
       });
       prisma.booking.findMany.mockResolvedValue([{ startTime: slotStart, endTime: slotEnd }]);
       const slots = await service.getAvailableSlots('svc-1', date);
@@ -763,6 +766,20 @@ describe('BookingsService', () => {
       expect(result.slots[1]).toEqual({ serviceId: 'svc-1', date: weekFrom, startTime: '09:30', endTime: '10:00', capacity: 2, occupied: 0, remaining: 2 });
     });
 
+    it('includes COMPLETED bookings in the query — a completed booking must keep showing (and counting as occupied) in the calendar, not vanish once marked done', async () => {
+      prisma.service.findMany = jest.fn().mockResolvedValue([
+        { id: 'svc-1', type: 'GROOMING', durationMinutes: 30, capacity: 2, operatingDays: [], business: { openingHours: {} } },
+      ]);
+      prisma.booking.findMany = jest.fn().mockResolvedValue([]);
+
+      await service.getCalendar('biz-1', { from: weekFrom, to: weekFrom } as any);
+
+      const statusFilter = prisma.booking.findMany.mock.calls[0][0].where.status.in;
+      expect(statusFilter).toEqual(expect.arrayContaining([BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.COMPLETED]));
+      expect(statusFilter).not.toContain(BookingStatus.CANCELLED);
+      expect(statusFilter).not.toContain(BookingStatus.NO_SHOW);
+    });
+
     it('collapses a DAYCARE/BOARDING service to one whole-day slot per operating day', async () => {
       prisma.service.findMany = jest.fn().mockResolvedValue([
         { id: 'svc-2', type: 'DAYCARE', durationMinutes: 60, capacity: 3, operatingDays: ['mon'], business: { openingHours: {} } },
@@ -789,6 +806,189 @@ describe('BookingsService', () => {
       const result = await service.listForAdmin({});
       expect(result.data).toHaveLength(1);
       expect(result.meta.total).toBe(1);
+    });
+  });
+
+  // Card checkout now only opens up once the business has confirmed the booking — payment no
+  // longer drives confirmation the other way (that used to happen inside syncFromPaymentStatus).
+  // Cash reuses the exact same Payment row/relation, distinguished only by `provider: 'CASH'`,
+  // and is settled directly by the business rather than through PaymentService.
+  describe('booking payment — card and cash', () => {
+    const confirmedCustomerBooking = {
+      id: 'b1',
+      userId: 'user-1',
+      businessId: 'biz-1',
+      status: BookingStatus.CONFIRMED,
+      price: 50,
+      payment: null as any,
+      service: { name: 'Baño' },
+      business: { tradeName: 'Negocio X' },
+      user: { firstName: 'Ana' },
+    };
+
+    const confirmedBusinessBooking = {
+      id: 'b1',
+      userId: 'user-1',
+      businessId: 'biz-1',
+      status: BookingStatus.CONFIRMED,
+      price: 50,
+      payment: null as any,
+      service: { name: 'Baño' },
+      business: { tradeName: 'Negocio X' },
+      user: { firstName: 'Ana' },
+    };
+
+    describe('createBookingPayment (card)', () => {
+      it('rejects paying by card before the business has confirmed the booking', async () => {
+        prisma.booking.findUnique.mockResolvedValue({ ...confirmedCustomerBooking, status: BookingStatus.PENDING });
+        await expect(service.createBookingPayment('user-1', 'b1', 'idem-1')).rejects.toBeInstanceOf(BadRequestException);
+        expect(payments.createPayment).not.toHaveBeenCalled();
+      });
+
+      it('creates a card payment once the booking is CONFIRMED', async () => {
+        prisma.booking.findUnique.mockResolvedValue(confirmedCustomerBooking);
+        payments.createPayment.mockResolvedValue({ id: 'pay-1', provider: 'sandbox', status: PaymentStatus.PENDING });
+        const result = await service.createBookingPayment('user-1', 'b1', 'idem-1');
+        expect(payments.createPayment).toHaveBeenCalledWith(prisma, { bookingId: 'b1' }, 50, 'USD', 'idem-1');
+        expect(result).toEqual(expect.objectContaining({ id: 'pay-1' }));
+      });
+
+      it('a retried call returns the existing card payment instead of creating a second one', async () => {
+        const existing = { id: 'pay-1', provider: 'sandbox', status: PaymentStatus.PENDING };
+        prisma.booking.findUnique.mockResolvedValue({ ...confirmedCustomerBooking, payment: existing });
+        const result = await service.createBookingPayment('user-1', 'b1', 'idem-2');
+        expect(result).toBe(existing);
+        expect(payments.createPayment).not.toHaveBeenCalled();
+      });
+
+      it('rejects paying by card once the customer already chose cash', async () => {
+        prisma.booking.findUnique.mockResolvedValue({
+          ...confirmedCustomerBooking,
+          payment: { id: 'pay-2', provider: 'CASH', status: PaymentStatus.PENDING },
+        });
+        await expect(service.createBookingPayment('user-1', 'b1', 'idem-1')).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
+    describe('confirmBookingPayment (card)', () => {
+      it('rejects confirming online for a cash-chosen booking', async () => {
+        prisma.booking.findUnique.mockResolvedValue({
+          ...confirmedCustomerBooking,
+          payment: { id: 'pay-2', provider: 'CASH', status: PaymentStatus.PENDING },
+        });
+        await expect(service.confirmBookingPayment('user-1', 'b1')).rejects.toBeInstanceOf(BadRequestException);
+        expect(payments.confirmPayment).not.toHaveBeenCalled();
+      });
+
+      it('marks a card payment PAID without re-confirming an already-confirmed booking', async () => {
+        const cardPayment = { id: 'pay-1', provider: 'sandbox', status: PaymentStatus.PENDING };
+        prisma.booking.findUnique.mockResolvedValue({ ...confirmedCustomerBooking, payment: cardPayment });
+        payments.confirmPayment.mockResolvedValue({ id: 'pay-1', status: PaymentStatus.PAID });
+        await service.confirmBookingPayment('user-1', 'b1');
+        expect(payments.confirmPayment).toHaveBeenCalledWith('pay-1', 'success');
+        // Booking.status is never written here — confirmation already happened earlier, by the
+        // business, independently; a successful card payment only ever updates the Payment row.
+        expect(prisma.booking.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('chooseCashPayment', () => {
+      it('rejects before the business has confirmed the booking', async () => {
+        prisma.booking.findUnique.mockResolvedValue({ ...confirmedCustomerBooking, status: BookingStatus.PENDING });
+        await expect(service.chooseCashPayment('user-1', 'b1')).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('creates a PENDING cash Payment and notifies the business it must collect payment before the service starts', async () => {
+        prisma.booking.findUnique.mockResolvedValue(confirmedCustomerBooking);
+        prisma.payment.create.mockResolvedValue({ id: 'pay-2', provider: 'CASH', status: PaymentStatus.PENDING, amount: 50 });
+        const result = await service.chooseCashPayment('user-1', 'b1');
+        expect(prisma.payment.create).toHaveBeenCalledWith({
+          data: { bookingId: 'b1', provider: 'CASH', amount: 50, currency: 'USD', status: PaymentStatus.PENDING },
+        });
+        expect(result).toEqual(expect.objectContaining({ provider: 'CASH' }));
+        expect(notifications.notify).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'booking.cash_payment_pending', userId: 'owner-1' }),
+        );
+      });
+
+      it('a retried choice returns the existing cash payment idempotently', async () => {
+        const existing = { id: 'pay-2', provider: 'CASH', status: PaymentStatus.PENDING };
+        prisma.booking.findUnique.mockResolvedValue({ ...confirmedCustomerBooking, payment: existing });
+        const result = await service.chooseCashPayment('user-1', 'b1');
+        expect(result).toBe(existing);
+        expect(prisma.payment.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects choosing cash once the customer already chose card', async () => {
+        prisma.booking.findUnique.mockResolvedValue({
+          ...confirmedCustomerBooking,
+          payment: { id: 'pay-1', provider: 'sandbox', status: PaymentStatus.PENDING },
+        });
+        await expect(service.chooseCashPayment('user-1', 'b1')).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
+    describe('markCashPaid', () => {
+      it('rejects when there is no cash payment pending for this booking', async () => {
+        prisma.booking.findUnique.mockResolvedValue({ ...confirmedBusinessBooking, payment: null });
+        await expect(service.markCashPaid('biz-1', 'b1')).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('rejects when the booking payment is a card payment, not cash', async () => {
+        prisma.booking.findUnique.mockResolvedValue({
+          ...confirmedBusinessBooking,
+          payment: { id: 'pay-1', provider: 'sandbox', status: PaymentStatus.PENDING },
+        });
+        await expect(service.markCashPaid('biz-1', 'b1')).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('marks the cash Payment PAID, records a Transaction, and notifies the customer — without touching Booking.status', async () => {
+        const cashPayment = { id: 'pay-2', provider: 'CASH', status: PaymentStatus.PENDING, amount: 50 };
+        prisma.booking.findUnique.mockResolvedValue({ ...confirmedBusinessBooking, payment: cashPayment });
+        await service.markCashPaid('biz-1', 'b1');
+        expect(prisma.payment.update).toHaveBeenCalledWith({ where: { id: 'pay-2' }, data: { status: PaymentStatus.PAID } });
+        expect(prisma.transaction.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ paymentId: 'pay-2', status: PaymentStatus.PAID }) }),
+        );
+        expect(prisma.booking.update).not.toHaveBeenCalled();
+        expect(notifications.notify).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'booking.payment_received', userId: 'user-1' }),
+        );
+      });
+
+      it('is idempotent once already PAID', async () => {
+        const cashPayment = { id: 'pay-2', provider: 'CASH', status: PaymentStatus.PAID, amount: 50 };
+        prisma.booking.findUnique.mockResolvedValue({ ...confirmedBusinessBooking, payment: cashPayment });
+        await service.markCashPaid('biz-1', 'b1');
+        expect(prisma.payment.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('syncFromPaymentStatus', () => {
+      it("no longer confirms a still-PENDING booking on a successful payment — confirmation is the business's own separate action", async () => {
+        prisma.booking.findUnique.mockResolvedValue({
+          id: 'b1',
+          userId: 'user-1',
+          businessId: 'biz-1',
+          status: BookingStatus.PENDING,
+          service: { name: 'Baño' },
+        });
+        await service.syncFromPaymentStatus('b1', PaymentStatus.PAID);
+        expect(prisma.booking.update).not.toHaveBeenCalled();
+        expect(notifications.notify).toHaveBeenCalledWith(expect.objectContaining({ event: 'booking.payment_received' }));
+      });
+
+      it('still notifies the customer of a failed payment, unchanged', async () => {
+        prisma.booking.findUnique.mockResolvedValue({
+          id: 'b1',
+          userId: 'user-1',
+          businessId: 'biz-1',
+          status: BookingStatus.CONFIRMED,
+          service: { name: 'Baño' },
+        });
+        await service.syncFromPaymentStatus('b1', PaymentStatus.FAILED);
+        expect(notifications.notify).toHaveBeenCalledWith(expect.objectContaining({ event: 'booking.payment_failed' }));
+      });
     });
   });
 });

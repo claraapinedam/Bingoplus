@@ -40,6 +40,12 @@ describe('DirectoryService', () => {
     expect(where.status).toBe(BusinessStatus.ACTIVE);
   });
 
+  it('requires the business membership to be in good standing (TRIAL/ACTIVE) at the query level — a PAST_DUE-and-unpaid business is excluded, via the shared membershipGoodStandingWhere helper — but a business with no membership row at all is never excluded', async () => {
+    await service.list({});
+    const where = prisma.business.findMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual([{ membership: null }, { membership: { status: { in: ['TRIAL', 'ACTIVE'] } } }]);
+  });
+
   it('sorts a "featured" (Plan Pro) business ahead of a farther/better-rated non-featured one', async () => {
     prisma.business.findMany.mockResolvedValue([
       makeBusiness({ id: 'not-featured', ratingAvg: 5, membership: { plan: { benefits: { featured: false } } } }),

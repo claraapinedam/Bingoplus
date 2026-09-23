@@ -1,22 +1,31 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AdminCouponStatus,
+  AdminCouponType,
   BillingFrequency,
   BusinessMembershipStatus,
+  MembershipPaymentMethod,
   MembershipPaymentStatus,
   MembershipPlanStatus,
+  Prisma,
   SubscriptionStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateMembershipPlanDto, UpdateMembershipPlanDto } from './dto/membership-plan.dto';
-
-const GOOD_STANDING: BusinessMembershipStatus[] = [BusinessMembershipStatus.TRIAL, BusinessMembershipStatus.ACTIVE];
+import { isMembershipStatusGoodStanding } from './membership-visibility.util';
 
 // Same "30-day month" convention redeemAdminCoupon already uses for FREE_MONTHS — never a
 // calendar-aware month, kept consistent rather than mixing two different notions of "a month".
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MONTH_MS = 30 * DAY_MS;
 const YEAR_MS = 365 * DAY_MS;
+
+/** The single "how many days late is too late" window: how far past cutoff a MembershipPayment's
+ * dueDate is set (both at auto-generation and at a proactive early submission), and — via that
+ * same dueDate field — the deadline MembershipPastDueSweeper checks before flagging PAST_DUE.
+ * Exported so the sweeper never hardcodes a second "5 days" constant of its own. */
+export const MEMBERSHIP_PAYMENT_GRACE_DAYS = 5;
+export const MEMBERSHIP_PAYMENT_GRACE_MS = MEMBERSHIP_PAYMENT_GRACE_DAYS * DAY_MS;
 
 /**
  * Membership → Subscription → Invoice is a financial domain kept separate from Marketplace
@@ -84,7 +93,7 @@ export class MembershipsService {
       where: { businessId },
       include: { plan: true },
     });
-    if (!membership || !GOOD_STANDING.includes(membership.status)) return false;
+    if (!membership || !isMembershipStatusGoodStanding(membership.status)) return false;
     const benefits = membership.plan.benefits as Record<string, unknown> | null;
     return benefits?.[key] === true;
   }
@@ -230,34 +239,146 @@ export class MembershipsService {
     return { periodStart: membership.createdAt, periodEnd: new Date() };
   }
 
-  /** Business uploads a deposit receipt for its current due period — creates a PENDING
-   * MembershipPayment. Amount/period are always resolved from the membership/plan themselves,
-   * never taken from the client. Mirrors Refund's create-then-admin-completes shape. */
-  async submitPayment(businessId: string, submittedBy: string, receiptUrl: string) {
+  /**
+   * plan.price, reduced by any still-valid PERCENTAGE_DISCOUNT/FIXED_AMOUNT_DISCOUNT
+   * AdminCouponRedemption against this membership (a redemption whose parent AdminCoupon's
+   * expirationDate hasn't passed). FREE_MONTHS/FREE_TRIAL_EXTENSION never reach this method at
+   * all: they work by directly extending currentPeriodEnd/trialEndsAt (see redeemAdminCoupon), so
+   * a period they cover is simply never due yet — no payment gets generated/priced for it in the
+   * first place.
+   *
+   * Combination rule (no existing precedent for this — discounts were never actually applied to an
+   * amount before now): multiple live discount redemptions STACK, oldest-redeemed first, each one
+   * applied to the amount as already reduced by the ones before it, floored at 0 after every step.
+   * Chosen over "most-recent-wins" because redeemAdminCoupon's usageLimit/usagePerBusiness rules
+   * never assume only one discount redemption can be alive on a membership at once — if an admin
+   * deliberately grants a business two, both should count, not silently overwrite one another.
+   * Chosen over "best-for-business" (apply only the single most generous one) because that would
+   * quietly waste whichever coupon was smaller with no record of why, which cuts against
+   * AdminCouponRedemption.appliedValue being an immutable receipt of what was actually granted.
+   */
+  async computeDueAmount(membershipId: string, planPrice: Prisma.Decimal | number): Promise<Prisma.Decimal> {
+    const redemptions = await this.prisma.adminCouponRedemption.findMany({
+      where: {
+        membershipId,
+        coupon: {
+          discountType: { in: [AdminCouponType.PERCENTAGE_DISCOUNT, AdminCouponType.FIXED_AMOUNT_DISCOUNT] },
+          expirationDate: { gte: new Date() },
+        },
+      },
+      orderBy: { redeemedAt: 'asc' },
+      include: { coupon: true },
+    });
+
+    let amount = new Prisma.Decimal(planPrice);
+    for (const redemption of redemptions) {
+      const value = redemption.coupon.discountValue ?? new Prisma.Decimal(0);
+      amount =
+        redemption.coupon.discountType === AdminCouponType.PERCENTAGE_DISCOUNT
+          ? amount.minus(amount.times(value).dividedBy(100))
+          : amount.minus(value);
+      if (amount.lessThan(0)) amount = new Prisma.Decimal(0);
+    }
+    return amount;
+  }
+
+  /**
+   * Auto-generates the PENDING placeholder MembershipPayment for a membership's current due
+   * period the moment cutoff (currentPeriodEnd) is reached — called by MembershipPastDueSweeper,
+   * never by a controller. No receipt/method yet (nobody has paid), but dueDate is set immediately
+   * so it's the one authoritative deadline from the moment the row exists. A no-op (returns null)
+   * if a row for this exact period already exists — e.g. the business paid proactively before
+   * cutoff via submitPayment, which also always sets dueDate.
+   */
+  async generateDuePaymentIfMissing(membership: {
+    id: string;
+    planId: string;
+    plan: { price: Prisma.Decimal | number; currency: string };
+    currentPeriodStart: Date | null;
+    currentPeriodEnd: Date | null;
+  }) {
+    if (!membership.currentPeriodStart || !membership.currentPeriodEnd) return null;
+
+    const existing = await this.prisma.membershipPayment.findFirst({
+      where: {
+        membershipId: membership.id,
+        periodStart: membership.currentPeriodStart,
+        periodEnd: membership.currentPeriodEnd,
+      },
+    });
+    if (existing) return null;
+
+    const amount = await this.computeDueAmount(membership.id, membership.plan.price);
+    return this.prisma.membershipPayment.create({
+      data: {
+        membershipId: membership.id,
+        periodStart: membership.currentPeriodStart,
+        periodEnd: membership.currentPeriodEnd,
+        amount,
+        currency: membership.plan.currency,
+        dueDate: new Date(Date.now() + MEMBERSHIP_PAYMENT_GRACE_MS),
+      },
+    });
+  }
+
+  /**
+   * Business uploads proof of payment for its current due period. Reuses the sweeper's
+   * auto-generated PENDING/no-receipt row for the current period when one already exists (attaches
+   * receiptUrl/method/submittedBy to it, leaving its dueDate untouched — that deadline is
+   * canonical, resubmitting never resets the clock) rather than creating a second row for the same
+   * period. Still supports paying proactively before cutoff ever fires: if nothing exists yet for
+   * the current period, one is created here, with a fresh dueDate (there was no cutoff-driven
+   * deadline yet). If the most recent row for this period is REJECTED, a new row is created to
+   * preserve the rejection's audit trail, but it inherits that row's original dueDate rather than
+   * getting a fresh 5 days — a rejection never resets the deadline. Mirrors Refund's
+   * create-then-admin-completes shape.
+   */
+  async submitPayment(
+    businessId: string,
+    submittedBy: string,
+    receiptUrl: string,
+    method: MembershipPaymentMethod,
+  ) {
     const membership = await this.prisma.businessMembership.findUnique({
       where: { businessId },
       include: { plan: true },
     });
     if (!membership) throw new NotFoundException('This business has no membership yet');
 
-    const alreadyPending = await this.prisma.membershipPayment.findFirst({
-      where: { membershipId: membership.id, status: MembershipPaymentStatus.PENDING },
+    const { periodStart, periodEnd } = this.resolveDuePeriod(membership);
+
+    const existingForPeriod = await this.prisma.membershipPayment.findFirst({
+      where: { membershipId: membership.id, periodStart, periodEnd },
+      orderBy: { createdAt: 'desc' },
     });
-    if (alreadyPending) {
-      throw new BadRequestException('There is already a payment proof pending review for this membership.');
+
+    if (existingForPeriod?.status === MembershipPaymentStatus.PENDING) {
+      if (existingForPeriod.receiptUrl) {
+        throw new BadRequestException('There is already a payment proof pending review for this membership.');
+      }
+      return this.prisma.membershipPayment.update({
+        where: { id: existingForPeriod.id },
+        data: { receiptUrl, submittedBy, method },
+      });
     }
 
-    const { periodStart, periodEnd } = this.resolveDuePeriod(membership);
+    const amount = await this.computeDueAmount(membership.id, membership.plan.price);
+    const dueDate =
+      existingForPeriod?.status === MembershipPaymentStatus.REJECTED && existingForPeriod.dueDate
+        ? existingForPeriod.dueDate
+        : new Date(Date.now() + MEMBERSHIP_PAYMENT_GRACE_MS);
 
     return this.prisma.membershipPayment.create({
       data: {
         membershipId: membership.id,
         periodStart,
         periodEnd,
-        amount: membership.plan.price,
+        amount,
         currency: membership.plan.currency,
         receiptUrl,
         submittedBy,
+        method,
+        dueDate,
       },
     });
   }

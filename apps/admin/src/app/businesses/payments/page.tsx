@@ -23,11 +23,21 @@ const MEMBERSHIP_PAYMENT_STATUS_LABELS: Record<string, string> = {
   REJECTED: 'Rechazado',
 };
 
+const MEMBERSHIP_PAYMENT_METHOD_LABELS: Record<string, string> = {
+  DEPOSIT: 'Depósito',
+  TRANSFER: 'Transferencia',
+  CARD: 'Tarjeta',
+};
+
 interface MembershipPaymentRow {
   id: string;
   periodStart: string;
   periodEnd: string;
   amount: string | number;
+  // Null on an auto-generated row the cutoff sweeper created before the business uploaded anything.
+  receiptUrl: string | null;
+  method: 'DEPOSIT' | 'TRANSFER' | 'CARD' | null;
+  dueDate: string | null;
   status: 'PENDING' | 'VERIFIED' | 'REJECTED';
   createdAt: string;
   membership: { business: { tradeName: string }; plan: { name: string } };
@@ -181,6 +191,8 @@ function IncomingMembershipPaymentsSection() {
                 <th>Plan</th>
                 <th>Período</th>
                 <th>Monto</th>
+                <th>Método</th>
+                <th>Fecha máxima</th>
                 <th>Estado</th>
                 <th>Enviado</th>
                 <th></th>
@@ -199,6 +211,8 @@ function IncomingMembershipPaymentsSection() {
                     {new Date(item.periodStart).toLocaleDateString('es-EC')} – {new Date(item.periodEnd).toLocaleDateString('es-EC')}
                   </td>
                   <td>{currencyFormatter.format(Number(item.amount))}</td>
+                  <td>{item.method ? MEMBERSHIP_PAYMENT_METHOD_LABELS[item.method] ?? item.method : '—'}</td>
+                  <td>{item.dueDate ? new Date(item.dueDate).toLocaleDateString('es-EC') : '—'}</td>
                   <td>
                     <span
                       className="bingo-badge"
@@ -209,6 +223,9 @@ function IncomingMembershipPaymentsSection() {
                     >
                       {MEMBERSHIP_PAYMENT_STATUS_LABELS[item.status] ?? item.status}
                     </span>
+                    {!item.receiptUrl && item.status === 'PENDING' && (
+                      <div style={{ fontSize: 11, color: '#9aa5b1', marginTop: 2 }}>Sin comprobante todavía</div>
+                    )}
                   </td>
                   <td style={{ fontSize: 12 }}>{new Date(item.createdAt).toLocaleDateString('es-EC')}</td>
                   <td style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>Revisar →</td>

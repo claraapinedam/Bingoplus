@@ -4,6 +4,7 @@ import { getOpeningStatus } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { getActiveOffersMap } from '../coupons/active-offers.util';
+import { membershipGoodStandingWhere } from '../memberships/membership-visibility.util';
 
 @Injectable()
 export class FavoritesService {
@@ -45,7 +46,12 @@ export class FavoritesService {
     if (favorites.length === 0) return [];
 
     const businesses = await this.prisma.business.findMany({
-      where: { id: { in: favorites.map((f) => f.targetId) }, status: BusinessStatus.ACTIVE, deletedAt: null },
+      where: {
+        id: { in: favorites.map((f) => f.targetId) },
+        status: BusinessStatus.ACTIVE,
+        deletedAt: null,
+        ...membershipGoodStandingWhere(),
+      },
       include: { categories: { include: { category: true } } },
     });
     const capabilityMaps = await this.capabilities.getMapForMany(businesses.map((b) => b.id));

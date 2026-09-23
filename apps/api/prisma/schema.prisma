@@ -2115,6 +2115,16 @@ enum MembershipPaymentStatus {
   REJECTED
 }
 
+// Deposito/transferencia/pago-con-tarjeta as a plain label the business picks when it uploads
+// proof of payment — never a real card-charging integration (owner explicitly decided against
+// one). "CARD" here just means "I paid by card somewhere else (e.g. in person) and this is my
+// confirmation of it", handled identically to the other two methods.
+enum MembershipPaymentMethod {
+  DEPOSIT
+  TRANSFER
+  CARD
+}
+
 // Manual proof-of-payment for a business's membership billing period (owner's decision: deposit
 // receipt + admin verification, deliberately NOT a card charge — this codebase's payment system
 // is still Sandbox-only, no real gateway integrated). Snapshots periodStart/periodEnd/amount at
@@ -2125,15 +2135,32 @@ enum MembershipPaymentStatus {
 // row this payment settles; null while PENDING/REJECTED. Mirrors Refund's PENDING->COMPLETED shape
 // (RefundService.completeManual) — a business submits, it sits PENDING, an admin reviews the
 // receipt image and marks VERIFIED or REJECTED (with a reason).
+//
+// A row's lifecycle now starts two possible ways (see MembershipPastDueSweeper /
+// MembershipsService.submitPayment): (1) auto-generated the moment currentPeriodEnd is reached —
+// PENDING, receiptUrl/method both null, dueDate = generatedAt + 5 days; or (2) created directly by
+// a proactive submission before the cutoff ever fires — PENDING, receiptUrl/method set immediately,
+// dueDate = submittedAt + 5 days. Either way `dueDate` is the one authoritative deadline: once it
+// passes with the row still PENDING-without-a-receipt or REJECTED (and nothing newer submitted for
+// the same period), the business loses customer-facing visibility — see
+// membership-visibility.util.ts — until an admin verifies a payment for it.
 model MembershipPayment {
-  id              String                  @id @default(cuid())
+  id              String                   @id @default(cuid())
   membershipId    String
   subscriptionId  String?
   periodStart     DateTime
   periodEnd       DateTime
-  amount          Decimal                 @db.Decimal(12, 2)
-  currency        String                  @default("USD")
-  receiptUrl      String
+  amount          Decimal                  @db.Decimal(12, 2)
+  currency        String                   @default("USD")
+  // Nullable: null until the business actually uploads proof (auto-generated placeholder rows
+  // start out this way).
+  receiptUrl      String?
+  // Set together with receiptUrl at submission time — never at auto-generation time, since there
+  // is no method until someone actually pays.
+  method          MembershipPaymentMethod?
+  // The single authoritative deadline for this billing period (generatedAt/submittedAt + 5 days).
+  // Nullable only for defensiveness against pre-existing rows from before this field existed.
+  dueDate         DateTime?
   status          MembershipPaymentStatus @default(PENDING)
   // The BusinessUser who submitted this proof — plain id, no relation, same convention as
   // Refund.requestedBy.
@@ -2150,6 +2177,7 @@ model MembershipPayment {
   @@index([membershipId])
   @@index([subscriptionId])
   @@index([status])
+  @@index([dueDate])
 }
 
 enum InvoiceStatus {

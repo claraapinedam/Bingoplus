@@ -7,6 +7,7 @@ import { resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { MembershipsService } from '../memberships/memberships.service';
+import { isMembershipStatusGoodStanding } from '../memberships/membership-visibility.util';
 import {
   CouponCustomerLimitReachedException,
   CouponExpiredException,
@@ -135,12 +136,17 @@ export class CouponsService {
     const coupons = await this.prisma.businessCoupon.findMany({
       where: { status: BusinessCouponStatus.ACTIVE, startDate: { lte: now }, expirationDate: { gte: now } },
       orderBy: { createdAt: 'asc' },
-      include: { business: { include: { categories: { include: { category: true } } } } },
+      include: {
+        business: {
+          include: { categories: { include: { category: true } }, membership: { select: { status: true } } },
+        },
+      },
     });
 
     const byBusiness = new Map<string, { business: (typeof coupons)[number]['business']; coupons: typeof coupons }>();
     for (const c of coupons) {
       if (c.business.status !== BusinessStatus.ACTIVE || c.business.deletedAt) continue;
+      if (!isMembershipStatusGoodStanding(c.business.membership?.status)) continue;
       const entry = byBusiness.get(c.businessId);
       if (entry) entry.coupons.push(c);
       else byBusiness.set(c.businessId, { business: c.business, coupons: [c] });
