@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useJsApiLoader } from '@react-google-maps/api';
 import DashboardShell from '@/components/DashboardShell';
 import EmptyState from '@/components/EmptyState';
 import MapView from '@/components/MapView';
 import { apiFetch, ApiError, getActiveBusinessId } from '@/lib/api';
 import { connectSocket } from '@/lib/socket';
+import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 import {
   API_ERROR_MESSAGES,
   DELIVERY_STATUS_LABELS,
@@ -16,6 +18,22 @@ import {
 } from '@/lib/orderStatus';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
+/** Matches the rider app's own live-route pattern exactly (see apps/rider's delivery detail page)
+ * — same throttle, same current-leg split, same straight-line-then-upgrade-to-DirectionsService
+ * fallback. Kept as its own client-side computation rather than a backend-relayed route: Business,
+ * Customer and Rider each only ever have 1 viewer per delivery, so 3 independent Directions calls
+ * per ~15s window is not a meaningful quota concern, and it avoids adding new persistence/socket
+ * fields just to relay what each client can already derive itself from delivery.status + the
+ * rider's already-live position. */
+const LOCATION_POLL_INTERVAL_MS = 15000;
+const TRACKABLE_STATUSES = ['RIDER_ACCEPTED', 'GOING_TO_PICKUP', 'ARRIVED_AT_PICKUP', 'PICKED_UP', 'IN_TRANSIT', 'ARRIVED_AT_CUSTOMER'];
+const PRE_PICKUP_STATUSES = ['RIDER_ACCEPTED', 'GOING_TO_PICKUP', 'ARRIVED_AT_PICKUP'];
+
+function travelModeFor(vehicleType: string | undefined): google.maps.TravelMode {
+  if (vehicleType === 'BIKE') return google.maps.TravelMode.BICYCLING;
+  if (vehicleType === 'WALK') return google.maps.TravelMode.WALKING;
+  return google.maps.TravelMode.DRIVING;
+}
 
 interface OrderItem {
   id: string;
@@ -53,10 +71,15 @@ interface DeliveryInfo {
   status: string;
   estimatedDistanceKm: number | null;
   estimatedDurationMinutes: number | null;
-  rider: { user: { firstName: string; lastName: string } } | null;
+  rider: { user: { firstName: string; lastName: string }; vehicles: { type: string }[] } | null;
   pickupAddressSnapshot: { tradeName?: string; latitude?: number | null; longitude?: number | null } | null;
   deliveryAddressSnapshot: { label?: string; latitude?: number | null; longitude?: number | null } | null;
   route: { polyline: string } | null;
+}
+
+interface RiderLocation {
+  latitude: number | null;
+  longitude: number | null;
 }
 
 export default function BusinessOrderDetailPage() {
@@ -65,8 +88,17 @@ export default function BusinessOrderDetailPage() {
   const businessId = getActiveBusinessId();
   const [order, setOrder] = useState<OrderDetail | null | undefined>(undefined);
   const [delivery, setDelivery] = useState<DeliveryInfo | null>(null);
+  const [riderLocation, setRiderLocation] = useState<RiderLocation | null>(null);
+  const [liveRoute, setLiveRoute] = useState<{ lat: number; lng: number }[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastRouteComputeRef = useRef(0);
+
+  const { isLoaded: mapsLoaded } = useJsApiLoader({
+    id: GOOGLE_MAPS_LOADER_ID,
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
 
   const load = useCallback(() => {
     if (!businessId) return;
@@ -82,6 +114,22 @@ export default function BusinessOrderDetailPage() {
     load();
   }, [load]);
 
+  // Rider's live position — the concrete gap this closes: the business order-detail map used to
+  // never pass a `rider` prop to MapView at all, so a rider going anywhere on this delivery was
+  // simply invisible to the business, even though customer's tracking page always showed it. Same
+  // fallback pattern customer's page uses: an initial REST fetch on mount/delivery-change, kept
+  // live via the delivery:{id} socket room's `delivery.location.updated` (widened for Business —
+  // FASE 4C — same as delivery.status.updated below).
+  useEffect(() => {
+    if (!businessId || !delivery?.id) {
+      setRiderLocation(null);
+      return;
+    }
+    apiFetch<RiderLocation>(`/me/business/${businessId}/orders/${params.id}/delivery/location`)
+      .then(setRiderLocation)
+      .catch(() => undefined);
+  }, [businessId, params.id, delivery?.id]);
+
   // Once a Delivery exists, its progress pushes live over the existing delivery:{id} room — the
   // gateway was widened (FASE 4C) to also authorize the owning business, same room/events Rider
   // and Customer already use, no new infrastructure.
@@ -90,16 +138,71 @@ export default function BusinessOrderDetailPage() {
     if (!socket || !delivery?.id) return;
     socket.emit('subscribe:delivery', { deliveryId: delivery.id });
     const onUpdate = () => load();
+    const onLocation = (payload: { latitude: number; longitude: number }) =>
+      setRiderLocation({ latitude: payload.latitude, longitude: payload.longitude });
     socket.on('delivery.status.updated', onUpdate);
     socket.on('delivery.rider.assigned', onUpdate);
     socket.on('delivery.completed', onUpdate);
+    socket.on('delivery.location.updated', onLocation);
     return () => {
       socket.emit('unsubscribe:delivery', { deliveryId: delivery.id });
       socket.off('delivery.status.updated', onUpdate);
       socket.off('delivery.rider.assigned', onUpdate);
       socket.off('delivery.completed', onUpdate);
+      socket.off('delivery.location.updated', onLocation);
     };
   }, [delivery?.id, load]);
+
+  // Live, current-leg-aware route (rider → business before pickup, rider → customer after) —
+  // mirrors the rider app's own DirectionsService pattern exactly. Throttled the same way (15s)
+  // to match the location update cadence, so this never calls the Directions API faster than the
+  // position it's routing from can even change.
+  useEffect(() => {
+    if (
+      !mapsLoaded ||
+      !delivery ||
+      riderLocation?.latitude == null ||
+      riderLocation?.longitude == null ||
+      !TRACKABLE_STATUSES.includes(delivery.status)
+    ) {
+      setLiveRoute(null);
+      return;
+    }
+    const target = PRE_PICKUP_STATUSES.includes(delivery.status) ? delivery.pickupAddressSnapshot : delivery.deliveryAddressSnapshot;
+    if (target?.latitude == null || target?.longitude == null) return;
+
+    const now = Date.now();
+    if (now - lastRouteComputeRef.current < LOCATION_POLL_INTERVAL_MS) return;
+    lastRouteComputeRef.current = now;
+
+    const origin = { lat: riderLocation.latitude, lng: riderLocation.longitude };
+    const vehicleType = delivery.rider?.vehicles?.[0]?.type;
+    new google.maps.DirectionsService().route(
+      { origin, destination: { lat: target.latitude, lng: target.longitude }, travelMode: travelModeFor(vehicleType) },
+      (result, status) => {
+        if (status !== 'OK' || !result?.routes[0]) {
+          console.error('[orders/[id]] Live route DirectionsService failed', status);
+          return;
+        }
+        setLiveRoute(result.routes[0].overview_path.map((p) => ({ lat: p.lat(), lng: p.lng() })));
+      },
+    );
+  }, [mapsLoaded, riderLocation, delivery]);
+
+  // Straight-line fallback for the current leg — same rationale as the rider app: always something
+  // correct-direction on screen immediately, upgraded to the real DirectionsService route once it
+  // lands, instead of silently showing nothing (or the misleading static whole-trip polyline) while
+  // waiting on it or if it fails.
+  const fallbackRoutePath = useMemo(() => {
+    if (!delivery || riderLocation?.latitude == null || riderLocation?.longitude == null || !TRACKABLE_STATUSES.includes(delivery.status)) {
+      return null;
+    }
+    const target = PRE_PICKUP_STATUSES.includes(delivery.status) ? delivery.pickupAddressSnapshot : delivery.deliveryAddressSnapshot;
+    if (target?.latitude == null || target?.longitude == null) return null;
+    return [{ lat: riderLocation.latitude, lng: riderLocation.longitude }, { lat: target.latitude, lng: target.longitude }];
+  }, [riderLocation, delivery]);
+
+  const displayRoutePath = liveRoute ?? fallbackRoutePath;
 
   async function runAction() {
     if (!order || !businessId) return;
@@ -243,7 +346,13 @@ export default function BusinessOrderDetailPage() {
                     ? { lat: delivery.deliveryAddressSnapshot.latitude, lng: delivery.deliveryAddressSnapshot.longitude, label: 'Cliente' }
                     : null
                 }
+                rider={
+                  riderLocation?.latitude != null && riderLocation.longitude != null
+                    ? { lat: riderLocation.latitude, lng: riderLocation.longitude, vehicleType: delivery.rider?.vehicles?.[0]?.type ?? null }
+                    : null
+                }
                 routePolyline={delivery.route?.polyline ?? null}
+                routePath={displayRoutePath}
                 height={200}
               />
             </div>

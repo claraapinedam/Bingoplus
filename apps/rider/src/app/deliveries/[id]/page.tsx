@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import RiderShell from '@/components/RiderShell';
 import EmptyState from '@/components/EmptyState';
@@ -182,7 +182,14 @@ export default function DeliveryDetailPage() {
         travelMode: travelModeFor(vehicleType),
       },
       (result, status) => {
-        if (status !== 'OK' || !result?.routes[0]) return;
+        if (status !== 'OK' || !result?.routes[0]) {
+          // Was previously swallowed with no trace at all — a rider stuck on a route that
+          // silently never renders (bad API key restriction, quota, ZERO_RESULTS, etc.) had zero
+          // way to know why. Logged, not surfaced as a UI error banner, since the straight-line
+          // fallback below already keeps something correct-but-approximate on screen.
+          console.error('[deliveries/[id]] Live route DirectionsService failed', status);
+          return;
+        }
         const leg = result.routes[0].legs[0];
         setLiveRoute({
           path: result.routes[0].overview_path.map((p) => ({ lat: p.lat(), lng: p.lng() })),
@@ -192,6 +199,24 @@ export default function DeliveryDetailPage() {
       },
     );
   }, [mapsLoaded, myLocation, delivery]);
+
+  // Straight-line fallback for the current leg (rider → business, or rider → customer) — always
+  // available the instant we have a GPS fix and a target, with no Directions API round trip. This
+  // is what actually renders on the map until/unless the real DirectionsService route above lands;
+  // relying on the static whole-trip `delivery.route.polyline` here was the real bug users saw as
+  // "no route" — that polyline runs business→customer and never touches the rider's own position,
+  // so during GOING_TO_PICKUP it drew a line that had nothing to do with where the rider actually
+  // was, which reads as "no route to the business" even though *a* line was technically on screen.
+  const fallbackRoutePath = useMemo(() => {
+    if (!myLocation || !delivery || !TRACKABLE_STATUSES.includes(delivery.status)) return null;
+    const target = PRE_PICKUP_STATUSES.includes(delivery.status)
+      ? delivery.pickupAddressSnapshot
+      : delivery.deliveryAddressSnapshot;
+    if (target.latitude == null || target.longitude == null) return null;
+    return [myLocation, { lat: target.latitude, lng: target.longitude }];
+  }, [myLocation, delivery]);
+
+  const displayRoutePath = liveRoute?.path ?? fallbackRoutePath;
 
   const offerSecondsLeft = useOfferCountdown(
     delivery?.assignedAt ?? null,
@@ -243,6 +268,21 @@ export default function DeliveryDetailPage() {
   const dest = delivery.deliveryAddressSnapshot;
   const isTerminal = ['DELIVERED', 'CANCELLED', 'FAILED'].includes(delivery.status);
   const nextAction = DELIVERY_NEXT_ACTION[delivery.status];
+
+  /** Opens the full trip — rider's current position → business (waypoint) → customer (final
+   * destination) — in Google Maps as a single multi-stop route, so the rider always has an escape
+   * hatch to real turn-by-turn navigation regardless of whether the in-app live route rendered. */
+  function openInGoogleMaps() {
+    if (!myLocation || pickup.latitude == null || pickup.longitude == null || dest.latitude == null || dest.longitude == null) return;
+    const origin = `${myLocation.lat},${myLocation.lng}`;
+    const waypoint = `${pickup.latitude},${pickup.longitude}`;
+    const destinationParam = `${dest.latitude},${dest.longitude}`;
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${encodeURIComponent(destinationParam)}&waypoints=${encodeURIComponent(waypoint)}&travelmode=driving`;
+    window.open(url, '_blank');
+  }
+
+  const canOpenInGoogleMaps =
+    !isTerminal && !!myLocation && pickup.latitude != null && pickup.longitude != null && dest.latitude != null && dest.longitude != null;
 
   return (
     <RiderShell>
@@ -300,7 +340,7 @@ export default function DeliveryDetailPage() {
               destination={dest.latitude != null && dest.longitude != null ? { lat: dest.latitude, lng: dest.longitude, label: 'Cliente' } : null}
               rider={myLocation ? { ...myLocation, vehicleType: delivery.rider?.vehicles?.[0]?.type ?? null } : null}
               routePolyline={delivery.route?.polyline ?? null}
-              routePath={liveRoute?.path ?? null}
+              routePath={displayRoutePath}
               height={200}
             />
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 8 }}>
@@ -314,8 +354,13 @@ export default function DeliveryDetailPage() {
               {delivery.status === 'RIDER_ASSIGNED' || PRE_PICKUP_STATUSES.includes(delivery.status)
                 ? 'Voy en camino al negocio'
                 : 'Voy en camino al cliente'}
-              {liveRoute ? ' · en vivo' : ''}
+              {liveRoute ? ' · en vivo' : fallbackRoutePath ? ' · línea directa' : ''}
             </div>
+            {canOpenInGoogleMaps && (
+              <button className="bingo-button secondary" style={{ marginTop: 10 }} onClick={openInGoogleMaps}>
+                Abrir recorrido en Google Maps
+              </button>
+            )}
           </div>
         )}
 

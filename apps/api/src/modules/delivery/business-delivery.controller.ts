@@ -7,6 +7,7 @@ import { BusinessCapabilityGuard } from '../../common/guards/business-capability
 import { RequireCapability } from '../../common/decorators/require-capability.decorator';
 import { DeliveryService } from './delivery.service';
 import { OrdersService } from '../orders/orders.service';
+import { RiderLocationService } from './rider-location.service';
 
 /** §24/59: `me/business/:businessId/...` matches the existing business-facing route convention
  * (see BusinessOrdersController) rather than the spec's flatter `/business/...` shorthand. */
@@ -17,6 +18,7 @@ export class BusinessDeliveryController {
   constructor(
     private readonly delivery: DeliveryService,
     private readonly orders: OrdersService,
+    private readonly location: RiderLocationService,
   ) {}
 
   // Only the standalone "browse my deliveries" views are capability-gated here — never
@@ -39,6 +41,27 @@ export class BusinessDeliveryController {
   @Get('orders/:id/delivery')
   getForOrder(@Param('businessId') businessId: string, @Param('id') id: string) {
     return this.delivery.getForBusinessByOrder(businessId, id);
+  }
+
+  /** Business-side counterpart to DeliveryTrackingController.getLocation (customer-tracking.
+   * controller.ts) — same shape, same RiderLocationService, just ownership-checked via businessId
+   * instead of customer userId. The gateway's `subscribe:delivery` was already widened (FASE 4C)
+   * for Business to receive `delivery.location.updated` live; this is the REST fallback/initial
+   * value for the same room so the Business order-detail map isn't blind until the first socket
+   * push arrives. Returns nulls rather than 404 whenever there's no delivery/rider yet. */
+  @Get('orders/:id/delivery/location')
+  async getDeliveryLocation(@Param('businessId') businessId: string, @Param('id') id: string) {
+    const delivery = await this.delivery.getForBusinessByOrder(businessId, id);
+    if (!delivery?.rider) return { latitude: null, longitude: null, updatedAt: null };
+    const latest = await this.location.getLatestForDelivery(delivery.id);
+    if (latest) {
+      return { latitude: latest.latitude, longitude: latest.longitude, updatedAt: latest.createdAt };
+    }
+    return {
+      latitude: delivery.rider.currentLatitude,
+      longitude: delivery.rider.currentLongitude,
+      updatedAt: delivery.rider.lastLocationAt,
+    };
   }
 
   /** §14/24/59: the one sanctioned trigger for a DELIVERY order to enter the logistics pipeline —

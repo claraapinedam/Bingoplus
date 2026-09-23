@@ -1,19 +1,30 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useJsApiLoader } from '@react-google-maps/api';
 import CustomerShell from '@/components/CustomerShell';
 import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import MapView from '@/components/MapView';
 import { apiFetch } from '@/lib/api';
 import { connectSocket } from '@/lib/socket';
+import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 import { DELIVERY_STATUS_LABELS } from '@/lib/orderStatus';
 
 /** Falls back to polling at this cadence (matches the backend's documented
  * LOCATION_UPDATE_INTERVAL default) whenever the WebSocket isn't connected — never more
- * aggressive than that, per the "no polling agresivo" rule. */
+ * aggressive than that, per the "no polling agresivo" rule. Also throttles the live Directions
+ * recompute below for the same reason — same pattern as the rider app's own delivery detail page. */
 const POLL_INTERVAL_MS = 15000;
+const TRACKABLE_STATUSES = ['RIDER_ACCEPTED', 'GOING_TO_PICKUP', 'ARRIVED_AT_PICKUP', 'PICKED_UP', 'IN_TRANSIT', 'ARRIVED_AT_CUSTOMER'];
+const PRE_PICKUP_STATUSES = ['RIDER_ACCEPTED', 'GOING_TO_PICKUP', 'ARRIVED_AT_PICKUP'];
+
+function travelModeFor(vehicleType: string | null | undefined): google.maps.TravelMode {
+  if (vehicleType === 'BIKE') return google.maps.TravelMode.BICYCLING;
+  if (vehicleType === 'WALK') return google.maps.TravelMode.WALKING;
+  return google.maps.TravelMode.DRIVING;
+}
 
 // FASE 4C: the timeline now spans both state machines — Order-level steps (confirmed/preparing/
 // ready) happen before a Delivery even exists, then Delivery-level steps take over. Both are read
@@ -101,7 +112,15 @@ export default function DeliveryTrackingPage() {
   const [location, setLocation] = useState<LocationData | null>(null);
   const [otp, setOtp] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [liveRoute, setLiveRoute] = useState<{ lat: number; lng: number }[] | null>(null);
   const deliveryIdRef = useRef<string | null>(null);
+  const lastRouteComputeRef = useRef(0);
+
+  const { isLoaded: mapsLoaded } = useJsApiLoader({
+    id: GOOGLE_MAPS_LOADER_ID,
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
 
   const load = useCallback(() => {
     apiFetch<TrackingData>(`/orders/${params.id}/tracking`)
@@ -159,6 +178,58 @@ export default function DeliveryTrackingPage() {
     const interval = setInterval(load, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [connected, load]);
+
+  // Live, current-leg-aware route (rider → business before pickup, rider → customer after) —
+  // mirrors the rider app's own DirectionsService pattern exactly, using the rider position this
+  // page already tracks (REST fallback + `delivery.location.updated` above) as the origin. Kept as
+  // each app independently computing its own route client-side rather than a backend-relayed one:
+  // with only 1 viewer per app per delivery, 3 concurrent Directions calls per ~15s window is not
+  // a meaningful quota concern, and it avoids new persistence/socket fields to relay something each
+  // client can already derive from delivery.status + the rider's already-live position.
+  useEffect(() => {
+    if (
+      !mapsLoaded ||
+      !tracking?.status ||
+      location?.latitude == null ||
+      location.longitude == null ||
+      !TRACKABLE_STATUSES.includes(tracking.status)
+    ) {
+      setLiveRoute(null);
+      return;
+    }
+    const target = PRE_PICKUP_STATUSES.includes(tracking.status) ? tracking.pickup : tracking.destination;
+    if (target?.latitude == null || target?.longitude == null) return;
+
+    const now = Date.now();
+    if (now - lastRouteComputeRef.current < POLL_INTERVAL_MS) return;
+    lastRouteComputeRef.current = now;
+
+    const origin = { lat: location.latitude, lng: location.longitude };
+    new google.maps.DirectionsService().route(
+      { origin, destination: { lat: target.latitude, lng: target.longitude }, travelMode: travelModeFor(tracking.rider?.vehicleType) },
+      (result, status) => {
+        if (status !== 'OK' || !result?.routes[0]) {
+          console.error('[orders/[id]/tracking] Live route DirectionsService failed', status);
+          return;
+        }
+        setLiveRoute(result.routes[0].overview_path.map((p) => ({ lat: p.lat(), lng: p.lng() })));
+      },
+    );
+  }, [mapsLoaded, location, tracking]);
+
+  // Straight-line fallback — always something correct-direction on screen immediately, upgraded to
+  // the real DirectionsService route once it lands, instead of the misleading static whole-trip
+  // polyline (business→customer) that never actually touches the rider's current position.
+  const fallbackRoutePath = useMemo(() => {
+    if (!tracking?.status || location?.latitude == null || location.longitude == null || !TRACKABLE_STATUSES.includes(tracking.status)) {
+      return null;
+    }
+    const target = PRE_PICKUP_STATUSES.includes(tracking.status) ? tracking.pickup : tracking.destination;
+    if (target?.latitude == null || target?.longitude == null) return null;
+    return [{ lat: location.latitude, lng: location.longitude }, { lat: target.latitude, lng: target.longitude }];
+  }, [location, tracking]);
+
+  const displayRoutePath = liveRoute ?? fallbackRoutePath;
 
   if (tracking === undefined) {
     return (
@@ -253,6 +324,7 @@ export default function DeliveryTrackingPage() {
                         : null
                     }
                     routePolyline={tracking.route?.polyline ?? null}
+                    routePath={displayRoutePath}
                   />
                 </div>
               </div>
