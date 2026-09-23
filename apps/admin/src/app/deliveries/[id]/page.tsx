@@ -106,6 +106,11 @@ export default function AdminDeliveryDetailPage() {
         <h1 className="bingo-page-title" style={{ margin: 0 }}>Entrega — {delivery.order.orderNumber}</h1>
         <span>{delivery.order.user.firstName} {delivery.order.user.lastName} · {delivery.order.business.tradeName}</span>
         <span className={`bingo-badge badge-${delivery.status.toLowerCase()}`}>{delivery.status}</span>
+        {/* Previously the only way to reach /orders/[id] (payment, refund status, items) from here
+            was to know the URL — nothing on this page or /deliveries linked to it. */}
+        <a href={`/orders/${delivery.order.id}`} className="bingo-button secondary small" style={{ width: 'auto', padding: '4px 12px' }}>
+          Ver pedido
+        </a>
       </div>
 
       {error && (
