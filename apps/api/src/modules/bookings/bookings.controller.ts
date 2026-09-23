@@ -12,6 +12,8 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { AvailabilityQueryDto } from './dto/availability-query.dto';
 import { CancelBookingDto, ListBusinessBookingsQueryDto, ListCustomerBookingsQueryDto } from './dto/list-bookings-query.dto';
 import { ConfirmBookingPaymentDto, CreateBookingPaymentDto } from './dto/booking-payment.dto';
+import { CreateManualBookingBlockDto } from './dto/manual-block.dto';
+import { CalendarQueryDto } from './dto/calendar-query.dto';
 
 @ApiTags('public/services/availability')
 @Controller('public/services/:serviceId/availability')
@@ -78,6 +80,18 @@ export class BusinessBookingsController {
   @Get()
   list(@Param('businessId') businessId: string, @Query() query: ListBusinessBookingsQueryDto) {
     return this.bookingsService.listForBusiness(businessId, query);
+  }
+
+  // Must come before @Get(':id') — otherwise "calendar" would be swallowed as an :id lookup.
+  @Get('calendar')
+  calendar(@Param('businessId') businessId: string, @Query() query: CalendarQueryDto) {
+    return this.bookingsService.getCalendar(businessId, query);
+  }
+
+  @Audit('booking.create-manual-block', 'Booking')
+  @Post('blocks')
+  createManualBlock(@Param('businessId') businessId: string, @Body() dto: CreateManualBookingBlockDto) {
+    return this.bookingsService.createManualBlock(businessId, dto);
   }
 
   @Get(':id')

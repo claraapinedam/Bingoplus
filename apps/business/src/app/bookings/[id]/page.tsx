@@ -17,6 +17,7 @@ const STATUS_LABELS: Record<string, string> = {
 interface BookingDetail {
   id: string;
   status: string;
+  source: 'APP' | 'MANUAL';
   date: string;
   startTime: string;
   endTime: string;
@@ -25,7 +26,8 @@ interface BookingDetail {
   atCustomerHome: boolean;
   service: { name: string; description: string | null };
   pet: { name: string; species: { name: string } } | null;
-  user: { firstName: string; lastName: string; phone: string | null };
+  // Null for a MANUAL block — see BookingsService.createManualBlock.
+  user: { firstName: string; lastName: string; phone: string | null } | null;
 }
 
 function BookingDetailContent() {
@@ -88,10 +90,11 @@ function BookingDetailContent() {
     return <EmptyState title="Reserva no encontrada" />;
   }
 
-  const canConfirm = booking.status === 'PENDING';
+  const isManual = booking.source === 'MANUAL';
+  const canConfirm = !isManual && booking.status === 'PENDING';
   const canCancel = booking.status === 'PENDING' || booking.status === 'CONFIRMED';
-  const canComplete = booking.status === 'CONFIRMED';
-  const canNoShow = booking.status === 'CONFIRMED';
+  const canComplete = !isManual && booking.status === 'CONFIRMED';
+  const canNoShow = !isManual && booking.status === 'CONFIRMED';
 
   return (
     <>
@@ -106,6 +109,11 @@ function BookingDetailContent() {
             <span className="bingo-badge" style={{ background: '#f2f4f7' }}>
               {STATUS_LABELS[booking.status] ?? booking.status}
             </span>
+            {isManual && (
+              <span className="bingo-badge" style={{ background: '#fff3ea', color: 'var(--bingo-coral)', marginLeft: 6 }}>
+                🔒 Bloqueo manual
+              </span>
+            )}
             {booking.atCustomerHome && (
               <span className="bingo-badge" style={{ background: '#fff3ea', color: 'var(--bingo-coral)', marginLeft: 6 }}>
                 🚗 A domicilio del cliente
@@ -120,10 +128,16 @@ function BookingDetailContent() {
       <div className="dashboard-form-grid" style={{ maxWidth: 640, marginBottom: 20 }}>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#7f8ea3' }}>Cliente</div>
-          <div>
-            {booking.user.firstName} {booking.user.lastName}
-          </div>
-          {booking.user.phone && <div style={{ fontSize: 13, color: '#7f8ea3' }}>{booking.user.phone}</div>}
+          {isManual || !booking.user ? (
+            <div style={{ color: '#7f8ea3' }}>Sin cliente — reserva fuera de la plataforma</div>
+          ) : (
+            <>
+              <div>
+                {booking.user.firstName} {booking.user.lastName}
+              </div>
+              {booking.user.phone && <div style={{ fontSize: 13, color: '#7f8ea3' }}>{booking.user.phone}</div>}
+            </>
+          )}
         </div>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#7f8ea3' }}>Mascota</div>

@@ -4,7 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardShell, { useBusiness } from '@/components/DashboardShell';
 import EmptyState from '@/components/EmptyState';
+import BookingsCalendar from '@/components/BookingsCalendar';
 import { apiFetch, getActiveBusinessId } from '@/lib/api';
+
+type ScreenMode = 'calendar' | 'list';
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Pendiente',
@@ -25,18 +28,55 @@ function todayString(): string {
 interface BookingRow {
   id: string;
   status: string;
+  source: 'APP' | 'MANUAL';
   startTime: string;
   endTime: string;
   price: string | number;
   service: { name: string };
   pet: { name: string } | null;
-  user: { firstName: string; lastName: string; phone: string | null };
+  // Null for a MANUAL block — there's no customer behind an off-platform appointment the business
+  // logged itself (see apps/api BookingsService.createManualBlock).
+  user: { firstName: string; lastName: string; phone: string | null } | null;
+  notes: string | null;
   atCustomerHome: boolean;
 }
 
 function BookingsContent() {
-  const router = useRouter();
   const { business } = useBusiness();
+  const [mode, setMode] = useState<ScreenMode>('calendar');
+
+  if (!business.capabilities.BOOKINGS) {
+    return <EmptyState title="Esta sección no está disponible" subtitle="Tu negocio no tiene habilitadas las reservas." />;
+  }
+
+  return (
+    <>
+      <header className="dashboard-page-header">
+        <div>
+          <div className="dashboard-page-title">Reservas</div>
+          <div className="dashboard-page-subtitle">
+            {mode === 'calendar'
+              ? 'Calendario — huecos disponibles, reservas de la app y bloqueos manuales'
+              : 'Lista de reservas'}
+          </div>
+        </div>
+        <div className="bingo-chip-row">
+          <button className={`bingo-chip${mode === 'calendar' ? ' active' : ''}`} onClick={() => setMode('calendar')}>
+            📅 Calendario
+          </button>
+          <button className={`bingo-chip${mode === 'list' ? ' active' : ''}`} onClick={() => setMode('list')}>
+            📋 Lista
+          </button>
+        </div>
+      </header>
+
+      {mode === 'calendar' ? <BookingsCalendar /> : <BookingsListView />}
+    </>
+  );
+}
+
+function BookingsListView() {
+  const router = useRouter();
   const businessId = getActiveBusinessId();
   // Defaulting to "today only" was how a booking made today for a later date went unnoticed —
   // defaulting to "from today onward, no end date" instead means nothing upcoming is ever hidden
@@ -61,19 +101,8 @@ function BookingsContent() {
     load();
   }, [load]);
 
-  if (!business.capabilities.BOOKINGS) {
-    return <EmptyState title="Esta sección no está disponible" subtitle="Tu negocio no tiene habilitadas las reservas." />;
-  }
-
   return (
     <>
-      <header className="dashboard-page-header">
-        <div>
-          <div className="dashboard-page-title">Reservas</div>
-          <div className="dashboard-page-subtitle">Agenda del negocio</div>
-        </div>
-      </header>
-
       <div className="dashboard-toolbar" style={{ flexWrap: 'wrap' }}>
         <label style={{ fontSize: 12, color: '#7f8ea3', display: 'flex', alignItems: 'center', gap: 6 }}>
           Desde
@@ -140,7 +169,13 @@ function BookingsContent() {
                     {b.atCustomerHome && <span title="A domicilio del cliente" style={{ marginLeft: 6 }}>🚗</span>}
                   </td>
                   <td>
-                    {b.user.firstName} {b.user.lastName}
+                    {b.source === 'MANUAL' ? (
+                      <span style={{ color: 'var(--bingo-coral)' }} title={b.notes ?? 'Bloqueo manual'}>
+                        🔒 Bloqueo manual
+                      </span>
+                    ) : (
+                      `${b.user?.firstName ?? ''} ${b.user?.lastName ?? ''}`.trim()
+                    )}
                   </td>
                   <td>{b.pet?.name ?? '—'}</td>
                   <td>${Number(b.price).toFixed(2)}</td>

@@ -38,6 +38,10 @@ function futureMondayDateString(): string {
   return toLocalDateString(d);
 }
 
+// Same weekday-indexing convention as BookingsService's own (unexported) WEEKDAY_KEYS — kept as a
+// local copy purely to build fixtures, same reasoning as that file's own comment on the constant.
+const WEEKDAY_KEYS_LOCAL = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
 function addDaysToDateString(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T00:00:00`);
   d.setDate(d.getDate() + days);
@@ -511,6 +515,265 @@ describe('BookingsService', () => {
     it('getForCustomer 404s when the booking belongs to a different customer', async () => {
       prisma.booking.findUnique.mockResolvedValue({ id: 'b1', userId: 'someone-else' });
       await expect(service.getForCustomer('user-1', 'b1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('createManualBlock', () => {
+    const manualDto = {
+      serviceId: 'svc-1',
+      date: futureDateString(),
+      startTime: '10:00',
+      endTime: '10:30',
+      reason: 'Reservado por teléfono',
+    };
+
+    it('404s when the service does not belong to this business', async () => {
+      prisma.service.findUnique.mockResolvedValue({ ...baseService, businessId: 'other-biz' });
+      await expect(service.createManualBlock('biz-1', manualDto as any)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('404s on an unknown service', async () => {
+      prisma.service.findUnique.mockResolvedValue(null);
+      await expect(service.createManualBlock('biz-1', manualDto as any)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects a manual block on an inactive service', async () => {
+      prisma.service.findUnique.mockResolvedValue({ ...baseService, active: false });
+      await expect(service.createManualBlock('biz-1', manualDto as any)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('requires startTime and endTime for a time-slot service', async () => {
+      prisma.service.findUnique.mockResolvedValue(baseService);
+      await expect(
+        service.createManualBlock('biz-1', { ...manualDto, startTime: undefined, endTime: undefined } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects endTime at or before startTime — not constrained to the duration grid, but must be a real interval', async () => {
+      prisma.service.findUnique.mockResolvedValue(baseService);
+      await expect(
+        service.createManualBlock('biz-1', { ...manualDto, startTime: '10:30', endTime: '10:30' } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('creates a CONFIRMED, MANUAL-sourced booking with no customer/price, holding capacity', async () => {
+      prisma.service.findUnique.mockResolvedValue(baseService);
+      prisma.booking.count.mockResolvedValue(0);
+      prisma.booking.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'block-1', ...data, service: { name: 'X' } }));
+
+      const result = await service.createManualBlock('biz-1', manualDto as any);
+
+      expect(prisma.booking.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: null,
+            petId: null,
+            price: 0,
+            status: BookingStatus.CONFIRMED,
+            source: 'MANUAL',
+            notes: 'Reservado por teléfono',
+          }),
+        }),
+      );
+      expect(result).toEqual(expect.objectContaining({ id: 'block-1' }));
+    });
+
+    it('is not constrained to business opening hours — an off-platform entry can be logged at any time', async () => {
+      prisma.service.findUnique.mockResolvedValue({
+        ...baseService,
+        business: { ...baseService.business, openingHours: { mon: { open: '09:00', close: '17:00' } } },
+      });
+      prisma.booking.count.mockResolvedValue(0);
+      prisma.booking.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'block-2', ...data, service: { name: 'X' } }));
+      await expect(
+        service.createManualBlock('biz-1', { ...manualDto, startTime: '20:00', endTime: '20:30' } as any),
+      ).resolves.toEqual(expect.objectContaining({ id: 'block-2' }));
+    });
+
+    it('rejects with BookingSlotUnavailableException once the service is already at capacity', async () => {
+      prisma.service.findUnique.mockResolvedValue(baseService); // default capacity 1
+      prisma.booking.count.mockResolvedValue(1);
+      await expect(service.createManualBlock('biz-1', manualDto as any)).rejects.toBeInstanceOf(BookingSlotUnavailableException);
+      expect(prisma.booking.create).not.toHaveBeenCalled();
+    });
+
+    it('locks the Service row before counting, same discipline as create()', async () => {
+      prisma.service.findUnique.mockResolvedValue(baseService);
+      prisma.booking.count.mockResolvedValue(0);
+      prisma.booking.create.mockResolvedValue({ id: 'block-3', service: { name: 'X' } });
+      await service.createManualBlock('biz-1', manualDto as any);
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+    });
+
+    describe('DAYCARE/BOARDING manual block', () => {
+      const dayService = { ...baseService, type: 'DAYCARE', operatingDays: ['mon', 'tue', 'wed', 'thu', 'fri'] };
+
+      it('requires checkOutDate', async () => {
+        prisma.service.findUnique.mockResolvedValue(dayService);
+        await expect(
+          service.createManualBlock('biz-1', { serviceId: 'svc-1', date: futureMondayDateString() } as any),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('computes billableDays from operatingDays over the range, same as an app booking', async () => {
+        prisma.service.findUnique.mockResolvedValue(dayService);
+        prisma.booking.count.mockResolvedValue(0);
+        prisma.booking.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'block-4', ...data, service: { name: 'Guardería' } }));
+        const checkIn = futureMondayDateString();
+        const result = await service.createManualBlock('biz-1', {
+          serviceId: 'svc-1',
+          date: checkIn,
+          checkOutDate: addDaysToDateString(checkIn, 7),
+        } as any);
+        expect((result as any).billableDays).toBe(5);
+        expect((result as any).price).toBe(0);
+      });
+    });
+  });
+
+  describe('manual block and app booking compete for the same capacity', () => {
+    it('create() is rejected when an existing MANUAL block already fills the service\'s capacity', async () => {
+      // count() doesn't distinguish source — a MANUAL row is counted exactly like an APP row, so an
+      // existing manual block genuinely blocks a new app booking through the same query.
+      prisma.booking.findUnique.mockResolvedValue(null);
+      prisma.service.findUnique.mockResolvedValue(baseService); // capacity 1
+      pets.get.mockResolvedValue({ id: 'pet-1', speciesId: DOG_SPECIES.id, species: DOG_SPECIES, birthDate: null });
+      prisma.booking.count.mockResolvedValue(1); // the one slot is already held by a manual block
+      await expect(service.create('user-1', baseDto as any)).rejects.toBeInstanceOf(BookingSlotUnavailableException);
+    });
+
+    it('createManualBlock() is rejected when an existing APP booking already fills the service\'s capacity', async () => {
+      prisma.service.findUnique.mockResolvedValue(baseService); // capacity 1
+      prisma.booking.count.mockResolvedValue(1); // the one slot is already held by an app booking
+      await expect(
+        service.createManualBlock('biz-1', {
+          serviceId: 'svc-1',
+          date: futureDateString(),
+          startTime: '10:00',
+          endTime: '10:30',
+        } as any),
+      ).rejects.toBeInstanceOf(BookingSlotUnavailableException);
+    });
+  });
+
+  describe('business actions on a MANUAL block', () => {
+    const manualBooking = {
+      id: 'block-1',
+      businessId: 'biz-1',
+      status: BookingStatus.CONFIRMED,
+      source: 'MANUAL',
+      userId: null,
+      startTime: new Date(),
+      user: null,
+      service: { name: 'X' },
+      business: { tradeName: 'Negocio' },
+      notes: null,
+    };
+
+    it('confirm rejects a MANUAL block — it is already confirmed by definition', async () => {
+      prisma.booking.findUnique.mockResolvedValue(manualBooking);
+      await expect(service.confirm('biz-1', 'block-1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('complete rejects a MANUAL block', async () => {
+      prisma.booking.findUnique.mockResolvedValue(manualBooking);
+      await expect(service.complete('biz-1', 'block-1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('markNoShow rejects a MANUAL block', async () => {
+      prisma.booking.findUnique.mockResolvedValue(manualBooking);
+      await expect(service.markNoShow('biz-1', 'block-1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('cancelForBusiness cancels a MANUAL block without notifying any customer', async () => {
+      const past = new Date();
+      past.setHours(past.getHours() - 3);
+      prisma.booking.findUnique.mockResolvedValue({ ...manualBooking, startTime: past });
+      prisma.booking.update.mockResolvedValue({ ...manualBooking, startTime: past, status: BookingStatus.CANCELLED });
+      const result = await service.cancelForBusiness('biz-1', 'block-1');
+      expect(result.status).toBe(BookingStatus.CANCELLED);
+      expect(notifications.notify).not.toHaveBeenCalled();
+    });
+
+    it('cancelForBusiness allows cancelling a MANUAL block even after its start time has passed', async () => {
+      const past = new Date();
+      past.setHours(past.getHours() - 3);
+      prisma.booking.findUnique.mockResolvedValue({ ...manualBooking, startTime: past });
+      prisma.booking.update.mockResolvedValue({ ...manualBooking, startTime: past, status: BookingStatus.CANCELLED });
+      await expect(service.cancelForBusiness('biz-1', 'block-1')).resolves.toEqual(expect.objectContaining({ status: BookingStatus.CANCELLED }));
+    });
+  });
+
+  describe('getCalendar', () => {
+    const weekFrom = futureMondayDateString();
+
+    it('rejects a `to` before `from`', async () => {
+      await expect(service.getCalendar('biz-1', { from: weekFrom, to: addDaysToDateString(weekFrom, -1) } as any)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('rejects a range spanning more than 31 days', async () => {
+      await expect(
+        service.getCalendar('biz-1', { from: weekFrom, to: addDaysToDateString(weekFrom, 40) } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('404s when filtering to a serviceId this business does not have', async () => {
+      prisma.service.findMany = jest.fn().mockResolvedValue([]);
+      await expect(
+        service.getCalendar('biz-1', { from: weekFrom, to: addDaysToDateString(weekFrom, 6), serviceId: 'ghost' } as any),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns a slot-capacity grid plus the raw bookings/blocks for a time-slot service', async () => {
+      prisma.service.findMany = jest.fn().mockResolvedValue([
+        {
+          id: 'svc-1',
+          type: 'GROOMING',
+          durationMinutes: 30,
+          capacity: 2,
+          operatingDays: [],
+          business: { openingHours: { [WEEKDAY_KEYS_LOCAL[new Date(`${weekFrom}T00:00:00`).getDay()]]: { open: '09:00', close: '10:00' } } },
+        },
+      ]);
+      prisma.booking.findMany = jest.fn().mockResolvedValue([
+        {
+          id: 'b1',
+          serviceId: 'svc-1',
+          source: 'APP',
+          status: BookingStatus.CONFIRMED,
+          startTime: new Date(`${weekFrom}T09:00:00`),
+          endTime: new Date(`${weekFrom}T09:30:00`),
+          notes: null,
+          atCustomerHome: false,
+          user: { firstName: 'Ana', lastName: 'P' },
+          pet: { name: 'Firulais' },
+          service: { name: 'Grooming' },
+        },
+      ]);
+
+      const result = await service.getCalendar('biz-1', { from: weekFrom, to: weekFrom } as any);
+
+      expect(result.bookings).toHaveLength(1);
+      expect(result.bookings[0]).toEqual(expect.objectContaining({ id: 'b1', customerName: 'Ana P', petName: 'Firulais' }));
+      // 09:00-10:00 in 30-min steps = 2 slots, each showing capacity 2 with 1 occupied by the booking above.
+      expect(result.slots).toHaveLength(2);
+      expect(result.slots[0]).toEqual({ serviceId: 'svc-1', date: weekFrom, startTime: '09:00', endTime: '09:30', capacity: 2, occupied: 1, remaining: 1 });
+      expect(result.slots[1]).toEqual({ serviceId: 'svc-1', date: weekFrom, startTime: '09:30', endTime: '10:00', capacity: 2, occupied: 0, remaining: 2 });
+    });
+
+    it('collapses a DAYCARE/BOARDING service to one whole-day slot per operating day', async () => {
+      prisma.service.findMany = jest.fn().mockResolvedValue([
+        { id: 'svc-2', type: 'DAYCARE', durationMinutes: 60, capacity: 3, operatingDays: ['mon'], business: { openingHours: {} } },
+      ]);
+      prisma.booking.findMany = jest.fn().mockResolvedValue([]);
+
+      const result = await service.getCalendar('biz-1', { from: weekFrom, to: addDaysToDateString(weekFrom, 1) } as any);
+
+      expect(result.slots).toEqual([
+        { serviceId: 'svc-2', date: weekFrom, startTime: '00:00', endTime: '24:00', capacity: 3, occupied: 0, remaining: 3 },
+      ]);
     });
   });
 

@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  BookingSource,
   BookingStatus,
   BusinessCapabilityType,
   BusinessStatus,
@@ -18,6 +19,8 @@ import { BookingSlotUnavailableException } from '../../common/exceptions/booking
 import { DEFAULT_SERVICE_CAPACITY } from '../services/services.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { ListAdminBookingsQueryDto, ListBusinessBookingsQueryDto, ListCustomerBookingsQueryDto } from './dto/list-bookings-query.dto';
+import { CreateManualBookingBlockDto } from './dto/manual-block.dto';
+import { CalendarQueryDto } from './dto/calendar-query.dto';
 
 const ACTIVE_STATUSES: BookingStatus[] = [BookingStatus.PENDING, BookingStatus.CONFIRMED];
 
@@ -47,6 +50,40 @@ function monthsBetween(from: Date, to: Date): number {
   return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
 }
 
+/** Local calendar date as "YYYY-MM-DD" — never `.toISOString()`, which converts to UTC first and
+ * silently rolls the date forward once local time has passed UTC midnight (see the same note in
+ * bookings.service.spec.ts and apps/business's bookings page). */
+function toLocalDateString(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+interface SlotCandidate {
+  startTime: string;
+  endTime: string;
+  start: Date;
+  end: Date;
+}
+
+/** Walks a day's opening-hours window in `durationMinutes` steps, producing every slot candidate —
+ * shared by getAvailableSlots (customer-facing, future-only) and getCalendar (business-facing,
+ * shows the whole range including past slots so gaps/occupancy are visible either way). */
+function buildSlotCandidates(dayStart: Date, hours: { open?: string; close?: string } | undefined, durationMinutes: number): SlotCandidate[] {
+  if (!hours?.open || !hours?.close) return [];
+  const [openH, openM] = hours.open.split(':').map(Number);
+  const [closeH, closeM] = hours.close.split(':').map(Number);
+  const dayStartMinutes = openH * 60 + openM;
+  const dayEndMinutes = closeH * 60 + closeM;
+
+  const candidates: SlotCandidate[] = [];
+  for (let m = dayStartMinutes; m + durationMinutes <= dayEndMinutes; m += durationMinutes) {
+    const start = new Date(dayStart);
+    start.setHours(0, m, 0, 0);
+    const end = new Date(start.getTime() + durationMinutes * 60000);
+    candidates.push({ startTime: minutesToHHMM(m), endTime: minutesToHHMM(m + durationMinutes), start, end });
+  }
+  return candidates;
+}
+
 @Injectable()
 export class BookingsService {
   constructor(
@@ -74,22 +111,8 @@ export class BookingsService {
     const hours = (service.business.openingHours as Record<string, { open?: string; close?: string }> | null)?.[
       WEEKDAY_KEYS[dayStart.getDay()]
     ];
-    if (!hours?.open || !hours?.close) return [];
-
-    const [openH, openM] = hours.open.split(':').map(Number);
-    const [closeH, closeM] = hours.close.split(':').map(Number);
-    const dayStartMinutes = openH * 60 + openM;
-    const dayEndMinutes = closeH * 60 + closeM;
-    const duration = service.durationMinutes;
     const capacity = service.capacity ?? DEFAULT_SERVICE_CAPACITY;
-
-    const candidates: { startTime: string; endTime: string; start: Date; end: Date }[] = [];
-    for (let m = dayStartMinutes; m + duration <= dayEndMinutes; m += duration) {
-      const start = new Date(dayStart);
-      start.setHours(0, m, 0, 0);
-      const end = new Date(start.getTime() + duration * 60000);
-      candidates.push({ startTime: minutesToHHMM(m), endTime: minutesToHHMM(m + duration), start, end });
-    }
+    const candidates = buildSlotCandidates(dayStart, hours, service.durationMinutes);
     if (candidates.length === 0) return [];
 
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60000 - 1);
@@ -241,20 +264,7 @@ export class BookingsService {
     }
 
     const booking = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "Service" WHERE id = ${service.id} FOR UPDATE`;
-      // Same overlap shape regardless of grain — a DAYCARE/BOARDING stay's [startTime, endTime)
-      // spans the whole check-in/check-out range, so this counts any other stay/slot that
-      // overlaps any part of it, same "at most `capacity` concurrent" model as time slots.
-      const overlapping = await tx.booking.count({
-        where: {
-          serviceId: service.id,
-          status: { in: ACTIVE_STATUSES },
-          startTime: { lt: endTime },
-          endTime: { gt: startTime },
-        },
-      });
-      const capacity = service.capacity ?? DEFAULT_SERVICE_CAPACITY;
-      if (overlapping >= capacity) throw new BookingSlotUnavailableException();
+      await this.assertCapacityAvailable(tx, service.id, startTime, endTime, service.capacity ?? DEFAULT_SERVICE_CAPACITY);
 
       return tx.booking.create({
         data: {
@@ -271,6 +281,7 @@ export class BookingsService {
           notes: dto.notes,
           idempotencyKey: dto.idempotencyKey,
           status: BookingStatus.PENDING,
+          source: BookingSource.APP,
         },
         include: BOOKING_INCLUDE,
       });
@@ -289,7 +300,7 @@ export class BookingsService {
       audience: NotificationAudience.BUSINESS,
       event: 'booking.new',
       title: 'Nueva reserva',
-      body: `${booking.user.firstName} reservó "${booking.service.name}".`,
+      body: `${booking.user!.firstName} reservó "${booking.service.name}".`,
       data: { bookingId: booking.id },
     });
 
@@ -324,7 +335,7 @@ export class BookingsService {
       audience: NotificationAudience.BUSINESS,
       event: 'booking.cancelled',
       title: 'Reserva cancelada',
-      body: `${updated.user.firstName} canceló su reserva de "${updated.service.name}".`,
+      body: `${updated.user!.firstName} canceló su reserva de "${updated.service.name}".`,
       data: { bookingId: updated.id },
     });
     return updated;
@@ -378,7 +389,7 @@ export class BookingsService {
       await this.confirm(booking.businessId, booking.id);
     } else if (paymentStatus === PaymentStatus.FAILED) {
       void this.notifications.notify({
-        userId: booking.userId,
+        userId: booking.userId!,
         audience: NotificationAudience.CUSTOMER,
         event: 'booking.payment_failed',
         title: 'Pago no procesado',
@@ -416,8 +427,198 @@ export class BookingsService {
     return booking;
   }
 
+  /**
+   * Business-entered manual block — an off-platform appointment (phone/walk-in) the business logs
+   * so it isn't double-booked online. Goes through the exact same row-locked capacity check as
+   * create() (see assertCapacityAvailable), so it genuinely competes with app bookings for the
+   * service's capacity rather than being tracked separately. Created directly CONFIRMED — there's
+   * no customer to wait on a business confirmation step, the business is confirming it itself by
+   * entering it.
+   */
+  async createManualBlock(businessId: string, dto: CreateManualBookingBlockDto) {
+    const service = await this.prisma.service.findUnique({ where: { id: dto.serviceId } });
+    if (!service || service.businessId !== businessId || service.deletedAt) {
+      throw new NotFoundException('Service not found');
+    }
+    if (!service.active) {
+      throw new BadRequestException('Cannot add a manual block to an inactive service');
+    }
+
+    let bookingDate: Date;
+    let startTime: Date;
+    let endTime: Date;
+    let billableDays: number | null = null;
+
+    if (DAY_UNIT_TYPES.includes(service.type)) {
+      if (!dto.checkOutDate) throw new BadRequestException('checkOutDate is required for this service');
+      const checkIn = new Date(`${dto.date}T00:00:00`);
+      const checkOut = new Date(`${dto.checkOutDate}T00:00:00`);
+      if (checkOut.getTime() <= checkIn.getTime()) {
+        throw new BadRequestException('checkOutDate must be after date');
+      }
+      let count = 0;
+      for (const d = new Date(checkIn); d.getTime() < checkOut.getTime(); d.setDate(d.getDate() + 1)) {
+        if (service.operatingDays.includes(WEEKDAY_KEYS[d.getDay()])) count++;
+      }
+      bookingDate = checkIn;
+      startTime = checkIn;
+      endTime = checkOut;
+      billableDays = count;
+    } else {
+      if (!dto.startTime || !dto.endTime) {
+        throw new BadRequestException('startTime and endTime are required for this service');
+      }
+      const [startH, startM] = dto.startTime.split(':').map(Number);
+      const [endH, endM] = dto.endTime.split(':').map(Number);
+      bookingDate = new Date(`${dto.date}T00:00:00`);
+      startTime = new Date(bookingDate);
+      startTime.setHours(startH, startM, 0, 0);
+      endTime = new Date(bookingDate);
+      endTime.setHours(endH, endM, 0, 0);
+      // A manual block deliberately isn't constrained to the service's duration grid or business
+      // opening hours the way an app booking is — it's a record of something that already happened
+      // off-platform (a phone call, a walk-in outside the online flow), not a new slot offered to
+      // customers. The one rule that always holds regardless of source: it has to be a real
+      // interval.
+      if (endTime.getTime() <= startTime.getTime()) {
+        throw new BadRequestException('endTime must be after startTime');
+      }
+    }
+
+    const capacity = service.capacity ?? DEFAULT_SERVICE_CAPACITY;
+    return this.prisma.$transaction(async (tx) => {
+      await this.assertCapacityAvailable(tx, service.id, startTime, endTime, capacity);
+      return tx.booking.create({
+        data: {
+          userId: null,
+          petId: null,
+          businessId,
+          serviceId: service.id,
+          date: bookingDate,
+          startTime,
+          endTime,
+          price: 0,
+          billableDays,
+          atCustomerHome: false,
+          notes: dto.reason,
+          status: BookingStatus.CONFIRMED,
+          source: BookingSource.MANUAL,
+        },
+        include: BOOKING_INCLUDE,
+      });
+    });
+  }
+
+  /** Business-side capacity/calendar view: for each date in [from, to] and each matching service,
+   * returns both a slot-shaded capacity grid (for showing open/full at a glance and gating "add a
+   * manual block") and the actual bookings/blocks (app + manual, real start/end times) to render as
+   * calendar items. Reuses the exact same overlap-counting shape as getAvailableSlots/create — a
+   * MANUAL row is just another active Booking, so it's automatically reflected here with zero extra
+   * bookkeeping. */
+  async getCalendar(businessId: string, query: CalendarQueryDto) {
+    const fromDate = new Date(`${query.from}T00:00:00`);
+    const toDate = new Date(`${query.to}T00:00:00`);
+    if (toDate.getTime() < fromDate.getTime()) throw new BadRequestException('`to` must not be before `from`');
+    const spanDays = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1;
+    if (spanDays > 31) throw new BadRequestException('Date range too large — max 31 days');
+
+    const services = await this.prisma.service.findMany({
+      where: {
+        businessId,
+        active: true,
+        deletedAt: null,
+        ...(query.serviceId ? { id: query.serviceId } : {}),
+      },
+      include: { business: { select: { openingHours: true } } },
+    });
+    if (query.serviceId && services.length === 0) throw new NotFoundException('Service not found');
+    if (services.length === 0) return { from: query.from, to: query.to, slots: [], bookings: [] };
+
+    const rangeEnd = new Date(toDate.getTime() + 24 * 60 * 60000); // exclusive
+    const bookings = await this.prisma.booking.findMany({
+      where: {
+        businessId,
+        serviceId: { in: services.map((s) => s.id) },
+        status: { in: ACTIVE_STATUSES },
+        startTime: { lt: rangeEnd },
+        endTime: { gt: fromDate },
+      },
+      include: { user: { select: { firstName: true, lastName: true } }, pet: { select: { name: true } }, service: { select: { name: true } } },
+      orderBy: { startTime: 'asc' },
+    });
+
+    const slots: {
+      serviceId: string;
+      date: string;
+      startTime: string;
+      endTime: string;
+      capacity: number;
+      occupied: number;
+      remaining: number;
+    }[] = [];
+
+    for (const service of services) {
+      const capacity = service.capacity ?? DEFAULT_SERVICE_CAPACITY;
+      const serviceBookings = bookings.filter((b) => b.serviceId === service.id);
+      const isDayUnit = DAY_UNIT_TYPES.includes(service.type);
+
+      for (let m = 0; m < spanDays; m++) {
+        const day = new Date(fromDate);
+        day.setDate(day.getDate() + m);
+        const dateStr = toLocalDateString(day);
+
+        if (isDayUnit) {
+          if (!service.operatingDays.includes(WEEKDAY_KEYS[day.getDay()])) continue;
+          const dayStart = new Date(day);
+          dayStart.setHours(0, 0, 0, 0);
+          const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60000);
+          const occupied = serviceBookings.filter((b) => b.startTime < dayEnd && b.endTime > dayStart).length;
+          slots.push({ serviceId: service.id, date: dateStr, startTime: '00:00', endTime: '24:00', capacity, occupied, remaining: Math.max(capacity - occupied, 0) });
+          continue;
+        }
+
+        const hours = (service.business.openingHours as Record<string, { open?: string; close?: string }> | null)?.[WEEKDAY_KEYS[day.getDay()]];
+        const candidates = buildSlotCandidates(day, hours, service.durationMinutes);
+        for (const c of candidates) {
+          const occupied = serviceBookings.filter((b) => b.startTime < c.end && b.endTime > c.start).length;
+          slots.push({
+            serviceId: service.id,
+            date: dateStr,
+            startTime: c.startTime,
+            endTime: c.endTime,
+            capacity,
+            occupied,
+            remaining: Math.max(capacity - occupied, 0),
+          });
+        }
+      }
+    }
+
+    return {
+      from: query.from,
+      to: query.to,
+      slots,
+      bookings: bookings.map((b) => ({
+        id: b.id,
+        serviceId: b.serviceId,
+        serviceName: b.service.name,
+        source: b.source,
+        status: b.status,
+        startTime: b.startTime,
+        endTime: b.endTime,
+        customerName: b.user ? `${b.user.firstName} ${b.user.lastName}`.trim() : null,
+        petName: b.pet?.name ?? null,
+        reason: b.notes,
+        atCustomerHome: b.atCustomerHome,
+      })),
+    };
+  }
+
   async confirm(businessId: string, bookingId: string) {
     const booking = await this.getForBusiness(businessId, bookingId);
+    if (booking.source === BookingSource.MANUAL) {
+      throw new BadRequestException('A manual block is already confirmed by definition');
+    }
     if (booking.status !== BookingStatus.PENDING) {
       throw new BadRequestException('Only pending bookings can be confirmed');
     }
@@ -427,7 +628,7 @@ export class BookingsService {
       include: BOOKING_INCLUDE,
     });
     void this.notifications.notify({
-      userId: updated.userId,
+      userId: updated.userId!,
       audience: NotificationAudience.CUSTOMER,
       event: 'booking.confirmed',
       title: 'Reserva confirmada',
@@ -437,6 +638,10 @@ export class BookingsService {
     return updated;
   }
 
+  /** Cancelling a MANUAL block is how a business undoes a mistaken entry or walks back an
+   * off-platform booking that fell through — same status machinery as a real booking (frees its
+   * capacity immediately), just with no customer to notify and no "already started" restriction
+   * (the business may be cleaning up a stale manual entry after the fact). */
   async cancelForBusiness(businessId: string, bookingId: string, reason?: string) {
     const booking = await this.getForBusiness(businessId, bookingId);
     this.assertCancellable(booking);
@@ -445,19 +650,24 @@ export class BookingsService {
       data: { status: BookingStatus.CANCELLED, notes: reason ? `${booking.notes ?? ''}\n[Cancelado por negocio] ${reason}`.trim() : booking.notes },
       include: BOOKING_INCLUDE,
     });
-    void this.notifications.notify({
-      userId: updated.userId,
-      audience: NotificationAudience.CUSTOMER,
-      event: 'booking.cancelled',
-      title: 'Reserva cancelada',
-      body: `${updated.business.tradeName} canceló tu reserva de "${updated.service.name}".`,
-      data: { bookingId: updated.id },
-    });
+    if (updated.source !== BookingSource.MANUAL) {
+      void this.notifications.notify({
+        userId: updated.userId!,
+        audience: NotificationAudience.CUSTOMER,
+        event: 'booking.cancelled',
+        title: 'Reserva cancelada',
+        body: `${updated.business.tradeName} canceló tu reserva de "${updated.service.name}".`,
+        data: { bookingId: updated.id },
+      });
+    }
     return updated;
   }
 
   async complete(businessId: string, bookingId: string) {
     const booking = await this.getForBusiness(businessId, bookingId);
+    if (booking.source === BookingSource.MANUAL) {
+      throw new BadRequestException('A manual block cannot be completed — cancel it instead once it no longer applies');
+    }
     if (booking.status !== BookingStatus.CONFIRMED) {
       throw new BadRequestException('Only confirmed bookings can be completed');
     }
@@ -467,7 +677,7 @@ export class BookingsService {
       include: BOOKING_INCLUDE,
     });
     void this.notifications.notify({
-      userId: updated.userId,
+      userId: updated.userId!,
       audience: NotificationAudience.CUSTOMER,
       event: 'booking.completed',
       title: 'Reserva completada',
@@ -479,6 +689,9 @@ export class BookingsService {
 
   async markNoShow(businessId: string, bookingId: string) {
     const booking = await this.getForBusiness(businessId, bookingId);
+    if (booking.source === BookingSource.MANUAL) {
+      throw new BadRequestException('A manual block has no customer to mark as a no-show — cancel it instead');
+    }
     if (booking.status !== BookingStatus.CONFIRMED) {
       throw new BadRequestException('Only confirmed bookings can be marked as no-show');
     }
@@ -525,16 +738,42 @@ export class BookingsService {
     return booking;
   }
 
-  private assertCancellable(booking: { status: BookingStatus; startTime: Date }) {
+  private assertCancellable(booking: { status: BookingStatus; startTime: Date; source?: BookingSource }) {
     if (booking.status !== BookingStatus.PENDING && booking.status !== BookingStatus.CONFIRMED) {
       throw new BadRequestException('This booking can no longer be cancelled');
     }
     // No configurable cancellation-window policy exists yet (§15 — identified as pending
     // configuration, not invented here) — the only real rule enforced is that a booking whose
-    // appointment has already started can't be cancelled after the fact.
-    if (booking.startTime.getTime() <= Date.now()) {
+    // appointment has already started can't be cancelled after the fact. A MANUAL block is exempt:
+    // the business may be cleaning up a stale off-platform entry (the appointment fell through, or
+    // it was logged for a date that's already passed) well after its start time.
+    if (booking.source !== BookingSource.MANUAL && booking.startTime.getTime() <= Date.now()) {
       throw new BadRequestException('This booking has already started and can no longer be cancelled');
     }
+  }
+
+  /** Row-locks the Service (`SELECT ... FOR UPDATE`) before counting overlapping active bookings —
+   * shared by create() and createManualBlock() so an app booking and a manual block are genuinely
+   * fungible occupants of a service's capacity, checked by the exact same code, not two parallel
+   * (and possibly inconsistent) tallies. Must be called inside the same `tx` that will perform the
+   * `create`, so the lock actually serializes concurrent attempts at the same service/slot. */
+  private async assertCapacityAvailable(
+    tx: Prisma.TransactionClient,
+    serviceId: string,
+    startTime: Date,
+    endTime: Date,
+    capacity: number,
+  ) {
+    await tx.$queryRaw`SELECT id FROM "Service" WHERE id = ${serviceId} FOR UPDATE`;
+    const overlapping = await tx.booking.count({
+      where: {
+        serviceId,
+        status: { in: ACTIVE_STATUSES },
+        startTime: { lt: endTime },
+        endTime: { gt: startTime },
+      },
+    });
+    if (overlapping >= capacity) throw new BookingSlotUnavailableException();
   }
 
   private async getBusinessOwnerId(businessId: string): Promise<string> {
