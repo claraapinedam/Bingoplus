@@ -18,6 +18,16 @@ interface OrderSummary {
   currency: string;
   createdAt: string;
   business: { tradeName: string; logoUrl: string | null };
+  refunds: { status: string }[];
+}
+
+// The latest Refund is the real signal once a Delivery is cancelled — Order.status has no way to
+// express it (see OrderStateMachine), so it would otherwise keep reading "Listo para retirar".
+function statusLabel(o: OrderSummary): { label: string; color: string } {
+  const latest = o.refunds[0];
+  if (latest?.status === 'PENDING') return { label: 'Por reembolsar', color: 'var(--bingo-warning, #b8860b)' };
+  if (latest?.status === 'COMPLETED') return { label: 'Reembolsado', color: '#54617a' };
+  return { label: ORDER_STATUS_LABELS[o.status] ?? o.status, color: ORDER_STATUS_COLORS[o.status] ?? '#54617a' };
 }
 
 export default function OrdersPage() {
@@ -62,9 +72,9 @@ export default function OrdersPage() {
                   <div style={{ fontWeight: 800, fontSize: 14 }}>{currencyFormatter.format(Number(o.total))}</div>
                   <span
                     className="bingo-badge"
-                    style={{ marginTop: 4, background: '#f2f4f7', color: ORDER_STATUS_COLORS[o.status] ?? '#54617a' }}
+                    style={{ marginTop: 4, background: '#f2f4f7', color: statusLabel(o).color }}
                   >
-                    {ORDER_STATUS_LABELS[o.status] ?? o.status}
+                    {statusLabel(o).label}
                   </span>
                 </div>
               </div>

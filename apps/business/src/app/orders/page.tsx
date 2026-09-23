@@ -25,11 +25,21 @@ interface OrderSummary {
   items: { id: string; quantity: number }[];
   user: { firstName: string; lastName: string };
   payment: { status: string } | null;
+  refunds: { status: string }[];
 }
 
 /** subtotal − discount + tax — the business-relevant figure, excluding serviceFee/deliveryFee. */
 function businessTotal(o: OrderSummary): number {
   return Number(o.subtotal) - Number(o.discount) + Number(o.tax);
+}
+
+// The latest Refund is the real signal once a Delivery is cancelled — Order.status has no way to
+// express it (see OrderStateMachine), so it would otherwise keep reading "Listo para retirar".
+function statusLabel(o: OrderSummary): { label: string; color: string } {
+  const latest = o.refunds[0];
+  if (latest?.status === 'PENDING') return { label: 'Por reembolsar', color: 'var(--bingo-warning, #b8860b)' };
+  if (latest?.status === 'COMPLETED') return { label: 'Reembolsado', color: '#54617a' };
+  return { label: ORDER_STATUS_LABELS[o.status] ?? o.status, color: ORDER_STATUS_COLORS[o.status] ?? '#54617a' };
 }
 
 type SortKey = 'createdAt' | 'total';
@@ -158,8 +168,8 @@ function OrdersContent() {
                   <td>{o.fulfillmentType === 'PICKUP' ? 'Retiro' : 'Entrega'}</td>
                   <td style={{ fontWeight: 700 }}>{currencyFormatter.format(businessTotal(o))}</td>
                   <td>
-                    <span className="bingo-badge" style={{ background: '#f2f4f7', color: ORDER_STATUS_COLORS[o.status] ?? '#54617a' }}>
-                      {ORDER_STATUS_LABELS[o.status] ?? o.status}
+                    <span className="bingo-badge" style={{ background: '#f2f4f7', color: statusLabel(o).color }}>
+                      {statusLabel(o).label}
                     </span>
                   </td>
                 </tr>
