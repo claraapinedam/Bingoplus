@@ -18,6 +18,8 @@ const STATUS_LABELS: Record<string, string> = {
 // cash-to-the-business payment — see BookingsService.chooseCashPayment/markCashPaid on the API.
 const CASH_PROVIDER = 'CASH';
 
+const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
+
 interface BookingPayment {
   id: string;
   provider: string;
@@ -32,6 +34,10 @@ interface BookingDetail {
   startTime: string;
   endTime: string;
   price: string | number;
+  // serviceFee deliberately NOT part of this interface — see the "Precio" section below, which
+  // mirrors apps/business's own Order detail page: the business only ever sees what it actually
+  // gets (price + tax), never BINGO+'s own service-fee cut.
+  tax: string | number;
   notes: string | null;
   atCustomerHome: boolean;
   service: { name: string; description: string | null };
@@ -182,8 +188,17 @@ function BookingDetailContent() {
           </div>
         </div>
         <div>
+          {/* El negocio solo ve lo que le compete: el valor del servicio y su impuesto — nunca la
+              tarifa de servicio, que es ingreso de la plataforma, no del negocio (mismo criterio
+              que la vista de detalle de un pedido de productos). */}
           <div style={{ fontSize: 12, fontWeight: 700, color: '#7f8ea3' }}>Precio</div>
-          <div>${Number(booking.price).toFixed(2)}</div>
+          <div>{currencyFormatter.format(Number(booking.price))}</div>
+          {Number(booking.tax) > 0 && (
+            <div style={{ fontSize: 13, color: '#7f8ea3' }}>
+              + {currencyFormatter.format(Number(booking.tax))} de impuesto — total{' '}
+              {currencyFormatter.format(Number(booking.price) + Number(booking.tax))}
+            </div>
+          )}
         </div>
         {booking.notes && (
           <div style={{ gridColumn: 'span 2' }}>

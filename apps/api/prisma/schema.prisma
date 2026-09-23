@@ -1547,6 +1547,27 @@ model Booking {
   status         BookingStatus @default(PENDING)
   source         BookingSource @default(APP)
   price          Decimal       @db.Decimal(12, 2)
+  // Checkout breakdown (§ card/cash booking payment) — frozen at booking creation time from the
+  // live PricingConfiguration, same snapshot discipline as `price`/`billableDays` below: a later
+  // change to PricingConfiguration.defaultTaxPercent/serviceFeePercent/serviceFeeFixed must never
+  // retroactively rewrite what a customer was already shown and agreed to pay. `tax` is simply
+  // price × defaultTaxPercent (a Service has no ProductTaxCategory-style exemption concept, unlike
+  // Product — every service is taxed at the flat default rate). `serviceFee` is the exact same
+  // formula PriceCalculationService/MembershipsService.computeServiceFee use:
+  // price × serviceFeePercent + serviceFeeFixed. `total` (= price + tax + serviceFee) is what's
+  // actually charged (createBookingPayment/chooseCashPayment) — never `price` alone. Rows created
+  // before this feature existed were backfilled with tax=0/serviceFee=0/total=price by this
+  // migration, so an already-CONFIRMED-awaiting-payment booking keeps charging exactly what it
+  // always would have.
+  tax            Decimal       @default(0) @db.Decimal(12, 2)
+  serviceFee     Decimal       @default(0) @db.Decimal(12, 2)
+  total          Decimal       @default(0) @db.Decimal(12, 2)
+  // Set only once this booking's price+tax has been swept into a business Payout
+  // (PayoutsService.markBusinessBookingItemsPaid/markBusinessBookingsPaid) — same "swept exactly
+  // once" mechanism as Order.payoutId/RiderEarning.payoutId (see the Payout model comment). Only a
+  // CARD-paid (never CASH), PAID booking is ever eligible to owe the business anything in the
+  // first place — see PayoutsService's CARD_PAID_BOOKING_WHERE.
+  payoutId       String?
   // Set only for a DAYCARE/BOARDING booking — how many of Service.operatingDays fell inside
   // [startTime, endTime) at creation time, frozen here since a later change to the service's
   // operatingDays or price must never retroactively rewrite what was already booked and priced
@@ -1572,11 +1593,13 @@ model Booking {
   reviews  Review[]
   disputes Dispute[]
   payment  Payment?
+  payout   Payout?   @relation(fields: [payoutId], references: [id])
 
   @@index([userId])
   @@index([businessId])
   @@index([status])
   @@index([serviceId, startTime, endTime])
+  @@index([payoutId])
 }
 
 // FASE 9 §2 — a Weekly Business Schedule (Business.openingHours) alone can't represent
@@ -2391,6 +2414,12 @@ model Payout {
   rider         Rider?         @relation(fields: [riderId], references: [id])
   riderEarnings RiderEarning[]
   orders        Order[]
+  // Card-paid service Bookings swept into this payout (PayoutsService.markBusinessBookingItemsPaid/
+  // markBusinessBookingsPaid) — deliberately never mixed with `orders` on the same Payout row: a
+  // product-order payout and a service-booking payout are two parallel, separately-triggered
+  // actions (services have no Commission rate the way products do — see PayoutsService), so a
+  // given Payout's `orders` or `bookings` is always populated, never both.
+  bookings      Booking[]
 
   @@index([payeeType, status])
   @@index([businessId])

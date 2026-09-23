@@ -6,14 +6,16 @@ import AdminShell from '@/components/AdminShell';
 import { apiFetch, ApiError } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
-const percentFormatter = new Intl.NumberFormat('es-EC', { style: 'percent', minimumFractionDigits: 1 });
 
 interface PendingBusinessRow {
   businessId: string;
   tradeName: string;
   ordersCount: number;
+  bookingsCount: number;
   gmv: number;
   commissionRate: number;
+  orderAmount: number;
+  bookingAmount: number;
   amount: number;
 }
 
@@ -67,9 +69,13 @@ function OutgoingPayoutsSection() {
   return (
     <>
       <p style={{ fontSize: 13, color: '#7f8ea3', marginBottom: 16 }}>
-        GMV real de pedidos pagados/completados, ya neto de la comisión vigente de cada negocio, que todavía no se
-        ha liquidado, acumulado por negocio. Haz clic en un negocio para ver el detalle de sus pedidos pendientes y
-        su historial de pagos. Negocios sin una tasa de comisión vigente no aparecen aquí.
+        Monto pendiente por negocio, acumulado de dos fuentes: <strong>Pedidos</strong> (GMV real de pedidos de
+        productos pagados/completados, ya neto de la comisión vigente de cada negocio) y{' '}
+        <strong>Reservas</strong> (reservas de servicios pagadas con tarjeta — sin comisión, el negocio se queda
+        con el valor y el impuesto; BINGO+ solo retiene la tarifa de servicio). Haz clic en un negocio para ver el
+        detalle y el historial de cada fuente por separado. Un negocio sin tasa de comisión vigente y sin pedidos
+        pendientes no aparece aquí; si solo tiene reservas pendientes, sí aparece (las reservas no requieren
+        comisión).
       </p>
 
       {error && (
@@ -96,8 +102,9 @@ function OutgoingPayoutsSection() {
               <tr>
                 <th>Negocio</th>
                 <th>Pedidos</th>
-                <th>GMV</th>
-                <th>Comisión</th>
+                <th>Reservas</th>
+                <th>$ Pedidos (neto comisión)</th>
+                <th>$ Reservas (neto tarifa)</th>
                 <th>Monto a pagar</th>
                 <th></th>
               </tr>
@@ -107,9 +114,10 @@ function OutgoingPayoutsSection() {
                 <tr key={item.businessId} style={{ cursor: 'pointer' }} onClick={() => router.push(`/businesses/payments/${item.businessId}`)}>
                   <td>{item.tradeName}</td>
                   <td>{item.ordersCount}</td>
-                  <td>{currencyFormatter.format(item.gmv)}</td>
-                  <td>{percentFormatter.format(item.commissionRate)}</td>
-                  <td>{currencyFormatter.format(item.amount)}</td>
+                  <td>{item.bookingsCount}</td>
+                  <td>{currencyFormatter.format(item.orderAmount)}</td>
+                  <td>{currencyFormatter.format(item.bookingAmount)}</td>
+                  <td style={{ fontWeight: 700 }}>{currencyFormatter.format(item.amount)}</td>
                   <td style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>Ver detalle →</td>
                 </tr>
               ))}

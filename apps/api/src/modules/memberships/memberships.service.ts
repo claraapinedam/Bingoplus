@@ -13,7 +13,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentService } from '../payments/payment.service';
-import { PricingConfigService } from '../pricing/pricing-config.service';
+import { PricingConfigService, computeServiceFeeAmount } from '../pricing/pricing-config.service';
 import { CreateMembershipPlanDto, UpdateMembershipPlanDto } from './dto/membership-plan.dto';
 import { isMembershipStatusGoodStanding } from './membership-visibility.util';
 
@@ -510,14 +510,14 @@ export class MembershipsService {
 
   // ── Membership card payment (real charge — see PaymentService/Sandbox provider) ────────────
 
-  /** subtotal × PricingConfiguration.serviceFeePercent + serviceFeeFixed — the EXACT same formula
-   * PriceCalculationService.calculate uses for a Marketplace order's service fee, reusing the same
-   * shared config/service rather than duplicating it. Deliberately never touches
+  /** subtotal × PricingConfiguration.serviceFeePercent + serviceFeeFixed — via the shared
+   * computeServiceFeeAmount helper (same formula PriceCalculationService.calculate and
+   * BookingsService.create use for their own service fees). Deliberately never touches
    * defaultTaxPercent: a membership card charge is BINGO+ billing the business directly, not a
    * taxable customer sale, so no tax line applies here — only the service fee. */
   private async computeServiceFee(dueAmount: Prisma.Decimal): Promise<Prisma.Decimal> {
     const config = await this.pricingConfig.get();
-    return dueAmount.mul(config.serviceFeePercent).plus(config.serviceFeeFixed);
+    return computeServiceFeeAmount(dueAmount, config);
   }
 
   /**

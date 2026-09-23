@@ -1,6 +1,20 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderStatus, PayeeType, Prisma, PayoutStatus, RiderEarningStatus } from '@prisma/client';
+import { OrderStatus, PayeeType, PaymentStatus, Prisma, PayoutStatus, RiderEarningStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+/** Mirrors BookingsService's own (unexported) CASH_PAYMENT_PROVIDER — the literal Payment.provider
+ * value for a cash-to-the-business booking payment. Duplicated here rather than importing from
+ * bookings.service.ts, which doesn't export it and shouldn't grow a cross-module dependency just
+ * for one string constant — same reasoning bookings.service.spec.ts gives for its own local copy
+ * of BookingsService's WEEKDAY_KEYS. */
+const CASH_PAYMENT_PROVIDER = 'CASH';
+
+/** A card-paid, actually-PAID booking is the only kind that ever owes the business anything back —
+ * a CASH booking is money the customer already handed the business directly in person (see
+ * BookingsService.chooseCashPayment/markCashPaid), so there's nothing left for BINGO+ to owe. */
+const CARD_PAID_BOOKING_WHERE = {
+  payment: { is: { status: PaymentStatus.PAID, provider: { not: CASH_PAYMENT_PROVIDER } } },
+} satisfies Prisma.BookingWhereInput;
 
 /**
  * Admin "Pagos" module (Businesses & Riders) — accumulates what BINGO+ owes each payee, already
@@ -224,24 +238,50 @@ export class PayoutsService {
    * via its own Invoice, never against a business's order payout. Folding it in here would make
    * this owed-amount silently diverge from GMV × rate the moment a business's plan price changed,
    * for no product requirement asked for. */
+  /**
+   * The combined "what does BINGO+ owe this business" total — product Orders (GMV × (1 -
+   * commission rate), unchanged, see below) plus card-paid service Bookings (price + tax, no
+   * commission, service fee withheld — see CARD_PAID_BOOKING_WHERE and the Booking model comment).
+   * The two are summed only for this read-side total/list; they're never mixed on write — marking
+   * paid still goes through the fully separate Order (markBusinessOrdersPaid/markBusinessesPaid,
+   * untouched) and Booking (markBusinessBookingItemsPaid/markBusinessBookingsPaid) actions below,
+   * each stamping payoutId on its own row type only, so a booking's no-commission rule can never
+   * leak into or dilute a product order's commission-based math (or vice versa). `orderAmount`/
+   * `bookingAmount` are broken out explicitly so admin can see which portion is which, never a
+   * silently-conflated single number.
+   */
   async listPendingBusinesses() {
-    const allGrouped = await this.prisma.order.groupBy({
-      by: ['businessId'],
-      where: { status: { in: PayoutsService.PAID_ORDER_STATUSES } },
-    });
-    if (allGrouped.length === 0) return { total: 0, items: [] };
+    const [allOrderGrouped, allBookingGrouped] = await Promise.all([
+      this.prisma.order.groupBy({ by: ['businessId'], where: { status: { in: PayoutsService.PAID_ORDER_STATUSES } } }),
+      this.prisma.booking.groupBy({ by: ['businessId'], where: CARD_PAID_BOOKING_WHERE }),
+    ]);
+    const businessIds = Array.from(new Set([...allOrderGrouped.map((g) => g.businessId), ...allBookingGrouped.map((g) => g.businessId)]));
+    if (businessIds.length === 0) return { total: 0, items: [] };
 
-    const pendingGrouped = await this.prisma.order.groupBy({
-      by: ['businessId'],
-      where: { status: { in: PayoutsService.PAID_ORDER_STATUSES }, payoutId: null },
-      _sum: { subtotal: true },
-      _count: { _all: true },
-    });
-    const pendingByBusiness = new Map(
-      pendingGrouped.map((g) => [g.businessId, { gmv: Number(g._sum.subtotal ?? 0), count: g._count._all }]),
+    const [pendingOrderGrouped, pendingBookingGrouped] = await Promise.all([
+      this.prisma.order.groupBy({
+        by: ['businessId'],
+        where: { status: { in: PayoutsService.PAID_ORDER_STATUSES }, payoutId: null },
+        _sum: { subtotal: true },
+        _count: { _all: true },
+      }),
+      this.prisma.booking.groupBy({
+        by: ['businessId'],
+        where: { ...CARD_PAID_BOOKING_WHERE, payoutId: null },
+        _sum: { price: true, tax: true },
+        _count: { _all: true },
+      }),
+    ]);
+    const pendingOrderByBusiness = new Map(
+      pendingOrderGrouped.map((g) => [g.businessId, { gmv: Number(g._sum.subtotal ?? 0), count: g._count._all }]),
+    );
+    const pendingBookingByBusiness = new Map(
+      pendingBookingGrouped.map((g) => [
+        g.businessId,
+        { amount: Number(g._sum.price ?? 0) + Number(g._sum.tax ?? 0), count: g._count._all },
+      ]),
     );
 
-    const businessIds = allGrouped.map((g) => g.businessId);
     const [businesses, commissions] = await Promise.all([
       this.prisma.business.findMany({ where: { id: { in: businessIds } }, select: { id: true, tradeName: true } }),
       this.prisma.commission.findMany({
@@ -257,22 +297,28 @@ export class PayoutsService {
 
     const items = businessIds
       .filter((businessId) => {
-        const pending = pendingByBusiness.get(businessId);
-        if (!pending || pending.gmv === 0) return true; // nothing to guess — safe to show at $0
-        return rateByBusiness.has(businessId); // has a real pending amount — still refuse to guess a rate
+        const pending = pendingOrderByBusiness.get(businessId);
+        if (!pending || pending.gmv === 0) return true; // no order GMV to guess a rate for
+        return rateByBusiness.has(businessId); // has a real pending order amount — still refuse to guess a rate
       })
       .map((businessId) => {
         const business = businessById.get(businessId);
-        const pending = pendingByBusiness.get(businessId);
-        const gmv = pending?.gmv ?? 0;
+        const pendingOrder = pendingOrderByBusiness.get(businessId);
+        const pendingBooking = pendingBookingByBusiness.get(businessId);
+        const gmv = pendingOrder?.gmv ?? 0;
         const rate = rateByBusiness.get(businessId) ?? 0;
+        const orderAmount = Math.round(gmv * (1 - rate) * 100) / 100;
+        const bookingAmount = Math.round((pendingBooking?.amount ?? 0) * 100) / 100;
         return {
           businessId,
           tradeName: business?.tradeName ?? 'Negocio',
-          ordersCount: pending?.count ?? 0,
+          ordersCount: pendingOrder?.count ?? 0,
+          bookingsCount: pendingBooking?.count ?? 0,
           gmv,
           commissionRate: rate,
-          amount: Math.round(gmv * (1 - rate) * 100) / 100,
+          orderAmount,
+          bookingAmount,
+          amount: Math.round((orderAmount + bookingAmount) * 100) / 100,
         };
       })
       .sort((a, b) => b.amount - a.amount);
@@ -429,6 +475,153 @@ export class PayoutsService {
           data: { payoutId: payout.id },
         });
         if (count !== orders.length) {
+          throw new BadRequestException('Otro proceso ya estaba pagando a este negocio. Intenta de nuevo.');
+        }
+        return { businessId, amount: Number(amount), payoutId: payout.id };
+      });
+      if (result) paid.push(result);
+    }
+
+    return {
+      paidCount: paid.length,
+      totalPaid: Math.round(paid.reduce((sum, p) => sum + p.amount, 0) * 100) / 100,
+      payouts: paid,
+    };
+  }
+
+  // ───────────────────────── Businesses — service bookings (card-paid only) ─────────────────────────
+  //
+  // Deliberately a PARALLEL set of methods to the Order-based ones above, not folded into
+  // getBusinessPending/markBusinessOrdersPaid/markBusinessesPaid: a service Booking has no
+  // Commission rate the way a product Order does (Commission only ever attaches to product GMV —
+  // see its schema comment), so gating a booking payout on "does this business have a live
+  // Commission row" would be wrong and would block a service-only business from ever being paid.
+  // What a business is owed per card-paid booking is simply price + tax — never the withheld
+  // serviceFee, the one thing BINGO+ keeps (see the Booking model comment and
+  // BookingsService.create, which computes/freezes tax/serviceFee/total at booking time using the
+  // exact same PricingConfiguration/computeServiceFeeAmount formula Products/memberships use).
+  // Only a CARD-paid, PAID booking is ever eligible — see CARD_PAID_BOOKING_WHERE; CASH is money
+  // the customer already handed the business in person, nothing for BINGO+ to owe back on it.
+  //
+  // A Payout row from this section only ever covers Bookings, never Orders (and vice versa for the
+  // section above) — see the Payout model's `bookings`/`orders` comment — so the two payable
+  // sources can be marked paid independently without one's math ever touching the other's.
+
+  /** Per-business drilldown, bookings side (Pagos a negocios → negocio → pestaña "Reservas") — the
+   * individual pending card-paid bookings behind that business's bookingAmount in
+   * listPendingBusinesses, one row per booking with price/tax/withheld serviceFee shown
+   * separately, so admin can select a subset rather than only ever paying the whole balance. */
+  async getBusinessBookingsPending(businessId: string) {
+    const bookings = await this.prisma.booking.findMany({
+      where: { businessId, payoutId: null, ...CARD_PAID_BOOKING_WHERE },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, price: true, tax: true, serviceFee: true, status: true, createdAt: true, service: { select: { name: true } } },
+    });
+    const items = bookings.map((b) => {
+      const price = Number(b.price);
+      const tax = Number(b.tax);
+      return {
+        id: b.id,
+        serviceName: b.service.name,
+        price,
+        tax,
+        // Informational only — withheld by BINGO+, never added into `amount`.
+        serviceFee: Number(b.serviceFee),
+        amount: Math.round((price + tax) * 100) / 100,
+        status: b.status,
+        createdAt: b.createdAt,
+      };
+    });
+    const total = Math.round(items.reduce((sum, i) => sum + i.amount, 0) * 100) / 100;
+    return { total, items };
+  }
+
+  /** Same drilldown, paid side — every booking-sourced Payout already issued to this business. */
+  async getBusinessBookingsPaidHistory(businessId: string) {
+    const payouts = await this.prisma.payout.findMany({
+      where: { payeeType: PayeeType.BUSINESS, businessId, status: PayoutStatus.PAID, bookings: { some: {} } },
+      orderBy: { paidAt: 'desc' },
+      include: { _count: { select: { bookings: true } } },
+    });
+    return payouts.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      paidAt: p.paidAt,
+      referenceNumber: p.referenceNumber,
+      bookingsCount: p._count.bookings,
+    }));
+  }
+
+  /** Pays exactly the selected bookings for one business — the item-level action inside a single
+   * business's Reservas tab (see markBusinessOrdersPaid for the Order-side equivalent). Never
+   * requires a live Commission rate — bookings don't have one. */
+  async markBusinessBookingItemsPaid(businessId: string, bookingIds: string[], referenceNumber?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const bookings = await tx.booking.findMany({
+        where: { id: { in: bookingIds }, businessId, payoutId: null, ...CARD_PAID_BOOKING_WHERE },
+        select: { id: true, price: true, tax: true, createdAt: true },
+      });
+      if (bookings.length === 0) {
+        throw new BadRequestException('Las reservas seleccionadas ya no están pendientes.');
+      }
+
+      const amount = bookings.reduce((sum, b) => sum.plus(b.price).plus(b.tax), new Prisma.Decimal(0));
+      const periodStart = bookings.reduce((min, b) => (b.createdAt < min ? b.createdAt : min), bookings[0].createdAt);
+      const payout = await tx.payout.create({
+        data: {
+          payeeType: PayeeType.BUSINESS,
+          businessId,
+          amount,
+          status: PayoutStatus.PAID,
+          paidAt: new Date(),
+          periodStart,
+          periodEnd: new Date(),
+          referenceNumber: referenceNumber || null,
+        },
+      });
+
+      const { count } = await tx.booking.updateMany({
+        where: { id: { in: bookings.map((b) => b.id) }, payoutId: null },
+        data: { payoutId: payout.id },
+      });
+      if (count !== bookings.length) {
+        throw new BadRequestException('Otro proceso ya estaba pagando alguna de estas reservas. Intenta de nuevo.');
+      }
+      return { payoutId: payout.id, amount: Number(amount), bookingsCount: bookings.length };
+    });
+  }
+
+  /** Same "entire current outstanding booking balance, idempotent per business" shape as
+   * markBusinessesPaid — never requires a live Commission rate. */
+  async markBusinessBookingsPaid(businessIds: string[], adminId?: string) {
+    const paid: { businessId: string; amount: number; payoutId: string }[] = [];
+    for (const businessId of businessIds) {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const bookings = await tx.booking.findMany({
+          where: { businessId, payoutId: null, ...CARD_PAID_BOOKING_WHERE },
+          select: { id: true, price: true, tax: true, createdAt: true },
+        });
+        if (bookings.length === 0) return null;
+
+        const amount = bookings.reduce((sum, b) => sum.plus(b.price).plus(b.tax), new Prisma.Decimal(0));
+        const periodStart = bookings.reduce((min, b) => (b.createdAt < min ? b.createdAt : min), bookings[0].createdAt);
+        const payout = await tx.payout.create({
+          data: {
+            payeeType: PayeeType.BUSINESS,
+            businessId,
+            amount,
+            status: PayoutStatus.PAID,
+            paidAt: new Date(),
+            periodStart,
+            periodEnd: new Date(),
+          },
+        });
+
+        const { count } = await tx.booking.updateMany({
+          where: { id: { in: bookings.map((b) => b.id) }, payoutId: null },
+          data: { payoutId: payout.id },
+        });
+        if (count !== bookings.length) {
           throw new BadRequestException('Otro proceso ya estaba pagando a este negocio. Intenta de nuevo.');
         }
         return { businessId, amount: Number(amount), payoutId: payout.id };

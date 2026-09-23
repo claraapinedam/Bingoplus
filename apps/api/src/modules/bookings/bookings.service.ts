@@ -16,6 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentService } from '../payments/payment.service';
+import { PricingConfigService, computeServiceFeeAmount } from '../pricing/pricing-config.service';
 import { BookingSlotUnavailableException } from '../../common/exceptions/booking-slot-unavailable.exception';
 import { DEFAULT_SERVICE_CAPACITY } from '../services/services.service';
 import { isMembershipStatusGoodStanding } from '../memberships/membership-visibility.util';
@@ -104,6 +105,7 @@ export class BookingsService {
     private readonly pets: PetsService,
     private readonly notifications: NotificationService,
     private readonly payments: PaymentService,
+    private readonly pricingConfig: PricingConfigService,
   ) {}
 
   // ── Availability — computed live from Business.openingHours + Service.durationMinutes +
@@ -285,6 +287,20 @@ export class BookingsService {
       price = service.price;
     }
 
+    // Checkout breakdown (§ "pagar con tarjeta" must show valor + impuestos + tarifa de servicio) —
+    // computed once here, from the live PricingConfiguration, and frozen onto the Booking row
+    // exactly like `price` above: a later admin change to defaultTaxPercent/serviceFeePercent/
+    // serviceFeeFixed must never retroactively rewrite what this booking already charges. A
+    // Service has no ProductTaxCategory-style exemption concept (unlike Product) — every service
+    // is simply taxed at the flat default rate. serviceFee reuses the exact same formula
+    // PriceCalculationService/MembershipsService.computeServiceFee use, via the shared
+    // computeServiceFeeAmount helper, rather than a third, possibly-diverging copy of the math.
+    const priceDecimal = new Prisma.Decimal(price);
+    const pricingConfigValues = await this.pricingConfig.get();
+    const tax = priceDecimal.mul(pricingConfigValues.defaultTaxPercent);
+    const serviceFee = computeServiceFeeAmount(priceDecimal, pricingConfigValues);
+    const total = priceDecimal.plus(tax).plus(serviceFee);
+
     const booking = await this.prisma.$transaction(async (tx) => {
       await this.assertCapacityAvailable(tx, service.id, startTime, endTime, service.capacity ?? DEFAULT_SERVICE_CAPACITY);
 
@@ -297,7 +313,10 @@ export class BookingsService {
           date: bookingDate,
           startTime,
           endTime,
-          price,
+          price: priceDecimal,
+          tax,
+          serviceFee,
+          total,
           billableDays,
           atCustomerHome,
           notes: dto.notes,
@@ -386,8 +405,10 @@ export class BookingsService {
       // hitting the Payment.bookingId unique constraint with a second row for the same booking.
       return booking.payment;
     }
+    // Charges price + tax + serviceFee (booking.total), never booking.price alone — see the
+    // Booking model comment on `total` and BookingsService.create where it's computed/frozen.
     return this.prisma.$transaction((tx) =>
-      this.payments.createPayment(tx, { bookingId: booking.id }, booking.price, 'USD', idempotencyKey),
+      this.payments.createPayment(tx, { bookingId: booking.id }, booking.total, 'USD', idempotencyKey),
     );
   }
 
@@ -438,6 +459,13 @@ export class BookingsService {
       data: {
         bookingId: booking.id,
         provider: CASH_PAYMENT_PROVIDER,
+        // Deliberately still just `price`, never booking.total — the owner's request (checkout
+        // showing/charging valor + impuestos + tarifa de servicio) was specifically about the CARD
+        // flow. A cash booking is money the customer hands the business directly in person, with
+        // no BINGO+ processing step to collect a tax/service-fee line through — extending
+        // total-with-fees to cash here would be inventing a new charge nobody asked for, and there
+        // is no payout mechanism to reconcile a BINGO+ share out of cash the business collected
+        // itself (see PayoutsService — only a CARD-paid booking is ever payable back).
         amount: booking.price,
         currency: 'USD',
         status: PaymentStatus.PENDING,

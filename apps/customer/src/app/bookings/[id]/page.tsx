@@ -19,6 +19,8 @@ const STATUS_LABELS: Record<string, string> = {
 // cash-to-the-business payment — see BookingsService.chooseCashPayment/markCashPaid on the API.
 const CASH_PROVIDER = 'CASH';
 
+const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
+
 interface BookingPayment {
   id: string;
   provider: string;
@@ -32,6 +34,9 @@ interface BookingDetail {
   startTime: string;
   endTime: string;
   price: string | number;
+  tax: string | number;
+  serviceFee: string | number;
+  total: string | number;
   notes: string | null;
   service: { name: string; description: string | null };
   pet: { name: string } | null;
@@ -175,7 +180,10 @@ export default function BookingDetailPage() {
               {new Date(booking.endTime).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}
             </div>
             <div>
-              <strong>Precio:</strong> ${Number(booking.price).toFixed(2)}
+              <strong>Precio del servicio:</strong> {currencyFormatter.format(Number(booking.price))}
+            </div>
+            <div>
+              <strong>Total a pagar:</strong> {currencyFormatter.format(Number(booking.total))}
             </div>
             {booking.notes && (
               <div>
@@ -196,6 +204,30 @@ export default function BookingDetailPage() {
                 <p style={{ fontSize: 13, color: '#54617a', marginBottom: 10 }}>
                   Tu reserva fue confirmada. Elige cómo quieres pagarla.
                 </p>
+                {/* Checkout con tarjeta: valor del servicio, más impuestos, más tarifa de servicio —
+                    mostrado siempre antes de cobrar, aplique a "efectivo" o "tarjeta" (el efectivo
+                    sigue cobrando solo el precio del servicio; ver bookings.service.ts). */}
+                <div className="bingo-card" style={{ background: '#f8f9fb', marginBottom: 10, padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a' }}>
+                    <span>Valor del servicio</span>
+                    <span>{currencyFormatter.format(Number(booking.price))}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a' }}>
+                    <span>Impuestos</span>
+                    <span>{currencyFormatter.format(Number(booking.tax))}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#54617a' }}>
+                    <span>Tarifa de servicio</span>
+                    <span>{currencyFormatter.format(Number(booking.serviceFee))}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, marginTop: 6 }}>
+                    <span>Total con tarjeta</span>
+                    <span>{currencyFormatter.format(Number(booking.total))}</span>
+                  </div>
+                  <p style={{ fontSize: 11, color: '#9aa5b1', marginTop: 6, marginBottom: 0 }}>
+                    Si pagas en efectivo al negocio, el monto es solo el valor del servicio ({currencyFormatter.format(Number(booking.price))}).
+                  </p>
+                </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button className="bingo-button" style={{ width: 'auto' }} disabled={busy} onClick={payWithCard}>
                     💳 Pagar con tarjeta

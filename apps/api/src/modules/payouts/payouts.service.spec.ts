@@ -12,6 +12,11 @@ describe('PayoutsService', () => {
       riderEarning: { groupBy: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
       rider: { findMany: jest.fn() },
       order: { groupBy: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
+      // Default to "no pending bookings anywhere" so existing Order-only tests (which don't set
+      // this up themselves) see bookingAmount/bookingsCount as 0 and keep their pre-existing
+      // expectations — see the "listPendingBusinesses — combined with Bookings" describe block for
+      // tests that actually configure these.
+      booking: { groupBy: jest.fn().mockResolvedValue([]), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn() },
       business: { findMany: jest.fn() },
       commission: { findMany: jest.fn(), findFirst: jest.fn() },
       payout: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
@@ -169,6 +174,47 @@ describe('PayoutsService', () => {
       expect(result.total).toBe(0);
       expect(result.items).toEqual([expect.objectContaining({ businessId: 'b1', tradeName: 'Tienda Uno', gmv: 0, amount: 0 })]);
     });
+
+    it('folds in card-paid service bookings (price + tax, no commission) as a separate bookingAmount, summed into the combined amount', async () => {
+      prisma.order.groupBy.mockResolvedValue([]); // this business has no product orders at all
+      prisma.booking.groupBy.mockResolvedValue([
+        { businessId: 'b1', _sum: { price: new Prisma.Decimal('50'), tax: new Prisma.Decimal('5') }, _count: { _all: 2 } },
+      ]);
+      prisma.business.findMany.mockResolvedValue([{ id: 'b1', tradeName: 'Peluquería Canina' }]);
+      prisma.commission.findMany.mockResolvedValue([]); // no commission row at all — must not block a booking-only business
+
+      const result = await service.listPendingBusinesses();
+
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          businessId: 'b1',
+          tradeName: 'Peluquería Canina',
+          bookingsCount: 2,
+          orderAmount: 0,
+          bookingAmount: 55, // price + tax, serviceFee excluded
+          amount: 55,
+        }),
+      ]);
+      expect(result.total).toBe(55);
+    });
+
+    it('never lets a booking amount include the serviceFee, even when the config has a nonzero one', async () => {
+      prisma.order.groupBy.mockResolvedValue([]);
+      // groupBy _sum only ever includes price/tax by construction (see the service) — this test
+      // pins that contract: a booking with a real serviceFee still only ever contributes price+tax.
+      prisma.booking.groupBy.mockResolvedValue([
+        { businessId: 'b1', _sum: { price: new Prisma.Decimal('100'), tax: new Prisma.Decimal('10') }, _count: { _all: 1 } },
+      ]);
+      prisma.business.findMany.mockResolvedValue([{ id: 'b1', tradeName: 'Spa de Mascotas' }]);
+      prisma.commission.findMany.mockResolvedValue([]);
+
+      const result = await service.listPendingBusinesses();
+
+      expect(result.items[0].bookingAmount).toBe(110);
+      expect(prisma.booking.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ _sum: { price: true, tax: true } }),
+      );
+    });
   });
 
   describe('markBusinessesPaid', () => {
@@ -317,6 +363,126 @@ describe('PayoutsService', () => {
     it('refuses without a live commission rate rather than guessing one', async () => {
       prisma.commission.findFirst.mockResolvedValue(null);
       await expect(service.markBusinessOrdersPaid('b1', ['o1'])).rejects.toThrow('tasa de comisión vigente');
+    });
+  });
+
+  describe('getBusinessBookingsPending — service bookings, no commission concept', () => {
+    it('lists individual pending card-paid bookings with price/tax/withheld serviceFee shown separately', async () => {
+      prisma.booking.findMany.mockResolvedValue([
+        {
+          id: 'bk1',
+          price: new Prisma.Decimal('50'),
+          tax: new Prisma.Decimal('5'),
+          serviceFee: new Prisma.Decimal('3'),
+          status: 'COMPLETED',
+          createdAt: new Date('2026-01-01'),
+          service: { name: 'Baño y corte' },
+        },
+      ]);
+      const result = await service.getBusinessBookingsPending('b1');
+      expect(prisma.booking.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            businessId: 'b1',
+            payoutId: null,
+            payment: { is: { status: 'PAID', provider: { not: 'CASH' } } },
+          }),
+        }),
+      );
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({ id: 'bk1', serviceName: 'Baño y corte', price: 50, tax: 5, serviceFee: 3, amount: 55 }),
+      );
+      expect(result.total).toBe(55);
+    });
+
+    it('never includes the serviceFee in the pending total, only price + tax', async () => {
+      prisma.booking.findMany.mockResolvedValue([
+        { id: 'bk1', price: new Prisma.Decimal('100'), tax: new Prisma.Decimal('10'), serviceFee: new Prisma.Decimal('20'), status: 'COMPLETED', createdAt: new Date(), service: { name: 'X' } },
+      ]);
+      const result = await service.getBusinessBookingsPending('b1');
+      expect(result.total).toBe(110); // never 130
+    });
+  });
+
+  describe('getBusinessBookingsPaidHistory', () => {
+    it('lists past booking-sourced payouts for that business', async () => {
+      prisma.payout.findMany.mockResolvedValue([
+        { id: 'p1', amount: new Prisma.Decimal('55'), paidAt: new Date('2026-01-02'), referenceNumber: null, _count: { bookings: 1 } },
+      ]);
+      const result = await service.getBusinessBookingsPaidHistory('b1');
+      expect(prisma.payout.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ businessId: 'b1', bookings: { some: {} } }) }),
+      );
+      expect(result).toEqual([{ id: 'p1', amount: 55, paidAt: new Date('2026-01-02'), referenceNumber: null, bookingsCount: 1 }]);
+    });
+  });
+
+  describe('markBusinessBookingItemsPaid — item-level, single business, never requires a commission rate', () => {
+    it('pays exactly the selected bookings for price + tax, excluding the serviceFee', async () => {
+      prisma.booking.findMany.mockResolvedValue([
+        { id: 'bk1', price: new Prisma.Decimal('50'), tax: new Prisma.Decimal('5'), createdAt: new Date('2026-01-01') },
+      ]);
+      prisma.payout.create.mockResolvedValue({ id: 'p1' });
+      prisma.booking.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.markBusinessBookingItemsPaid('b1', ['bk1'], 'REF-9');
+
+      expect(prisma.commission.findFirst).not.toHaveBeenCalled(); // bookings never need a commission rate
+      expect(prisma.payout.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ businessId: 'b1', referenceNumber: 'REF-9' }) }),
+      );
+      expect(Number(prisma.payout.create.mock.calls[0][0].data.amount)).toBeCloseTo(55);
+      expect(prisma.booking.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['bk1'] }, payoutId: null },
+        data: { payoutId: 'p1' },
+      });
+      expect(result).toEqual({ payoutId: 'p1', amount: 55, bookingsCount: 1 });
+    });
+
+    it('rejects if none of the selected bookings are actually still pending', async () => {
+      prisma.booking.findMany.mockResolvedValue([]);
+      await expect(service.markBusinessBookingItemsPaid('b1', ['bk1'])).rejects.toThrow('ya no están pendientes');
+    });
+
+    it('never includes a CASH-paid booking, even if selected', async () => {
+      // A CASH booking would never match CARD_PAID_BOOKING_WHERE in the underlying query — the
+      // mock simulates that by returning nothing for it.
+      prisma.booking.findMany.mockResolvedValue([]);
+      await expect(service.markBusinessBookingItemsPaid('b1', ['cash-booking-1'])).rejects.toThrow('ya no están pendientes');
+      expect(prisma.booking.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ payment: { is: { status: 'PAID', provider: { not: 'CASH' } } } }),
+        }),
+      );
+    });
+  });
+
+  describe('markBusinessBookingsPaid — whole balance, never requires a commission rate', () => {
+    it('creates a PAID payout for price+tax across all pending bookings and stamps payoutId', async () => {
+      const createdAt = new Date('2026-02-01');
+      prisma.booking.findMany.mockResolvedValue([
+        { id: 'bk1', price: new Prisma.Decimal('50'), tax: new Prisma.Decimal('5'), createdAt },
+        { id: 'bk2', price: new Prisma.Decimal('30'), tax: new Prisma.Decimal('0'), createdAt },
+      ]);
+      prisma.payout.create.mockResolvedValue({ id: 'payoutB1' });
+      prisma.booking.updateMany.mockResolvedValue({ count: 2 });
+
+      const result = await service.markBusinessBookingsPaid(['b1']);
+
+      expect(prisma.commission.findFirst).not.toHaveBeenCalled();
+      expect(Number(prisma.payout.create.mock.calls[0][0].data.amount)).toBeCloseTo(85);
+      expect(prisma.booking.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['bk1', 'bk2'] }, payoutId: null },
+        data: { payoutId: 'payoutB1' },
+      });
+      expect(result).toEqual({ paidCount: 1, totalPaid: 85, payouts: [{ businessId: 'b1', amount: 85, payoutId: 'payoutB1' }] });
+    });
+
+    it('is idempotent — a business with no outstanding bookings is skipped', async () => {
+      prisma.booking.findMany.mockResolvedValue([]);
+      const result = await service.markBusinessBookingsPaid(['b1']);
+      expect(result).toEqual({ paidCount: 0, totalPaid: 0, payouts: [] });
+      expect(prisma.payout.create).not.toHaveBeenCalled();
     });
   });
 

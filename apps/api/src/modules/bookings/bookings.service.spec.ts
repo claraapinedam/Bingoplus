@@ -1,10 +1,11 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { BookingStatus, BusinessStatus, PaymentStatus } from '@prisma/client';
+import { BookingStatus, BusinessStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { BookingsService } from './bookings.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentService } from '../payments/payment.service';
+import { PricingConfigService } from '../pricing/pricing-config.service';
 import { BookingSlotUnavailableException } from '../../common/exceptions/booking-slot-unavailable.exception';
 
 const DOG_SPECIES = { id: 'species-dog', slug: 'dog', name: 'Perro' };
@@ -54,6 +55,7 @@ describe('BookingsService', () => {
   let pets: any;
   let notifications: any;
   let payments: any;
+  let pricingConfig: any;
 
   beforeEach(() => {
     prisma = {
@@ -76,11 +78,16 @@ describe('BookingsService', () => {
     pets = { get: jest.fn() };
     notifications = { notify: jest.fn().mockResolvedValue(undefined) };
     payments = { createPayment: jest.fn(), confirmPayment: jest.fn() };
+    // Zero fees/tax by default — most create() tests aren't about the checkout breakdown, so they
+    // should keep seeing price === total unless a test explicitly sets a nonzero config (see
+    // "create — checkout breakdown (tax/serviceFee/total)" below).
+    pricingConfig = { get: jest.fn().mockResolvedValue({ serviceFeePercent: 0, serviceFeeFixed: 0, defaultTaxPercent: 0 }) };
     service = new BookingsService(
       prisma as unknown as PrismaService,
       pets as unknown as PetsService,
       notifications as unknown as NotificationService,
       payments as unknown as PaymentService,
+      pricingConfig as unknown as PricingConfigService,
     );
   });
 
@@ -242,6 +249,59 @@ describe('BookingsService', () => {
     });
   });
 
+  describe('create — checkout breakdown (tax/serviceFee/total)', () => {
+    beforeEach(() => {
+      prisma.booking.findUnique.mockResolvedValue(null);
+      pets.get.mockResolvedValue({ id: 'pet-1', speciesId: DOG_SPECIES.id, species: DOG_SPECIES, birthDate: null });
+      prisma.booking.count.mockResolvedValue(0);
+      prisma.booking.create.mockImplementation(({ data }: any) =>
+        Promise.resolve({ id: 'new-booking', ...data, service: { name: 'Baño' }, user: { firstName: 'Ana' } }),
+      );
+    });
+
+    it('with a zero PricingConfiguration, freezes tax=0/serviceFee=0/total=price (unchanged checkout behavior)', async () => {
+      prisma.service.findUnique.mockResolvedValue(baseService); // price: 20
+      await service.create('user-1', baseDto as any);
+      const data = prisma.booking.create.mock.calls[0][0].data;
+      expect(Number(data.price)).toBe(20);
+      expect(Number(data.tax)).toBe(0);
+      expect(Number(data.serviceFee)).toBe(0);
+      expect(Number(data.total)).toBe(20);
+    });
+
+    it('charges price × defaultTaxPercent for tax and the shared serviceFee formula (price × serviceFeePercent + serviceFeeFixed) for serviceFee, summed into total', async () => {
+      pricingConfig.get.mockResolvedValue({ serviceFeePercent: 0.05, serviceFeeFixed: 1, defaultTaxPercent: 0.15 });
+      prisma.service.findUnique.mockResolvedValue(baseService); // price: 20
+      await service.create('user-1', baseDto as any);
+      const data = prisma.booking.create.mock.calls[0][0].data;
+      expect(Number(data.price)).toBe(20);
+      expect(Number(data.tax)).toBeCloseTo(3); // 20 × 0.15
+      expect(Number(data.serviceFee)).toBeCloseTo(2); // 20 × 0.05 + 1
+      expect(Number(data.total)).toBeCloseTo(25); // 20 + 3 + 2
+    });
+
+    it('for a DAYCARE/BOARDING booking, computes tax/serviceFee off the already-multiplied price (service.price × billable days), never the raw per-day rate', async () => {
+      pricingConfig.get.mockResolvedValue({ serviceFeePercent: 0, serviceFeeFixed: 0, defaultTaxPercent: 0.1 });
+      const monday = futureMondayDateString();
+      prisma.service.findUnique.mockResolvedValue({
+        ...baseService,
+        type: 'DAYCARE',
+        price: 10,
+        operatingDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+      });
+      await service.create('user-1', {
+        ...baseDto,
+        date: monday,
+        checkOutDate: addDaysToDateString(monday, 3), // mon, tue, wed → 3 billable days × $10
+        startTime: undefined,
+      } as any);
+      const data = prisma.booking.create.mock.calls[0][0].data;
+      expect(Number(data.price)).toBe(30);
+      expect(Number(data.tax)).toBeCloseTo(3); // 30 × 0.1, not 10 × 0.1
+      expect(Number(data.total)).toBeCloseTo(33);
+    });
+  });
+
   describe('listForBusiness — date filtering', () => {
     it('with no date/from/to, returns everything for the business (the "ver todas" case)', async () => {
       await service.listForBusiness('biz-1', {} as any);
@@ -393,7 +453,9 @@ describe('BookingsService', () => {
       } as any);
 
       expect(result.billableDays).toBe(5);
-      expect(result.price).toBe(100); // 5 days * 20
+      // price is now a Prisma.Decimal (frozen alongside tax/serviceFee/total — see
+      // BookingsService.create), never a raw number, hence Number(...) here.
+      expect(Number(result.price)).toBe(100); // 5 days * 20
     });
 
     it('still enforces capacity across the whole stay, same as a time slot', async () => {
@@ -820,6 +882,13 @@ describe('BookingsService', () => {
       businessId: 'biz-1',
       status: BookingStatus.CONFIRMED,
       price: 50,
+      // Simulates a booking whose tax/serviceFee were frozen at creation time (see
+      // BookingsService.create) — total = 50 + 5 tax + 2 serviceFee = 57. The card checkout must
+      // charge this, never `price` alone; the cash flow (see chooseCashPayment tests below) still
+      // charges just `price`.
+      tax: 5,
+      serviceFee: 2,
+      total: 57,
       payment: null as any,
       service: { name: 'Baño' },
       business: { tradeName: 'Negocio X' },
@@ -845,11 +914,11 @@ describe('BookingsService', () => {
         expect(payments.createPayment).not.toHaveBeenCalled();
       });
 
-      it('creates a card payment once the booking is CONFIRMED', async () => {
+      it('creates a card payment for price + tax + serviceFee (booking.total), never price alone, once the booking is CONFIRMED', async () => {
         prisma.booking.findUnique.mockResolvedValue(confirmedCustomerBooking);
         payments.createPayment.mockResolvedValue({ id: 'pay-1', provider: 'sandbox', status: PaymentStatus.PENDING });
         const result = await service.createBookingPayment('user-1', 'b1', 'idem-1');
-        expect(payments.createPayment).toHaveBeenCalledWith(prisma, { bookingId: 'b1' }, 50, 'USD', 'idem-1');
+        expect(payments.createPayment).toHaveBeenCalledWith(prisma, { bookingId: 'b1' }, 57, 'USD', 'idem-1');
         expect(result).toEqual(expect.objectContaining({ id: 'pay-1' }));
       });
 

@@ -78,4 +78,31 @@ export class AdminPayoutsController {
   updateReference(@Param('payoutId') payoutId: string, @Body() dto: UpdatePayoutReferenceDto) {
     return this.payouts.updatePayoutReference(payoutId, dto.referenceNumber);
   }
+
+  // ── Businesses — service bookings (card-paid only, no commission, service fee withheld) ──────
+  // Routed under a distinct top-level segment ('business-bookings', not 'businesses/...') so it
+  // can never collide with the ':businessId' param routes above (e.g. 'businesses/bookings/pending'
+  // would otherwise be swallowed as businessId="bookings"). See PayoutsService for the full design.
+
+  @Get('business-bookings/:businessId/pending')
+  getBusinessBookingsPending(@Param('businessId') businessId: string) {
+    return this.payouts.getBusinessBookingsPending(businessId);
+  }
+
+  @Get('business-bookings/:businessId/history')
+  getBusinessBookingsPaidHistory(@Param('businessId') businessId: string) {
+    return this.payouts.getBusinessBookingsPaidHistory(businessId);
+  }
+
+  @Audit('payout.business_bookings.mark_items_paid', 'Payout')
+  @Post('business-bookings/:businessId/mark-paid')
+  markBusinessBookingItemsPaid(@Param('businessId') businessId: string, @Body() dto: MarkPayoutItemsPaidDto) {
+    return this.payouts.markBusinessBookingItemsPaid(businessId, dto.ids, dto.referenceNumber);
+  }
+
+  @Audit('payout.business_bookings.mark_paid', 'Payout')
+  @Post('business-bookings/mark-paid')
+  markBusinessBookingsPaid(@CurrentUser() admin: AuthenticatedUser, @Body() dto: MarkPayoutsPaidDto) {
+    return this.payouts.markBusinessBookingsPaid(dto.ids, admin.id);
+  }
 }
