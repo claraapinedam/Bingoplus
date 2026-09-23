@@ -7,6 +7,7 @@ import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import RatingStars from '@/components/RatingStars';
 import { apiFetch, ApiError } from '@/lib/api';
+import { connectSocket } from '@/lib/socket';
 import {
   API_ERROR_MESSAGES,
   CUSTOMER_CANCELLABLE_STATUSES,
@@ -23,6 +24,11 @@ interface OrderItem {
   quantity: number;
   unitPrice: string | number;
   subtotal: string | number;
+}
+
+interface DeliveryInfo {
+  id: string;
+  status: string;
 }
 
 interface OrderDetail {
@@ -62,6 +68,7 @@ export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [order, setOrder] = useState<OrderDetail | null | undefined>(undefined);
+  const [delivery, setDelivery] = useState<DeliveryInfo | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,10 +92,34 @@ export default function OrderDetailPage() {
       .catch(() => undefined);
   }, [params.id]);
 
+  // Order.status alone can't show a cancelled delivery — once an Order reaches READY_FOR_PICKUP,
+  // OrderStateMachine has no transition to CANCELLED (a Delivery is cancelled independently, at
+  // the Delivery level). Without this, an admin-cancelled delivery was completely invisible here:
+  // this page kept showing "Listo para retirar" forever with no indication anything changed.
+  const loadDelivery = useCallback(() => {
+    apiFetch<DeliveryInfo>(`/orders/${params.id}/delivery`)
+      .then(setDelivery)
+      .catch(() => setDelivery(null));
+  }, [params.id]);
+
   useEffect(() => {
     load();
     loadReviewContext();
-  }, [load, loadReviewContext]);
+    loadDelivery();
+  }, [load, loadReviewContext, loadDelivery]);
+
+  useEffect(() => {
+    if (!delivery?.id) return;
+    const socket = connectSocket();
+    if (!socket) return;
+    socket.emit('subscribe:delivery', { deliveryId: delivery.id });
+    const onUpdate = () => loadDelivery();
+    socket.on('delivery.status.updated', onUpdate);
+    return () => {
+      socket.emit('unsubscribe:delivery', { deliveryId: delivery.id });
+      socket.off('delivery.status.updated', onUpdate);
+    };
+  }, [delivery?.id, loadDelivery]);
 
   async function submitReview() {
     if (businessRating === 0 && riderRating === 0) return;
@@ -178,6 +209,10 @@ export default function OrderDetailPage() {
         {order.status === 'CANCELLED' ? (
           <div className="bingo-error-banner" style={{ marginTop: 10 }}>
             Este pedido fue cancelado{order.cancelReason ? `: ${order.cancelReason}` : '.'}
+          </div>
+        ) : delivery?.status === 'CANCELLED' ? (
+          <div className="bingo-error-banner" style={{ marginTop: 10 }}>
+            La entrega de este pedido fue cancelada. Contacta a soporte si esperabas recibirlo.
           </div>
         ) : currentStepIndex >= 0 ? (
           <div className="bingo-card" style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between' }}>

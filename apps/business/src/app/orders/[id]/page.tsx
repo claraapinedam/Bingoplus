@@ -166,6 +166,15 @@ export default function BusinessOrderDetailPage() {
             Cancelado: {order.cancelReason}
           </div>
         )}
+        {/* Order.status can never itself become CANCELLED once it reaches READY_FOR_PICKUP (see
+            OrderStateMachine) — a cancelled Delivery is the only signal, so it needs its own,
+            equally prominent banner rather than being buried in the delivery info card below,
+            where the badge above would keep saying "Listo para retirar" forever otherwise. */}
+        {delivery?.status === 'CANCELLED' && (
+          <div className="bingo-error-banner" style={{ marginTop: 10 }}>
+            La entrega fue cancelada.
+          </div>
+        )}
 
         <h2 className="bingo-section-title">Productos</h2>
         <div className="bingo-card">

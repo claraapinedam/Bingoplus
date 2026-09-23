@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { DeliveryAssignmentAction, DeliveryAssignmentSource, DeliveryStatus, RiderAvailabilityStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryStateMachine } from './delivery-state-machine';
+import { DeliveryGateway } from './delivery.gateway';
 
 export type DeliveryCancellationActor = 'RIDER' | 'ADMIN' | 'SYSTEM';
 
@@ -17,6 +18,7 @@ export class DeliveryCancellationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stateMachine: DeliveryStateMachine,
+    private readonly gateway: DeliveryGateway,
   ) {}
 
   async cancel(deliveryId: string, actor: DeliveryCancellationActor, reason?: string) {
@@ -31,7 +33,7 @@ export class DeliveryCancellationService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const cancelled = await this.prisma.$transaction(async (tx) => {
       await tx.delivery.update({
         where: { id: deliveryId },
         data: { status: DeliveryStatus.CANCELLED, cancelledAt: new Date() },
@@ -53,5 +55,14 @@ export class DeliveryCancellationService {
       }
       return tx.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
     });
+
+    // Order.status structurally can't reflect this (OrderStateMachine has no transition out of
+    // READY_FOR_PICKUP other than COMPLETED — see its own header comment), so this push is the
+    // only realtime signal the customer/business tracking screens get. Without it, cancelling a
+    // delivery was invisible to both until they happened to reload — no exception thrown, just
+    // silence (this class never had a DeliveryGateway dependency at all before).
+    this.gateway.emitStatusUpdated(deliveryId, DeliveryStatus.CANCELLED);
+
+    return cancelled;
   }
 }
