@@ -2,6 +2,7 @@ import { BadRequestException, HttpException, Injectable, NotFoundException } fro
 import {
   BusinessCapabilityType,
   BusinessMembershipStatus,
+  BusinessOnlineOverride,
   BusinessStatus,
   BusinessUserRole,
   MembershipPlanStatus,
@@ -9,7 +10,7 @@ import {
   RoleName,
   ServiceLocationType,
 } from '@prisma/client';
-import { resolvePagination } from '@bingoplus/utils';
+import { getBusinessOnlineStatus, resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ApplyBusinessDto } from './dto/apply-business.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
@@ -226,6 +227,9 @@ export class BusinessesService {
       capabilities: capabilityMap,
       couponSummary,
       hasPhysicalLocation,
+      // Surfaced so the store page can explain up front why "Agregar al carrito" is about to fail
+      // (CartService/CheckoutService enforce the real gate — this is display only).
+      onlineStatus: getBusinessOnlineStatus(business.openingHours, business.manualOverride),
     };
   }
 
@@ -398,7 +402,16 @@ export class BusinessesService {
     if (!business) throw new NotFoundException('Business not found');
     const capabilities = await this.capabilities.getMap(businessId);
     const { species, categories, ...rest } = business;
-    return { ...rest, species: (species ?? []).map((s) => s.species), categories: (categories ?? []).map((c) => c.category), capabilities };
+    return {
+      ...rest,
+      species: (species ?? []).map((s) => s.species),
+      categories: (categories ?? []).map((c) => c.category),
+      capabilities,
+      // Same computation the connect/disconnect toggle and checkout gate both read — included here
+      // too so the Business App's one profile fetch (DashboardShell) has what it needs to render
+      // the toggle without a second round-trip.
+      onlineStatus: getBusinessOnlineStatus(business.openingHours, business.manualOverride),
+    };
   }
 
   update(businessId: string, dto: UpdateBusinessDto) {
@@ -407,6 +420,25 @@ export class BusinessesService {
 
   getCapabilities(businessId: string) {
     return this.capabilities.getMap(businessId);
+  }
+
+  /**
+   * The business's own connect/disconnect toggle (distinct from admin-controlled BusinessStatus —
+   * see the schema comment on Business.manualOverride). `override: null` clears back to
+   * "automático" (follow openingHours); ONLINE/OFFLINE forces that state until changed again — no
+   * auto-expiry, see the persistence-choice comment on the schema field for why.
+   */
+  async setOnlineOverride(businessId: string, override: BusinessOnlineOverride | null) {
+    const business = await this.prisma.business.update({
+      where: { id: businessId },
+      data: { manualOverride: override ?? null, manualOverrideAt: new Date() },
+      select: { openingHours: true, manualOverride: true, manualOverrideAt: true },
+    });
+    return {
+      manualOverride: business.manualOverride,
+      manualOverrideAt: business.manualOverrideAt,
+      ...getBusinessOnlineStatus(business.openingHours, business.manualOverride),
+    };
   }
 
   /**

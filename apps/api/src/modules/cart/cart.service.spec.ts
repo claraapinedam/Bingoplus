@@ -73,5 +73,65 @@ describe('CartService', () => {
         service.addItem('user-1', { productId: 'p1', quantity: 1 } as any),
       ).rejects.toBeInstanceOf(ConflictException);
     });
+
+    // The connect/disconnect toggle — checked at add-to-cart time too, not just at checkout, same
+    // reasoning as the SELLS_PRODUCTS check right above it in the service.
+    describe('connect/disconnect toggle', () => {
+      it('rejects a manually OFFLINE business even though it is ACTIVE and otherwise sellable', async () => {
+        prisma.product.findUnique.mockResolvedValue({
+          ...activeProduct,
+          business: { status: BusinessStatus.ACTIVE, deletedAt: null, openingHours: null, manualOverride: 'OFFLINE' },
+        });
+        const err = await service
+          .addItem('user-1', { productId: 'p1', quantity: 1 } as any)
+          .catch((e: any) => e);
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect(err.getResponse()).toMatchObject({ error: { code: 'BUSINESS_OFFLINE' } });
+      });
+
+      it('rejects when no override is set but the configured schedule says closed right now', async () => {
+        const closedAllDay = { open: '00:00', close: '00:01' };
+        prisma.product.findUnique.mockResolvedValue({
+          ...activeProduct,
+          business: {
+            status: BusinessStatus.ACTIVE,
+            deletedAt: null,
+            manualOverride: null,
+            openingHours: {
+              sun: closedAllDay, mon: closedAllDay, tue: closedAllDay, wed: closedAllDay,
+              thu: closedAllDay, fri: closedAllDay, sat: closedAllDay,
+            },
+          },
+        });
+        const err = await service
+          .addItem('user-1', { productId: 'p1', quantity: 1 } as any)
+          .catch((e: any) => e);
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect(err.getResponse()).toMatchObject({ error: { code: 'BUSINESS_OFFLINE' } });
+      });
+
+      it('allows adding to cart when a manual ONLINE override is set, even outside configured hours', async () => {
+        const closedAllDay = { open: '00:00', close: '00:01' };
+        prisma.product.findUnique.mockResolvedValue({
+          ...activeProduct,
+          business: {
+            status: BusinessStatus.ACTIVE,
+            deletedAt: null,
+            manualOverride: 'ONLINE',
+            openingHours: {
+              sun: closedAllDay, mon: closedAllDay, tue: closedAllDay, wed: closedAllDay,
+              thu: closedAllDay, fri: closedAllDay, sat: closedAllDay,
+            },
+          },
+        });
+        prisma.cart.findUnique.mockResolvedValue(null);
+        prisma.cart.create.mockResolvedValue({ id: 'cart-1', userId: 'user-1', businessId: 'biz-1' });
+        prisma.cartItem.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.addItem('user-1', { productId: 'p1', quantity: 1 } as any),
+        ).resolves.toBeDefined();
+      });
+    });
   });
 });

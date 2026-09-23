@@ -28,6 +28,16 @@ export const DIRECTORY_DEPENDENT_CAPABILITIES: (keyof CapabilityMap)[] = ['SERVI
 /** PICKUP/DELIVERY are fulfillment options for products — hidden while SELLS_PRODUCTS is off. */
 export const PRODUCTS_DEPENDENT_CAPABILITIES: (keyof CapabilityMap)[] = ['PICKUP', 'DELIVERY'];
 
+/** Mirrors @bingoplus/utils' BusinessOnlineStatus — see getBusinessOnlineStatus's own doc comment
+ * for what `source`/`isOpenNow` mean; this is the same shape BusinessesService.getOne() computes
+ * server-side and hands back as-is. */
+export interface BusinessOnlineStatus {
+  online: boolean;
+  source: 'MANUAL' | 'SCHEDULE';
+  isOpenNow: boolean | null;
+  closesAt: string | null;
+}
+
 export interface BusinessProfile {
   id: string;
   tradeName: string;
@@ -45,10 +55,22 @@ export interface BusinessProfile {
   reviewCount: number;
   categories: { id: string; name: string; slug: string }[];
   capabilities: CapabilityMap;
+  manualOverride: 'ONLINE' | 'OFFLINE' | null;
+  onlineStatus: BusinessOnlineStatus;
 }
 
 export function getBusinessProfile(businessId: string) {
   return apiFetch<BusinessProfile>(`/me/business/${businessId}`);
+}
+
+/** The connect/disconnect toggle — `override: null` clears back to "automático" (follow
+ * `openingHours`); 'ONLINE'/'OFFLINE' forces that state until changed again (no auto-expiry, see
+ * the persistence comment on Business.manualOverride in the API's schema.prisma). */
+export function setBusinessOnlineOverride(businessId: string, override: 'ONLINE' | 'OFFLINE' | null) {
+  return apiFetch<{ manualOverride: 'ONLINE' | 'OFFLINE' | null; manualOverrideAt: string | null } & BusinessOnlineStatus>(
+    `/me/business/${businessId}/online-status`,
+    { method: 'PATCH', body: JSON.stringify({ override }) },
+  );
 }
 
 export interface BusinessContract {

@@ -261,6 +261,15 @@ enum BusinessStatus {
   ACTIVE
 }
 
+// Business.manualOverride — the business's own connect/disconnect toggle, entirely separate from
+// BusinessStatus above (account standing, admin-controlled). Two values only, never a third
+// "AUTO" member: "follow the schedule" is represented by the field being null, not by a value of
+// this enum, so "no override" and "override" can never both make sense to store at once.
+enum BusinessOnlineOverride {
+  ONLINE
+  OFFLINE
+}
+
 model BusinessCategory {
   id   String  @id @default(cuid())
   name String
@@ -301,6 +310,21 @@ model Business {
   // nullable so every date computed against this business (availability, bookings, reminders,
   // promotions) always has an unambiguous zone instead of silently falling back to server time.
   timezone           String                                 @default("America/Guayaquil")
+  // Connect/disconnect toggle (business-self-service, unrelated to `status` below which is
+  // admin-controlled account standing). null = "sigue el horario automáticamente" — effective
+  // online/offline is computed on read as: manualOverride if set, else getOpeningStatus(openingHours)
+  // via getBusinessOnlineStatus() in @bingoplus/utils. A manual override PERSISTS until the business
+  // explicitly changes it again (including an explicit "volver a automático" action that resets this
+  // to null) — it does NOT auto-expire at the next schedule boundary or at end of day. Chosen over
+  // auto-expiry because it's the simpler, more predictable contract: "off means off until you say
+  // otherwise" avoids a business believing they're still closed/open only to have it silently flip
+  // under them at a boundary they didn't watch for.
+  manualOverride     BusinessOnlineOverride?
+  // When manualOverride was last set (including to null, i.e. the moment "volver a automático" was
+  // pressed) — informational only, nothing currently computes off of it, but every other manual
+  // state change in this codebase keeps a timestamp (e.g. BusinessDocument.reviewedAt) so this
+  // doesn't stay silent about when a business took control away from the schedule.
+  manualOverrideAt   DateTime?
   status             BusinessStatus                         @default(PENDING)
   ratingAvg          Float                                  @default(0)
   reviewCount        Int                                    @default(0)

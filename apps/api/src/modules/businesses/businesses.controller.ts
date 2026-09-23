@@ -9,6 +9,7 @@ import { ApplyBusinessDto } from './dto/apply-business.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { AddBusinessDocumentDto } from './dto/add-document.dto';
 import { ListMarketplaceQueryDto } from './dto/list-marketplace-query.dto';
+import { SetOnlineOverrideDto } from './dto/set-online-override.dto';
 import { SetCapabilityDto } from '../business-capabilities/dto/set-capability.dto';
 
 @ApiTags('public/business-categories')
@@ -110,5 +111,13 @@ export class BusinessesController {
   @Patch(':businessId/capabilities')
   setCapability(@Param('businessId') businessId: string, @Body() dto: SetCapabilityDto) {
     return this.businessesService.setOperationalCapability(businessId, dto.capability, dto.enabled);
+  }
+
+  // The connect/disconnect toggle itself — only meaningful for an operating (ACTIVE) business, same
+  // guard pairing as capabilities above.
+  @UseGuards(BusinessOwnershipGuard, BusinessActiveGuard)
+  @Patch(':businessId/online-status')
+  setOnlineStatus(@Param('businessId') businessId: string, @Body() dto: SetOnlineOverrideDto) {
+    return this.businessesService.setOnlineOverride(businessId, dto.override ?? null);
   }
 }

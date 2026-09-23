@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch, clearTokens, getAccessToken, getActiveBusinessId } from '@/lib/api';
 import { getBusinessProfile, getBusinessContract, BusinessContract, BusinessProfile, CapabilityMap } from '@/lib/business';
 import NewOrderAlerts from './NewOrderAlerts';
+import OnlineStatusToggle from './OnlineStatusToggle';
 
 interface BusinessContextValue {
   business: BusinessProfile;
@@ -251,6 +252,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
           </div>
         </aside>
         <main className="dashboard-main">
+          {/* Always visible while the dashboard is showing — same "always mounted, not tied to one
+              page" reasoning as NewOrderAlerts above, so the business can see and flip its
+              connect/disconnect status from anywhere, not just a dedicated settings screen. */}
+          <OnlineStatusToggle business={business} onChanged={load} />
           {pendingContract && pathname !== '/contract' && (
             <div
               className="bingo-card"

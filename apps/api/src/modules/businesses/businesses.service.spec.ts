@@ -488,4 +488,50 @@ describe('BusinessesService', () => {
       });
     });
   });
+
+  describe('connect/disconnect toggle', () => {
+    const businessRow = {
+      id: 'b1',
+      tradeName: 'Biz',
+      openingHours: null,
+      manualOverride: null,
+      manualOverrideAt: null,
+      categories: [],
+      documents: [],
+      species: [],
+    };
+
+    it('getOne() includes the computed effective onlineStatus alongside the record', async () => {
+      prisma.business.findUnique.mockResolvedValue({ ...businessRow, manualOverride: 'OFFLINE' });
+
+      const result = await service.getOne('b1');
+
+      expect(result.onlineStatus).toMatchObject({ online: false, source: 'MANUAL' });
+    });
+
+    it('setOnlineOverride(ONLINE) persists the override and its timestamp, and returns the new effective status', async () => {
+      prisma.business.update.mockResolvedValue({ openingHours: null, manualOverride: 'ONLINE' });
+
+      const result = await service.setOnlineOverride('b1', 'ONLINE' as any);
+
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { manualOverride: 'ONLINE', manualOverrideAt: expect.any(Date) },
+        select: { openingHours: true, manualOverride: true, manualOverrideAt: true },
+      });
+      expect(result).toMatchObject({ manualOverride: 'ONLINE', online: true, source: 'MANUAL' });
+    });
+
+    it('setOnlineOverride(null) clears the override back to "automático" — still stamps manualOverrideAt (see schema comment: it records the moment control was handed back, too)', async () => {
+      prisma.business.update.mockResolvedValue({ openingHours: null, manualOverride: null });
+
+      await service.setOnlineOverride('b1', null);
+
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { manualOverride: null, manualOverrideAt: expect.any(Date) },
+        select: { openingHours: true, manualOverride: true, manualOverrideAt: true },
+      });
+    });
+  });
 });

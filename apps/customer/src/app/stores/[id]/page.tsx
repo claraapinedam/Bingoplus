@@ -26,6 +26,8 @@ interface BusinessDetail {
   /** False only for a Directory-only business that exclusively offers "servicio a domicilio" —
    * no premises of its own for a customer to visit, so the address/"Cómo llegar" don't apply. */
   hasPhysicalLocation: boolean;
+  /** Connect/disconnect status — display only, the real gate is server-side on add-to-cart/checkout. */
+  onlineStatus: { online: boolean; source: 'MANUAL' | 'SCHEDULE'; isOpenNow: boolean | null; closesAt: string | null };
 }
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
@@ -201,6 +203,11 @@ export default function StoreDetailPage() {
           {business.categories.map((c) => c.name).join(' · ')}
           {business.hasPhysicalLocation && ` · ${business.addressLine}, ${business.city}`}
         </div>
+        {!business.onlineStatus.online && business.capabilities.SELLS_PRODUCTS && (
+          <div className="bingo-badge" style={{ background: '#fdecea', color: 'var(--bingo-error)', marginTop: 6 }}>
+            🔴 Desconectado — no acepta pedidos en este momento
+          </div>
+        )}
         {business.hasPhysicalLocation && business.latitude != null && business.longitude != null && (
           <button
             className="bingo-button secondary small"

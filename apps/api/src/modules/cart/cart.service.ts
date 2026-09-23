@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { BusinessCapabilityType, BusinessStatus, ProductStatus } from '@prisma/client';
+import { getBusinessOnlineStatus } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CartBelongsToDifferentBusinessException } from '../../common/exceptions/cart-different-business.exception';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
@@ -43,6 +44,16 @@ export class CartService {
     }
     if (product.business.status !== BusinessStatus.ACTIVE || product.business.deletedAt) {
       throw new BadRequestException('This business is not currently accepting orders');
+    }
+    // Connect/disconnect toggle (manual override or, absent one, the business's own configured
+    // opening hours) — checked here too, not just at checkout, so a business that goes offline
+    // mid-session can't have new items added to a cart against it either (mirrors the
+    // SELLS_PRODUCTS check right below).
+    const onlineStatus = getBusinessOnlineStatus(product.business.openingHours, product.business.manualOverride);
+    if (!onlineStatus.online) {
+      throw new BadRequestException({
+        error: { code: 'BUSINESS_OFFLINE', message: 'This business is currently offline and not accepting orders.' },
+      });
     }
     // RULE 4: a business only participates in Marketplace (and therefore Cart/Checkout) while
     // SELLS_PRODUCTS is enabled — checked here, not just on the listing endpoints, so a business

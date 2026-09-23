@@ -54,6 +54,7 @@ export const PICKUP_PROGRESS_STEPS = ['PAID', 'CONFIRMED', 'PREPARING', 'READY_F
 export const API_ERROR_MESSAGES: Record<string, string> = {
   CART_EMPTY: 'Tu carrito está vacío.',
   BUSINESS_NOT_ACTIVE: 'Esta tienda ya no está aceptando pedidos.',
+  BUSINESS_OFFLINE: 'Esta tienda está desconectada en este momento.',
   BUSINESS_NOT_SELLING: 'Esta tienda ya no vende productos.',
   PRODUCT_UNAVAILABLE: 'Uno de los productos ya no está disponible.',
   PRODUCT_OUT_OF_STOCK: 'Uno de los productos ya no tiene stock suficiente.',

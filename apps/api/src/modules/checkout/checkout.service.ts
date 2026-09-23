@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BusinessCapabilityType, BusinessStatus, FulfillmentType, NotificationAudience, OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
+import { getBusinessOnlineStatus } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { PriceCalculationService, PriceableCartItem, DeliveryFareContext } from '../pricing/price-calculation.service';
@@ -274,6 +275,15 @@ export class CheckoutService {
     if (business.status !== BusinessStatus.ACTIVE || business.deletedAt) {
       throw new BadRequestException({
         error: { code: 'BUSINESS_NOT_ACTIVE', message: 'This business is not currently accepting orders.' },
+      });
+    }
+    // Re-checked here (not just when the item was first added to the cart) — a business can go
+    // offline, manually or via its own schedule, at any point between "add to cart" and "pay", and
+    // this runs both for the dry-run validate() and inside createPayment()'s own transaction, so
+    // neither path can slip through on a stale cart.
+    if (!getBusinessOnlineStatus(business.openingHours, business.manualOverride).online) {
+      throw new BadRequestException({
+        error: { code: 'BUSINESS_OFFLINE', message: 'This business is currently offline and not accepting orders.' },
       });
     }
 

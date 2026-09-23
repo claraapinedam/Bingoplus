@@ -84,6 +84,43 @@ export function getOpeningStatus(openingHours: unknown, now: Date = new Date()):
   return { isOpenNow, closesAt: isOpenNow ? formatHour(todayHours.close) : null };
 }
 
+/** Mirrors the Prisma `BusinessOnlineOverride` enum without importing @prisma/client into this
+ * package (kept dependency-free, plain-TS — see resolvePagination/haversineKm above for the same
+ * convention). null means "no override, follow the schedule automatically". */
+export type BusinessManualOverride = 'ONLINE' | 'OFFLINE' | null;
+
+export interface BusinessOnlineStatus {
+  /** The one effective yes/no the rest of the app should gate on. */
+  online: boolean;
+  /** Why `online` is what it is — a manual override in effect, or today's configured hours. */
+  source: 'MANUAL' | 'SCHEDULE';
+  /** The raw schedule read, kept alongside `online` so the UI can show "según el horario: ..."
+   * even while a manual override is what's actually deciding `online`. */
+  isOpenNow: boolean | null;
+  closesAt: string | null;
+}
+
+/**
+ * Connect/disconnect status for a business (product-order checkout gate + the Business App's own
+ * toggle) — a manual override always wins when set; otherwise falls back to the schedule via
+ * getOpeningStatus(). A business that has never configured `openingHours` at all (isOpenNow ===
+ * null) defaults to ONLINE rather than OFFLINE when there's no override: this feature must not
+ * silently block checkout for the many already-live businesses that never set hours, which worked
+ * (and were reachable) before this toggle existed. Configuring hours is what opts a business into
+ * the automatic close-outside-hours behavior — omitting them keeps today's pre-feature behavior.
+ */
+export function getBusinessOnlineStatus(
+  openingHours: unknown,
+  manualOverride: BusinessManualOverride,
+  now: Date = new Date(),
+): BusinessOnlineStatus {
+  const schedule = getOpeningStatus(openingHours, now);
+  if (manualOverride === 'ONLINE' || manualOverride === 'OFFLINE') {
+    return { online: manualOverride === 'ONLINE', source: 'MANUAL', isOpenNow: schedule.isOpenNow, closesAt: schedule.closesAt };
+  }
+  return { online: schedule.isOpenNow !== false, source: 'SCHEDULE', isOpenNow: schedule.isOpenNow, closesAt: schedule.closesAt };
+}
+
 export type DateRangePreset = 'today' | 'last_7_days' | 'last_30_days' | 'this_month' | 'last_month' | 'custom';
 
 export interface DateRangeParams {
