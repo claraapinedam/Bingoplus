@@ -26,7 +26,11 @@ import { AdminBusinessesController } from './admin-businesses.controller';
 import { AdminRidersController } from './admin-riders.controller';
 import { AdminDeliveryController } from '../delivery/admin-delivery.controller';
 import { AdminSettingsController } from './admin-settings.controller';
-import { AdminMembershipPlansController, AdminBusinessMembershipController } from './admin-memberships.controller';
+import {
+  AdminMembershipPlansController,
+  AdminBusinessMembershipController,
+  AdminMembershipPaymentsController,
+} from './admin-memberships.controller';
 import { AdminOrdersController } from './admin-orders.controller';
 import { AdminProductsController } from './admin-products.controller';
 import { AdminPaymentsController } from './admin-payments.controller';
@@ -73,6 +77,7 @@ import { AdminPayoutsController } from './admin-payouts.controller';
     AdminSettingsController,
     AdminMembershipPlansController,
     AdminBusinessMembershipController,
+    AdminMembershipPaymentsController,
     AdminOrdersController,
     AdminProductsController,
     AdminPaymentsController,

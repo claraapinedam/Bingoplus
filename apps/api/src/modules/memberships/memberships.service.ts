@@ -1,9 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AdminCouponStatus, BusinessMembershipStatus, MembershipPlanStatus } from '@prisma/client';
+import {
+  AdminCouponStatus,
+  BillingFrequency,
+  BusinessMembershipStatus,
+  MembershipPaymentStatus,
+  MembershipPlanStatus,
+  SubscriptionStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateMembershipPlanDto, UpdateMembershipPlanDto } from './dto/membership-plan.dto';
 
 const GOOD_STANDING: BusinessMembershipStatus[] = [BusinessMembershipStatus.TRIAL, BusinessMembershipStatus.ACTIVE];
+
+// Same "30-day month" convention redeemAdminCoupon already uses for FREE_MONTHS — never a
+// calendar-aware month, kept consistent rather than mixing two different notions of "a month".
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MONTH_MS = 30 * DAY_MS;
+const YEAR_MS = 365 * DAY_MS;
 
 /**
  * Membership → Subscription → Invoice is a financial domain kept separate from Marketplace
@@ -54,7 +67,11 @@ export class MembershipsService {
   getForBusiness(businessId: string) {
     return this.prisma.businessMembership.findUnique({
       where: { businessId },
-      include: { plan: true, subscriptions: { orderBy: { createdAt: 'desc' }, take: 5 } },
+      include: {
+        plan: true,
+        subscriptions: { orderBy: { createdAt: 'desc' }, take: 5 },
+        payments: { orderBy: { createdAt: 'desc' }, take: 10 },
+      },
     });
   }
 
@@ -181,6 +198,153 @@ export class MembershipsService {
           appliedValue: appliedValue as any,
         },
       });
+    });
+  }
+
+  // ── Membership payments (manual deposit + receipt, RULE: no card-charging infra exists yet) ──
+
+  private periodLengthMs(plan: { billingFrequency: BillingFrequency }): number {
+    return plan.billingFrequency === BillingFrequency.YEARLY ? YEAR_MS : MONTH_MS;
+  }
+
+  /**
+   * The period a business currently owes a payment for. No rollover engine writes
+   * currentPeriodStart/End automatically yet (see the model comment on MembershipPayment) — this
+   * only ever advances via MembershipPastDueSweeper's first-period initialization (trial -> its
+   * first due date) and verifyPayment below (once a period is actually paid). Falls back to
+   * treating the trial itself as the first "period" so a business can pay to convert out of TRIAL
+   * even before the sweeper has run.
+   */
+  private resolveDuePeriod(membership: {
+    createdAt: Date;
+    trialEndsAt: Date | null;
+    currentPeriodStart: Date | null;
+    currentPeriodEnd: Date | null;
+  }): { periodStart: Date; periodEnd: Date } {
+    if (membership.currentPeriodStart && membership.currentPeriodEnd) {
+      return { periodStart: membership.currentPeriodStart, periodEnd: membership.currentPeriodEnd };
+    }
+    if (membership.trialEndsAt) {
+      return { periodStart: membership.createdAt, periodEnd: membership.trialEndsAt };
+    }
+    return { periodStart: membership.createdAt, periodEnd: new Date() };
+  }
+
+  /** Business uploads a deposit receipt for its current due period — creates a PENDING
+   * MembershipPayment. Amount/period are always resolved from the membership/plan themselves,
+   * never taken from the client. Mirrors Refund's create-then-admin-completes shape. */
+  async submitPayment(businessId: string, submittedBy: string, receiptUrl: string) {
+    const membership = await this.prisma.businessMembership.findUnique({
+      where: { businessId },
+      include: { plan: true },
+    });
+    if (!membership) throw new NotFoundException('This business has no membership yet');
+
+    const alreadyPending = await this.prisma.membershipPayment.findFirst({
+      where: { membershipId: membership.id, status: MembershipPaymentStatus.PENDING },
+    });
+    if (alreadyPending) {
+      throw new BadRequestException('There is already a payment proof pending review for this membership.');
+    }
+
+    const { periodStart, periodEnd } = this.resolveDuePeriod(membership);
+
+    return this.prisma.membershipPayment.create({
+      data: {
+        membershipId: membership.id,
+        periodStart,
+        periodEnd,
+        amount: membership.plan.price,
+        currency: membership.plan.currency,
+        receiptUrl,
+        submittedBy,
+      },
+    });
+  }
+
+  listPayments(status?: MembershipPaymentStatus) {
+    return this.prisma.membershipPayment.findMany({
+      where: status ? { status } : undefined,
+      include: { membership: { include: { business: { select: { id: true, tradeName: true } }, plan: { select: { name: true } } } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getPayment(id: string) {
+    const payment = await this.prisma.membershipPayment.findUnique({
+      where: { id },
+      include: { membership: { include: { business: { select: { id: true, tradeName: true } }, plan: { select: { name: true } } } } },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    return payment;
+  }
+
+  /**
+   * Admin confirms the deposit actually happened (mirrors RefundService.completeManual exactly —
+   * no payment-provider call, this only records that it happened). This is what actually settles
+   * the period: it creates the real Subscription row for the period just paid (the only place in
+   * this codebase that ever writes a Subscription row — see the model-shape gap documented on
+   * MembershipPayment), advances BusinessMembership.currentPeriodStart/End to the next period, and
+   * clears any PAST_DUE (or TRIAL) back to ACTIVE — the "unblock access" half of the 5-day rule,
+   * enforced automatically everywhere MembershipsService.hasBenefit is consulted.
+   */
+  async verifyPayment(paymentId: string, reviewedBy: string) {
+    const payment = await this.prisma.membershipPayment.findUnique({
+      where: { id: paymentId },
+      include: { membership: { include: { plan: true } } },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status !== MembershipPaymentStatus.PENDING) {
+      throw new BadRequestException('This payment was already reviewed.');
+    }
+
+    const nextPeriodStart = payment.periodEnd;
+    const nextPeriodEnd = new Date(nextPeriodStart.getTime() + this.periodLengthMs(payment.membership.plan));
+
+    return this.prisma.$transaction(async (tx) => {
+      const subscription = await tx.subscription.create({
+        data: {
+          membershipId: payment.membershipId,
+          periodStart: payment.periodStart,
+          periodEnd: payment.periodEnd,
+          amount: payment.amount,
+          currency: payment.currency,
+          status: SubscriptionStatus.ACTIVE,
+        },
+      });
+
+      const updated = await tx.membershipPayment.update({
+        where: { id: paymentId },
+        data: {
+          status: MembershipPaymentStatus.VERIFIED,
+          reviewedBy,
+          reviewedAt: new Date(),
+          subscriptionId: subscription.id,
+        },
+      });
+
+      await tx.businessMembership.update({
+        where: { id: payment.membershipId },
+        data: {
+          status: BusinessMembershipStatus.ACTIVE,
+          currentPeriodStart: nextPeriodStart,
+          currentPeriodEnd: nextPeriodEnd,
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async rejectPayment(paymentId: string, reviewedBy: string, reason?: string) {
+    const payment = await this.prisma.membershipPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status !== MembershipPaymentStatus.PENDING) {
+      throw new BadRequestException('This payment was already reviewed.');
+    }
+    return this.prisma.membershipPayment.update({
+      where: { id: paymentId },
+      data: { status: MembershipPaymentStatus.REJECTED, reviewedBy, reviewedAt: new Date(), rejectionReason: reason },
     });
   }
 }
