@@ -80,6 +80,8 @@ export default function OrderDetailPage() {
   const [riderComment, setRiderComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [ratingModalAutoShown, setRatingModalAutoShown] = useState(false);
 
   const load = useCallback(() => {
     apiFetch<OrderDetail>(`/orders/${params.id}`)
@@ -119,6 +121,21 @@ export default function OrderDetailPage() {
     return () => clearInterval(interval);
   }, [order?.status, load]);
 
+  // The rating form previously only ever appeared as a section the customer had to scroll down
+  // and notice — pops up automatically the first time this page has everything it needs (the
+  // order just completed, review is possible, and nothing's been rated yet) instead. Only auto-
+  // opens once per visit to this page (ratingModalAutoShown) so dismissing it doesn't make it
+  // reappear on every poll/refetch while it's still eligible.
+  useEffect(() => {
+    if (ratingModalAutoShown || order?.status !== 'COMPLETED' || !reviewContext?.eligible) return;
+    const alreadyRated =
+      reviewContext.reviews.some((r) => r.targetType === 'BUSINESS') &&
+      (!reviewContext.rider || reviewContext.reviews.some((r) => r.targetType === 'RIDER'));
+    if (alreadyRated) return;
+    setShowRatingModal(true);
+    setRatingModalAutoShown(true);
+  }, [order?.status, reviewContext, ratingModalAutoShown]);
+
   useEffect(() => {
     if (!delivery?.id) return;
     const socket = connectSocket();
@@ -150,6 +167,9 @@ export default function OrderDetailPage() {
         }),
       });
       setReviewContext(context);
+      const stillNeedsRider = !!context.rider && !context.reviews.some((r) => r.targetType === 'RIDER');
+      const stillNeedsBusiness = !context.reviews.some((r) => r.targetType === 'BUSINESS');
+      if (!stillNeedsBusiness && !stillNeedsRider) setShowRatingModal(false);
     } catch (err) {
       setReviewError(err instanceof ApiError ? (API_ERROR_MESSAGES[err.code] ?? err.message) : 'No se pudo enviar la calificación.');
     } finally {
@@ -352,10 +372,53 @@ export default function OrderDetailPage() {
           const showRider = !!reviewContext.rider;
           const allDone = !!businessReview && (!showRider || !!riderReview);
 
+          if (allDone) {
+            return (
+              <>
+                <h2 className="bingo-section-title">Tu calificación</h2>
+                <div className="bingo-card" style={{ fontSize: 12, color: 'var(--bingo-success)' }}>¡Gracias por tu calificación!</div>
+              </>
+            );
+          }
+          if (!showRatingModal) {
+            return (
+              <button className="bingo-button" style={{ marginTop: 12 }} onClick={() => setShowRatingModal(true)}>
+                Calificar pedido
+              </button>
+            );
+          }
+
           return (
-            <>
-              <h2 className="bingo-section-title">Califica tu pedido</h2>
-              <div className="bingo-card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(23, 43, 77, 0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 100,
+                padding: 16,
+              }}
+              onClick={() => setShowRatingModal(false)}
+            >
+              <div
+                className="bingo-card"
+                style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 420, width: '100%', maxHeight: '85vh', overflowY: 'auto' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h2 className="bingo-section-title" style={{ margin: 0 }}>Califica tu pedido</h2>
+                  <button
+                    aria-label="Cerrar"
+                    onClick={() => setShowRatingModal(false)}
+                    style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8ea3' }}
+                  >
+                    ×
+                  </button>
+                </div>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{order.business.tradeName}</div>
                   {businessReview ? (
@@ -400,23 +463,20 @@ export default function OrderDetailPage() {
                   </div>
                 )}
 
-                {allDone && <div style={{ fontSize: 12, color: 'var(--bingo-success)' }}>¡Gracias por tu calificación!</div>}
                 {reviewError && <div className="bingo-error-banner">{reviewError}</div>}
 
-                {!allDone && (
-                  <button
-                    className="bingo-button"
-                    disabled={
-                      submittingReview ||
-                      ((!!businessReview || businessRating === 0) && (!!riderReview || !showRider || riderRating === 0))
-                    }
-                    onClick={submitReview}
-                  >
-                    {submittingReview ? 'Enviando…' : 'Enviar calificación'}
-                  </button>
-                )}
+                <button
+                  className="bingo-button"
+                  disabled={
+                    submittingReview ||
+                    ((!!businessReview || businessRating === 0) && (!!riderReview || !showRider || riderRating === 0))
+                  }
+                  onClick={submitReview}
+                >
+                  {submittingReview ? 'Enviando…' : 'Enviar calificación'}
+                </button>
               </div>
-            </>
+            </div>
           );
         })()}
 
