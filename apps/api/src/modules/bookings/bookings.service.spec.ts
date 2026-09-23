@@ -88,7 +88,15 @@ describe('BookingsService', () => {
     minAgeMonths: null,
     maxAgeMonths: null,
     species: [],
-    business: { id: 'biz-1', ownerId: 'owner-1', status: BusinessStatus.ACTIVE },
+    // Wide open every day of the week, since futureDateString() lands on whatever weekday the
+    // suite happens to run — these create() tests are about other validation, not opening hours
+    // (that's covered separately by the "create — opening hours" describe block below).
+    business: {
+      id: 'biz-1',
+      ownerId: 'owner-1',
+      status: BusinessStatus.ACTIVE,
+      openingHours: Object.fromEntries(['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].map((d) => [d, { open: '00:00', close: '23:59' }])),
+    },
   };
 
   const baseDto = {
@@ -167,6 +175,92 @@ describe('BookingsService', () => {
       await expect(
         service.create('user-1', { ...baseDto, date: '2020-01-01', startTime: '10:00' } as any),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  // getAvailableSlots() only ever offers times inside opening hours, but create() itself never
+  // re-checked that — a client could submit any startTime, in the past or not, and only the
+  // capacity/overlap check stood between it and a booking outside business hours entirely.
+  describe('create — opening hours', () => {
+    const monday = futureMondayDateString();
+
+    beforeEach(() => {
+      prisma.booking.findUnique.mockResolvedValue(null);
+      pets.get.mockResolvedValue({ id: 'pet-1', speciesId: DOG_SPECIES.id, species: DOG_SPECIES, birthDate: null });
+      prisma.booking.count.mockResolvedValue(0);
+      prisma.booking.create.mockResolvedValue({ id: 'new-booking', service: { name: 'Consulta' }, user: { firstName: 'Ana' } });
+    });
+
+    it('rejects a startTime before opening', async () => {
+      prisma.service.findUnique.mockResolvedValue({
+        ...baseService,
+        business: { ...baseService.business, openingHours: { mon: { open: '09:00', close: '17:00' } } },
+      });
+      await expect(
+        service.create('user-1', { ...baseDto, date: monday, startTime: '08:00' } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.booking.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a booking that would run past closing (startTime + duration > close)', async () => {
+      prisma.service.findUnique.mockResolvedValue({
+        ...baseService,
+        durationMinutes: 30,
+        business: { ...baseService.business, openingHours: { mon: { open: '09:00', close: '17:00' } } },
+      });
+      await expect(
+        service.create('user-1', { ...baseDto, date: monday, startTime: '16:45' } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a day the business has no opening hours for at all', async () => {
+      prisma.service.findUnique.mockResolvedValue({
+        ...baseService,
+        business: { ...baseService.business, openingHours: {} },
+      });
+      await expect(
+        service.create('user-1', { ...baseDto, date: monday, startTime: '10:00' } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('accepts a startTime that fits cleanly inside opening hours', async () => {
+      prisma.service.findUnique.mockResolvedValue({
+        ...baseService,
+        durationMinutes: 30,
+        business: { ...baseService.business, openingHours: { mon: { open: '09:00', close: '17:00' } } },
+      });
+      await expect(
+        service.create('user-1', { ...baseDto, date: monday, startTime: '16:30' } as any),
+      ).resolves.toEqual(expect.objectContaining({ id: 'new-booking' }));
+    });
+  });
+
+  describe('listForBusiness — date filtering', () => {
+    it('with no date/from/to, returns everything for the business (the "ver todas" case)', async () => {
+      await service.listForBusiness('biz-1', {} as any);
+      const where = prisma.booking.findMany.mock.calls[0][0].where;
+      expect(where).toEqual({ businessId: 'biz-1' });
+    });
+
+    it('a single `date` still filters to just that day (back-compat with the old single-day agenda view)', async () => {
+      await service.listForBusiness('biz-1', { date: '2026-09-22' } as any);
+      const where = prisma.booking.findMany.mock.calls[0][0].where;
+      expect(where.date.gte).toEqual(new Date('2026-09-22T00:00:00'));
+      expect(where.date.lte).toEqual(new Date('2026-09-22T23:59:59.999'));
+    });
+
+    it('`from`/`to` filters a date range and takes priority over a stray `date`', async () => {
+      await service.listForBusiness('biz-1', { date: '2026-01-01', from: '2026-09-22', to: '2026-09-30' } as any);
+      const where = prisma.booking.findMany.mock.calls[0][0].where;
+      expect(where.date.gte).toEqual(new Date('2026-09-22T00:00:00'));
+      expect(where.date.lte).toEqual(new Date('2026-09-30T23:59:59.999'));
+    });
+
+    it('`from` alone is an open-ended "from this date onward" range — never hides a later booking just because it defaulted to today', async () => {
+      await service.listForBusiness('biz-1', { from: '2026-09-22' } as any);
+      const where = prisma.booking.findMany.mock.calls[0][0].where;
+      expect(where.date.gte).toEqual(new Date('2026-09-22T00:00:00'));
+      expect(where.date.lte).toBeUndefined();
     });
   });
 

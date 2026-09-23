@@ -219,6 +219,24 @@ export class BookingsService {
       if (startTime.getTime() <= Date.now()) {
         throw new BadRequestException('Cannot book a time slot in the past');
       }
+      // getAvailableSlots() only ever offers times inside Business.openingHours — but this
+      // endpoint never re-checked that itself, trusting the client-submitted startTime completely
+      // beyond "not in the past". Re-validated here the same way, so a booking can never land
+      // outside business hours (e.g. after closing) regardless of what the client actually sent.
+      const hours = (service.business.openingHours as Record<string, { open?: string; close?: string }> | null)?.[
+        WEEKDAY_KEYS[bookingDate.getDay()]
+      ];
+      if (!hours?.open || !hours?.close) {
+        throw new BadRequestException('This business is closed that day');
+      }
+      const [openH, openM] = hours.open.split(':').map(Number);
+      const [closeH, closeM] = hours.close.split(':').map(Number);
+      const openMinutes = openH * 60 + openM;
+      const closeMinutes = closeH * 60 + closeM;
+      const startMinutes = h * 60 + m;
+      if (startMinutes < openMinutes || startMinutes + service.durationMinutes > closeMinutes) {
+        throw new BadRequestException('This time is outside the business’s opening hours');
+      }
       price = service.price;
     }
 
@@ -373,17 +391,21 @@ export class BookingsService {
   // ── Business-facing ───────────────────────────────────────────────────────
 
   async listForBusiness(businessId: string, query: ListBusinessBookingsQueryDto) {
+    const dateFilter =
+      query.from || query.to
+        ? {
+            date: {
+              ...(query.from ? { gte: new Date(`${query.from}T00:00:00`) } : {}),
+              ...(query.to ? { lte: new Date(`${query.to}T23:59:59.999`) } : {}),
+            },
+          }
+        : query.date
+          ? { date: { gte: new Date(`${query.date}T00:00:00`), lte: new Date(`${query.date}T23:59:59.999`) } }
+          : {};
     const where: Prisma.BookingWhereInput = {
       businessId,
       ...(query.status ? { status: query.status } : {}),
-      ...(query.date
-        ? {
-            date: {
-              gte: new Date(`${query.date}T00:00:00`),
-              lte: new Date(`${query.date}T23:59:59.999`),
-            },
-          }
-        : {}),
+      ...dateFilter,
     };
     return this.prisma.booking.findMany({ where, orderBy: { startTime: 'asc' }, include: BOOKING_INCLUDE });
   }

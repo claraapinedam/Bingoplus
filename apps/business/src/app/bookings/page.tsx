@@ -38,19 +38,24 @@ function BookingsContent() {
   const router = useRouter();
   const { business } = useBusiness();
   const businessId = getActiveBusinessId();
-  const [date, setDate] = useState(todayString());
+  // Defaulting to "today only" was how a booking made today for a later date went unnoticed —
+  // defaulting to "from today onward, no end date" instead means nothing upcoming is ever hidden
+  // just because it happened to be filtered out on first load.
+  const [from, setFrom] = useState(todayString());
+  const [to, setTo] = useState('');
   const [status, setStatus] = useState('');
   const [bookings, setBookings] = useState<BookingRow[] | null>(null);
 
   const load = useCallback(() => {
     if (!businessId) return;
     const params = new URLSearchParams();
-    if (date) params.set('date', date);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
     if (status) params.set('status', status);
     apiFetch<BookingRow[]>(`/business/${businessId}/bookings?${params}`)
       .then(setBookings)
       .catch(() => setBookings([]));
-  }, [businessId, date, status]);
+  }, [businessId, from, to, status]);
 
   useEffect(() => {
     load();
@@ -69,10 +74,32 @@ function BookingsContent() {
         </div>
       </header>
 
-      <div className="dashboard-toolbar">
-        <input className="bingo-input" type="date" style={{ maxWidth: 200 }} value={date} onChange={(e) => setDate(e.target.value)} />
-        <button className="bingo-chip" onClick={() => setDate(todayString())}>
-          Hoy
+      <div className="dashboard-toolbar" style={{ flexWrap: 'wrap' }}>
+        <label style={{ fontSize: 12, color: '#7f8ea3', display: 'flex', alignItems: 'center', gap: 6 }}>
+          Desde
+          <input className="bingo-input" type="date" style={{ maxWidth: 170 }} value={from} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label style={{ fontSize: 12, color: '#7f8ea3', display: 'flex', alignItems: 'center', gap: 6 }}>
+          Hasta
+          <input className="bingo-input" type="date" style={{ maxWidth: 170 }} value={to} onChange={(e) => setTo(e.target.value)} />
+        </label>
+        <button
+          className="bingo-chip"
+          onClick={() => {
+            setFrom(todayString());
+            setTo(todayString());
+          }}
+        >
+          Solo hoy
+        </button>
+        <button
+          className="bingo-chip"
+          onClick={() => {
+            setFrom('');
+            setTo('');
+          }}
+        >
+          Todas las fechas
         </button>
         <div className="bingo-chip-row">
           {[{ value: '', label: 'Todas' }, ...Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))].map((t) => (
@@ -92,6 +119,7 @@ function BookingsContent() {
           <table className="dashboard-table">
             <thead>
               <tr>
+                <th>Fecha</th>
                 <th>Hora</th>
                 <th>Servicio</th>
                 <th>Cliente</th>
@@ -103,6 +131,7 @@ function BookingsContent() {
             <tbody>
               {bookings.map((b) => (
                 <tr key={b.id} onClick={() => router.push(`/bookings/${b.id}`)}>
+                  <td>{new Date(b.startTime).toLocaleDateString('es-EC', { day: 'numeric', month: 'short' })}</td>
                   <td style={{ fontWeight: 700 }}>
                     {new Date(b.startTime).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}
                   </td>
