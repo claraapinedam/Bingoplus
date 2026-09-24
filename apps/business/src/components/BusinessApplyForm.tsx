@@ -4,7 +4,8 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
 import { apiFetch } from '@/lib/api';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
-import TermsModal, { BUSINESS_TERMS_SECTIONS, PRIVACY_TERMS_SECTIONS } from './TermsModal';
+import BusinessTermsModal from './BusinessTermsModal';
+import BusinessPrivacyModal from './BusinessPrivacyModal';
 import EmailField, { isValidEmail } from './EmailField';
 
 // Mirrors apps/customer's SpeciesChips.tsx — PetSpecies.icon is a lucide-icon keyword (e.g.
@@ -666,13 +667,12 @@ export default function BusinessApplyForm({
             style={{ marginTop: 2 }}
           />
           <span>
-            He leído y acepto los{' '}
             <button
               type="button"
               onClick={() => setShowTerms(true)}
-              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
+              style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
             >
-              Términos y Condiciones
+              Acepto los Términos y Condiciones para Negocios BINGO+
             </button>
             {' *'}
           </span>
@@ -685,21 +685,20 @@ export default function BusinessApplyForm({
             style={{ marginTop: 2 }}
           />
           <span>
-            He aceptado el{' '}
             <button
               type="button"
               onClick={() => setShowPrivacy(true)}
-              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
+              style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
             >
-              tratamiento de mis datos personales
+              He leído y acepto la Política de Privacidad y Tratamiento de Datos Personales de BINGO+.
             </button>
             {' *'}
           </span>
         </label>
       </div>
 
-      {showTerms && <TermsModal title="Términos y Condiciones" sections={BUSINESS_TERMS_SECTIONS} onClose={() => setShowTerms(false)} />}
-      {showPrivacy && <TermsModal title="Tratamiento de Datos Personales" sections={PRIVACY_TERMS_SECTIONS} onClose={() => setShowPrivacy(false)} />}
+      {showTerms && <BusinessTermsModal onClose={() => setShowTerms(false)} />}
+      {showPrivacy && <BusinessPrivacyModal onClose={() => setShowPrivacy(false)} />}
 
       <button
         className="bingo-button"

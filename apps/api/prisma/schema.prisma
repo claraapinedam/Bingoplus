@@ -969,6 +969,10 @@ model PlatformLegalInfo {
   // ContractsService.sign(), which fetches this URL's bytes into the PDF the same way the
   // business's own drawn signature is embedded.
   signatureImageUrl       String?
+  // [CORREO DE PRIVACIDAD BINGO+] in the Política de Privacidad y Tratamiento de Datos Personales
+  // — the address data-rights requests are directed to (see "11. DERECHOS DEL TITULAR"/"17.
+  // CONTACTO" in that document). Deliberately separate from any general support/contact email.
+  privacyEmail            String?
   updatedBy               String?
   createdAt               DateTime @default(now())
 }

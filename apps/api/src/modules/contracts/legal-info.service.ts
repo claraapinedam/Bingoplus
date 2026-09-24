@@ -10,6 +10,7 @@ export interface LegalInfoValues {
   longitude: number | null;
   legalRepresentativeName: string;
   signatureImageUrl: string | null;
+  privacyEmail: string | null;
 }
 
 // Placeholder until an admin actually fills this in — matches this codebase's convention (see
@@ -22,6 +23,7 @@ const EMPTY_LEGAL_INFO: LegalInfoValues = {
   longitude: null,
   legalRepresentativeName: '',
   signatureImageUrl: null,
+  privacyEmail: null,
 };
 
 /**
@@ -45,6 +47,7 @@ export class LegalInfoService {
       longitude: row.longitude,
       legalRepresentativeName: row.legalRepresentativeName,
       signatureImageUrl: row.signatureImageUrl,
+      privacyEmail: row.privacyEmail,
     };
   }
 

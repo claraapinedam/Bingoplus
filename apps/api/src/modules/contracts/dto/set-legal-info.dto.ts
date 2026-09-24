@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsLatitude, IsLongitude, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsLatitude, IsLongitude, IsOptional, IsString } from 'class-validator';
 
 export class SetLegalInfoDto {
   @ApiProperty({ description: 'Razón social de BINGO+' })
@@ -32,4 +32,9 @@ export class SetLegalInfoDto {
   @IsOptional()
   @IsString()
   signatureImageUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Correo al que se dirigen las solicitudes de derechos de datos personales (Política de Privacidad)' })
+  @IsOptional()
+  @IsEmail()
+  privacyEmail?: string;
 }
