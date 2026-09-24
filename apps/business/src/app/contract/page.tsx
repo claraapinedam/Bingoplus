@@ -148,6 +148,17 @@ export default function ContractPage() {
         <ContractDocument text={contract.contractText} />
       </div>
 
+      {contract.bingoPlusSignatureImageUrl && (
+        <div className="bingo-card" style={{ marginBottom: 16 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 8px' }}>Firma de BINGO+</h2>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={contract.bingoPlusSignatureImageUrl} alt="Firma de BINGO+" style={{ maxWidth: 220, maxHeight: 90, display: 'block' }} />
+          {contract.bingoPlusRepresentativeName && (
+            <p style={{ fontSize: 12, color: '#7f8ea3', margin: '6px 0 0' }}>Por BINGO+ — {contract.bingoPlusRepresentativeName}</p>
+          )}
+        </div>
+      )}
+
       <div className="bingo-card" style={{ marginBottom: 16 }}>
         <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 8px' }}>Tu firma</h2>
         <canvas

@@ -27,4 +27,9 @@ export class SetLegalInfoDto {
   @ApiProperty({ description: 'Nombre del representante legal de BINGO+' })
   @IsString()
   legalRepresentativeName!: string;
+
+  @ApiPropertyOptional({ description: 'URL de la imagen de firma/sello de BINGO+ (subida vía POST /uploads)' })
+  @IsOptional()
+  @IsString()
+  signatureImageUrl?: string;
 }

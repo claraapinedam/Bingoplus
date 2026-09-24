@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
 import AdminShell from '@/components/AdminShell';
+import ImageUploadField from '@/components/ImageUploadField';
 import { apiFetch, decodeRoles, getAccessToken, ApiError } from '@/lib/api';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 
@@ -62,6 +63,7 @@ interface LegalInfoConfig {
   latitude: number | null;
   longitude: number | null;
   legalRepresentativeName: string;
+  signatureImageUrl: string | null;
 }
 
 const WEIGHT_LABELS: { key: keyof RankingWeights; label: string }[] = [
@@ -356,6 +358,7 @@ export default function AdminSettingsPage() {
       };
       if (legalInfo.latitude != null) body.latitude = legalInfo.latitude;
       if (legalInfo.longitude != null) body.longitude = legalInfo.longitude;
+      if (legalInfo.signatureImageUrl) body.signatureImageUrl = legalInfo.signatureImageUrl;
       const saved = await apiFetch<LegalInfoConfig>('/admin/settings/legal-info', {
         method: 'PATCH',
         body: JSON.stringify(body),
@@ -615,6 +618,18 @@ export default function AdminSettingsPage() {
                   value={legalInfo.legalRepresentativeName}
                   onChange={(e) => setLegalInfo({ ...legalInfo, legalRepresentativeName: e.target.value })}
                 />
+              </div>
+
+              <div style={{ marginBottom: 10 }}>
+                <ImageUploadField
+                  label="Firma / sello de BINGO+"
+                  value={legalInfo.signatureImageUrl ?? ''}
+                  onChange={(url) => setLegalInfo({ ...legalInfo, signatureImageUrl: url })}
+                  onUploadingChange={setLegalInfoBusy}
+                />
+                <p style={{ fontSize: 11, color: '#7f8ea3', margin: '4px 0 0' }}>
+                  Aparece junto al nombre del representante legal en la sección de firmas de cada contrato generado.
+                </p>
               </div>
 
               {legalInfoErr && <div style={{ color: 'var(--bingo-error)', fontSize: 13, marginBottom: 10 }}>{legalInfoErr}</div>}

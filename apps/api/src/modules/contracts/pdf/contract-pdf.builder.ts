@@ -7,6 +7,10 @@ export interface ContractPdfInput {
   representativeName: string | null;
   taxId: string;
   contractBodyText: string;
+  bingoplusRepresentativeName: string;
+  /** Fetched bytes of PlatformLegalInfo.signatureImageUrl — null when BINGO+ hasn't uploaded one
+   * yet, in which case this section falls back to a plain text label with no image. */
+  bingoplusSignatureImage: Buffer | null;
   signedAt: Date;
   signedIp: string;
   /** Decoded PNG bytes from the business's drawn signature canvas. */
@@ -67,6 +71,16 @@ export function buildContractPdf(input: ContractPdfInput): Promise<Buffer> {
       }
     }
     doc.moveDown(1.5);
+
+    if (doc.y > doc.page.height - 200) doc.addPage();
+    doc.fontSize(12).font('Helvetica-Bold').text('FIRMA DIGITAL DE BINGO+');
+    doc.moveDown(0.5);
+    if (input.bingoplusSignatureImage) {
+      doc.image(input.bingoplusSignatureImage, { fit: [220, 90] });
+      doc.moveDown(0.3);
+    }
+    doc.font('Helvetica').text(`Por BINGO+ — ${input.bingoplusRepresentativeName}`);
+    doc.moveDown(1.2);
 
     doc.fontSize(12).font('Helvetica-Bold').text('FIRMA DIGITAL DE EL NEGOCIO');
     doc.moveDown(0.5);

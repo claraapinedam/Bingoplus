@@ -454,6 +454,7 @@ model BusinessContract {
   bingoPlusTaxId              String?
   bingoPlusAddress            String?
   bingoPlusRepresentativeName String?
+  bingoPlusSignatureImageUrl  String?
   contractText                String
   // Raw base64 PNG from the signature canvas — kept alongside the rendered PDF as the primary
   // audit artifact of what was actually drawn.
@@ -962,6 +963,12 @@ model PlatformLegalInfo {
   latitude                Float?
   longitude               Float?
   legalRepresentativeName String
+  // Uploaded once (a scanned/exported signature or stamp image), not drawn live like a business's
+  // own canvas signature — BINGO+'s side of a contract is the same image on every contract, so it
+  // belongs on this platform-wide config, not something captured per-signature. See
+  // ContractsService.sign(), which fetches this URL's bytes into the PDF the same way the
+  // business's own drawn signature is embedded.
+  signatureImageUrl       String?
   updatedBy               String?
   createdAt               DateTime @default(now())
 }

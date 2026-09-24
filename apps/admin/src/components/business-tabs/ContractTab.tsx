@@ -18,6 +18,8 @@ interface Contract {
   signedAt: string | null;
   signedIp: string | null;
   createdAt: string;
+  bingoPlusRepresentativeName: string | null;
+  bingoPlusSignatureImageUrl: string | null;
 }
 
 function ContractDetail({ contract }: { contract: Contract }) {
@@ -62,6 +64,17 @@ function ContractDetail({ contract }: { contract: Contract }) {
           </>
         )}
       </div>
+
+      {contract.bingoPlusSignatureImageUrl && (
+        <div className="bingo-card" style={{ gridColumn: '1 / -1' }}>
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>Firma de BINGO+</h2>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={contract.bingoPlusSignatureImageUrl} alt="Firma de BINGO+" style={{ maxWidth: 220, maxHeight: 90, display: 'block' }} />
+          {contract.bingoPlusRepresentativeName && (
+            <p style={{ fontSize: 12, color: '#7f8ea3', margin: '6px 0 0' }}>Por BINGO+ — {contract.bingoPlusRepresentativeName}</p>
+          )}
+        </div>
+      )}
 
       <div className="bingo-card" style={{ gridColumn: '1 / -1', maxHeight: 480, overflowY: 'auto' }}>
         <ContractDocument text={contract.contractText} />

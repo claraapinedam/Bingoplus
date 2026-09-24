@@ -14,6 +14,7 @@ const VALID_LEGAL_INFO: LegalInfoValues = {
   latitude: null,
   longitude: null,
   legalRepresentativeName: 'María Dolores Pérez',
+  signatureImageUrl: null,
 };
 
 // A real, minimal 1x1 transparent PNG — pdfkit's doc.image() needs actual valid PNG bytes to not throw.

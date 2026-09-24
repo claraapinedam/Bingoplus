@@ -176,6 +176,18 @@ export class ContractsService {
       .replaceAll('{{fecha_aceptacion}}', acceptedAtLabel)
       .replaceAll('{{fecha_vigencia}}', effectiveDateLabel);
 
+    // BINGO+'s side is a single uploaded image (a scanned/exported signature or stamp — see
+    // PlatformLegalInfo.signatureImageUrl), frozen onto the contract as a URL like every other
+    // bingoPlus* field. pdfkit's doc.image() needs actual bytes, not a remote URL, so it's fetched
+    // here — same "fetch once at the moment it's actually needed" approach as the business's own
+    // signature, which arrives as a decoded Buffer from the canvas data URL.
+    const bingoplusSignatureImage = contract.bingoPlusSignatureImageUrl
+      ? await fetch(contract.bingoPlusSignatureImageUrl)
+          .then((res) => res.arrayBuffer())
+          .then((buf) => Buffer.from(buf))
+          .catch(() => null)
+      : null;
+
     const pdfBuffer = await buildContractPdf({
       contractId: contract.id,
       idType: contract.idType,
@@ -183,6 +195,8 @@ export class ContractsService {
       representativeName: contract.representativeName,
       taxId: contract.taxId,
       contractBodyText: finalContractText,
+      bingoplusRepresentativeName: contract.bingoPlusRepresentativeName ?? '',
+      bingoplusSignatureImage,
       signedAt,
       signedIp,
       signatureImage,
@@ -312,6 +326,7 @@ export class ContractsService {
       bingoPlusTaxId: legal.taxId,
       bingoPlusAddress: legal.addressLine,
       bingoPlusRepresentativeName: legal.legalRepresentativeName,
+      bingoPlusSignatureImageUrl: legal.signatureImageUrl,
       contractText,
     };
   }

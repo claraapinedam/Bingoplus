@@ -85,6 +85,8 @@ export interface BusinessContract {
   directoryListing: boolean;
   pdfUrl: string | null;
   signedAt: string | null;
+  bingoPlusRepresentativeName: string | null;
+  bingoPlusSignatureImageUrl: string | null;
 }
 
 export function getBusinessContract(businessId: string) {
