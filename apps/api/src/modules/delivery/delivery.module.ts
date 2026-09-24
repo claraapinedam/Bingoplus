@@ -21,6 +21,7 @@ import { DeliveryProofService } from './delivery-proof.service';
 import { DeliverySyncService } from './delivery-sync.service';
 import { DeliveryService } from './delivery.service';
 import { RiderLocationService } from './rider-location.service';
+import { DeliveryChatService } from './delivery-chat.service';
 import { DeliveryGateway } from './delivery.gateway';
 import { RiderDeliveryController } from './rider-delivery.controller';
 import { OrderTrackingController, DeliveryTrackingController } from './customer-tracking.controller';
@@ -49,8 +50,9 @@ import { BusinessDeliveryController } from './business-delivery.controller';
     DeliverySyncService,
     DeliveryService,
     RiderLocationService,
+    DeliveryChatService,
     DeliveryGateway,
   ],
-  exports: [DeliveryService, DeliveryCancellationService, RiderLocationService, DispatchService],
+  exports: [DeliveryService, DeliveryCancellationService, RiderLocationService, DeliveryChatService, DispatchService],
 })
 export class DeliveryModule {}

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import RiderShell from '@/components/RiderShell';
 import EmptyState from '@/components/EmptyState';
 import MapView from '@/components/MapView';
+import DeliveryChat from '@/components/DeliveryChat';
 import { apiFetch, ApiError, watchUserLocation } from '@/lib/api';
 import { connectSocket } from '@/lib/socket';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
@@ -415,6 +416,11 @@ export default function DeliveryDetailPage() {
             {busy ? 'Procesando…' : nextAction.label}
           </button>
         )}
+
+        {/* Visible from the moment this delivery is assigned (this page only ever shows a delivery
+            already assigned to the logged-in rider) through completion — goes read-only once
+            terminal instead of disappearing, so the rider can still see what was said. */}
+        <DeliveryChat deliveryId={delivery.id} active={!isTerminal} />
 
         {delivery.status === 'ARRIVED_AT_CUSTOMER' && (
           <div className="bingo-card" style={{ marginTop: 16 }}>

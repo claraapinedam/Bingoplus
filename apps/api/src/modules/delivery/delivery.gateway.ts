@@ -122,6 +122,14 @@ export class DeliveryGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server?.to(this.room(deliveryId)).emit('delivery.completed', { deliveryId });
   }
 
+  /** Rider<->customer chat (§ "chat bidireccional") — pushed to the same `delivery:{id}` room
+   * used for status/location, right after DeliveryChatService persists the message. The room's
+   * membership is already exactly this delivery's own customer + assigned rider (+ admin/business
+   * staff, who simply never send chat messages), so no separate chat room/auth handshake is needed. */
+  emitChatMessage(deliveryId: string, message: unknown) {
+    this.server?.to(this.room(deliveryId)).emit('delivery.chat.message', { deliveryId, message });
+  }
+
   /** Pushed to the rider's personal room the moment DispatchService assigns them a delivery —
    * this is how the Rider App learns about a new offer without polling. */
   emitDeliveryOffer(riderId: string, deliveryId: string) {

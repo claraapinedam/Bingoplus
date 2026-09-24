@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { RoleName } from '@prisma/client';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -8,12 +8,14 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryService } from './delivery.service';
 import { RiderLocationService } from './rider-location.service';
+import { DeliveryChatService } from './delivery-chat.service';
 import {
   CompleteDeliveryDto,
   RejectDeliveryDto,
   ReportIncidentDto,
   RiderLocationUpdateDto,
 } from './dto/delivery-action.dto';
+import { ListDeliveryChatMessagesQueryDto, SendDeliveryChatMessageDto } from './dto/delivery-chat.dto';
 
 /** §57/61/63: every route resolves the caller's own Rider row from the JWT — never a riderId
  * route param — so a Rider can only ever act on their own assigned deliveries. */
@@ -25,6 +27,7 @@ export class RiderDeliveryController {
   constructor(
     private readonly delivery: DeliveryService,
     private readonly location: RiderLocationService,
+    private readonly chat: DeliveryChatService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -96,5 +99,17 @@ export class RiderDeliveryController {
     const riderId = await this.riderIdFor(user.id);
     await this.location.recordUpdate(riderId, id, dto);
     return { ok: true };
+  }
+
+  /** Rider<->customer chat — REST is the history/catch-up path; live delivery is the
+   * `delivery.chat.message` socket event on the `delivery:{id}` room (see DeliveryGateway). */
+  @Get(':id/chat/messages')
+  async listChatMessages(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Query() query: ListDeliveryChatMessagesQueryDto) {
+    return this.chat.listForRider(await this.riderIdFor(user.id), id, query.after);
+  }
+
+  @Post(':id/chat/messages')
+  async sendChatMessage(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: SendDeliveryChatMessageDto) {
+    return this.chat.sendForRider(await this.riderIdFor(user.id), user.id, id, dto.text);
   }
 }

@@ -70,4 +70,27 @@ describe('DeliveryStateMachine', () => {
       },
     );
   });
+
+  describe('isTerminal', () => {
+    it.each([DeliveryStatus.DELIVERED, DeliveryStatus.CANCELLED, DeliveryStatus.FAILED])(
+      '%s is terminal — used by DeliveryChatService to close the rider<->customer chat',
+      (status) => {
+        expect(machine.isTerminal(status)).toBe(true);
+      },
+    );
+
+    it.each([
+      DeliveryStatus.PENDING,
+      DeliveryStatus.SEARCHING_RIDER,
+      DeliveryStatus.RIDER_ASSIGNED,
+      DeliveryStatus.RIDER_ACCEPTED,
+      DeliveryStatus.GOING_TO_PICKUP,
+      DeliveryStatus.ARRIVED_AT_PICKUP,
+      DeliveryStatus.PICKED_UP,
+      DeliveryStatus.IN_TRANSIT,
+      DeliveryStatus.ARRIVED_AT_CUSTOMER,
+    ])('%s is not terminal', (status) => {
+      expect(machine.isTerminal(status)).toBe(false);
+    });
+  });
 });

@@ -54,4 +54,13 @@ export class DeliveryStateMachine {
   isCancellable(status: DeliveryStatus): boolean {
     return CANCELLABLE_STATES.includes(status);
   }
+
+  /** A status with no outgoing transitions in TRANSITIONS (DELIVERED/CANCELLED/FAILED) — read off
+   * the same map rather than a second hardcoded list, so it can never drift from what
+   * canTransition/assertTransition already treat as terminal. Used by DeliveryChatService to close
+   * the rider<->customer chat the instant a delivery is truly over, without a separate
+   * open/closed field on either Delivery or the chat itself. */
+  isTerminal(status: DeliveryStatus): boolean {
+    return TRANSITIONS[status]?.length === 0;
+  }
 }

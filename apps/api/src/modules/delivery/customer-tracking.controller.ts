@@ -1,10 +1,12 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { DeliveryService } from './delivery.service';
 import { DeliveryProofService } from './delivery-proof.service';
 import { RiderLocationService } from './rider-location.service';
+import { DeliveryChatService } from './delivery-chat.service';
 import { MapService } from '../maps/map.service';
+import { ListDeliveryChatMessagesQueryDto, SendDeliveryChatMessageDto } from './dto/delivery-chat.dto';
 
 /** §33/64: never exposes Rider PII beyond first name + rating — no phone, no full location
  * history, nothing about a rider who isn't the one assigned to this customer's own order. */
@@ -59,6 +61,7 @@ export class DeliveryTrackingController {
     private readonly proof: DeliveryProofService,
     private readonly location: RiderLocationService,
     private readonly maps: MapService,
+    private readonly chat: DeliveryChatService,
   ) {}
 
   @Get(':id/status')
@@ -109,5 +112,17 @@ export class DeliveryTrackingController {
   async getOtp(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     await this.delivery.getForCustomer(user.id, id); // enforces ownership before exposing the code
     return this.proof.getCodeForCustomer(id);
+  }
+
+  /** Rider<->customer chat — REST is the history/catch-up path; live delivery is the
+   * `delivery.chat.message` socket event on the `delivery:{id}` room (see DeliveryGateway). */
+  @Get(':id/chat/messages')
+  async listChatMessages(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Query() query: ListDeliveryChatMessagesQueryDto) {
+    return this.chat.listForCustomer(user.id, id, query.after);
+  }
+
+  @Post(':id/chat/messages')
+  async sendChatMessage(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: SendDeliveryChatMessageDto) {
+    return this.chat.sendForCustomer(user.id, id, dto.text);
   }
 }

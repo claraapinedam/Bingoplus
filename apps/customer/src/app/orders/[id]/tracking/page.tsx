@@ -7,6 +7,7 @@ import CustomerShell from '@/components/CustomerShell';
 import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
 import MapView from '@/components/MapView';
+import DeliveryChat from '@/components/DeliveryChat';
 import { apiFetch } from '@/lib/api';
 import { connectSocket } from '@/lib/socket';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
@@ -19,6 +20,10 @@ import { DELIVERY_STATUS_LABELS } from '@/lib/orderStatus';
 const POLL_INTERVAL_MS = 15000;
 const TRACKABLE_STATUSES = ['RIDER_ACCEPTED', 'GOING_TO_PICKUP', 'ARRIVED_AT_PICKUP', 'PICKED_UP', 'IN_TRANSIT', 'ARRIVED_AT_CUSTOMER'];
 const PRE_PICKUP_STATUSES = ['RIDER_ACCEPTED', 'GOING_TO_PICKUP', 'ARRIVED_AT_PICKUP'];
+// Mirrors DeliveryStateMachine.isTerminal on the backend (DeliveryChatService's own gate) — the
+// chat box goes read-only the moment the delivery reaches one of these, same trigger as the
+// backend rejecting a send server-side.
+const CHAT_TERMINAL_STATUSES = ['DELIVERED', 'CANCELLED', 'FAILED'];
 
 function travelModeFor(vehicleType: string | null | undefined): google.maps.TravelMode {
   if (vehicleType === 'BIKE') return google.maps.TravelMode.BICYCLING;
@@ -290,6 +295,13 @@ export default function DeliveryTrackingPage() {
                 </div>
                 <span style={{ fontSize: 24 }}>🛵</span>
               </div>
+            )}
+
+            {/* Chat opens the instant a rider is assigned (tracking.rider is only ever non-null
+                once Delivery.riderId is set) and goes read-only once the delivery is terminal —
+                never rendered before a rider exists, since there's no one on the other end yet. */}
+            {tracking.rider && tracking.deliveryId && (
+              <DeliveryChat deliveryId={tracking.deliveryId} active={!CHAT_TERMINAL_STATUSES.includes(tracking.status ?? '')} />
             )}
 
             {tracking.pickup && tracking.destination && (

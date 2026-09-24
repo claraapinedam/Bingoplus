@@ -83,6 +83,7 @@ model User {
   supportChats               SupportChat[]           @relation("SupportChatSubmitter")
   assignedSupportChats       SupportChat[]           @relation("SupportChatAssignedAdmin")
   supportChatMessages        SupportChatMessage[]    @relation("SupportChatMessageSender")
+  deliveryChatMessages       DeliveryChatMessage[]   @relation("DeliveryChatMessageSender")
 
   @@index([email])
   @@index([phone])
@@ -1236,6 +1237,7 @@ model Delivery {
   proof             DeliveryProof?
   incidents         DeliveryIncident[]
   earnings          RiderEarning[]
+  chatMessages      DeliveryChatMessage[]
 
   @@index([riderId])
   @@index([status])
@@ -1358,6 +1360,35 @@ model DeliveryIncident {
 
   @@index([deliveryId])
   @@index([status])
+}
+
+enum DeliveryChatSenderType {
+  CUSTOMER
+  RIDER
+}
+
+// Rider<->Customer chat for an active delivery (the app owner's "chat bidireccional" ask) —
+// deliberately NOT modeled like SupportChatMessage: no imageUrl (text-only per spec, kept simple),
+// no separate open/closed status field, because "closed" is never anything but "this Delivery
+// reached a terminal state" (DELIVERED/CANCELLED/FAILED — DeliveryStateMachine.isTerminal), and
+// inventing a second state machine to track the same fact Delivery.status already expresses would
+// just be two sources of truth that could disagree. DeliveryChatService is the single place that
+// enforces "no messages once terminal, and only once a rider is actually assigned" by reading
+// Delivery.status/riderId live on every send — never a cached/duplicated flag here.
+model DeliveryChatMessage {
+  id           String                  @id @default(cuid())
+  deliveryId   String
+  senderType   DeliveryChatSenderType
+  senderUserId String
+  text         String
+  createdAt    DateTime                @default(now())
+  readAt       DateTime?
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  sender   User     @relation("DeliveryChatMessageSender", fields: [senderUserId], references: [id])
+
+  @@index([deliveryId])
+  @@index([deliveryId, createdAt])
 }
 
 enum RiderEarningType {
