@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { BusinessCapabilityType, BusinessStatus, Prisma, ServiceLocationType, ServiceType } from '@prisma/client';
-import { resolvePagination } from '@bingoplus/utils';
+import { estimateTravelMinutes, haversineKm, resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { membershipGoodStandingWhere } from '../memberships/membership-visibility.util';
@@ -67,7 +67,7 @@ export class ServicesService {
     return services.map((s) => this.withSpeciesNames(s));
   }
 
-  async getPublic(serviceId: string) {
+  async getPublic(serviceId: string, customerLocation?: { lat: number; lng: number }) {
     const service = await this.prisma.service.findFirst({
       where: {
         id: serviceId,
@@ -92,6 +92,7 @@ export class ServicesService {
             openingHours: true,
             latitude: true,
             longitude: true,
+            phone: true,
           },
         },
       },
@@ -100,7 +101,17 @@ export class ServicesService {
     const bookingsEnabled = await this.prisma.businessCapability.findUnique({
       where: { businessId_capability: { businessId: service.businessId, capability: BusinessCapabilityType.BOOKINGS } },
     });
-    return { ...this.withSpeciesNames(service), bookingsEnabled: bookingsEnabled?.enabled ?? false };
+    // "X min de distancia" reference (see BusinessesService.getPublicBusiness for the same pattern).
+    const distanceKm =
+      customerLocation && service.business.latitude != null && service.business.longitude != null
+        ? haversineKm(customerLocation, { lat: service.business.latitude, lng: service.business.longitude })
+        : null;
+    return {
+      ...this.withSpeciesNames(service),
+      bookingsEnabled: bookingsEnabled?.enabled ?? false,
+      distanceKm,
+      etaMinutes: distanceKm !== null ? estimateTravelMinutes(distanceKm) : null,
+    };
   }
 
   /** Flattens the ServiceSpecies join into a plain `species: PetSpecies[]` array for API responses. */

@@ -10,7 +10,7 @@ import {
   RoleName,
   ServiceLocationType,
 } from '@prisma/client';
-import { getBusinessOnlineStatus, resolvePagination } from '@bingoplus/utils';
+import { estimateTravelMinutes, getBusinessOnlineStatus, haversineKm, resolvePagination } from '@bingoplus/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ApplyBusinessDto } from './dto/apply-business.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
@@ -210,7 +210,7 @@ export class BusinessesService {
     });
   }
 
-  async getPublicBusiness(businessId: string) {
+  async getPublicBusiness(businessId: string, customerLocation?: { lat: number; lng: number }) {
     const business = await this.prisma.business.findFirst({
       where: { id: businessId, status: BusinessStatus.ACTIVE, deletedAt: null, ...membershipGoodStandingWhere() },
       include: { categories: { include: { category: true } } },
@@ -223,12 +223,21 @@ export class BusinessesService {
     // coupons must NOT show the CTA).
     const couponSummary = await this.coupons.getCouponSummary(businessId);
     const hasPhysicalLocation = await this.resolveHasPhysicalLocation(businessId, capabilityMap);
+    // "X min de distancia" reference — a rough estimate off the haversine distance, not a routed
+    // ETA (see estimateTravelMinutes). Only computable when the customer shared their location and
+    // the business has coordinates on file.
+    const distanceKm =
+      customerLocation && business.latitude != null && business.longitude != null
+        ? haversineKm(customerLocation, { lat: business.latitude, lng: business.longitude })
+        : null;
     return {
       ...rest,
       categories: categories.map((c) => c.category),
       capabilities: capabilityMap,
       couponSummary,
       hasPhysicalLocation,
+      distanceKm,
+      etaMinutes: distanceKm !== null ? estimateTravelMinutes(distanceKm) : null,
       // Surfaced so the store page can explain up front why "Agregar al carrito" is about to fail
       // (CartService/CheckoutService enforce the real gate — this is display only).
       onlineStatus: getBusinessOnlineStatus(business.openingHours, business.manualOverride),

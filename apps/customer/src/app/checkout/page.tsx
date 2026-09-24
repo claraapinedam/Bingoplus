@@ -21,6 +21,13 @@ interface BusinessCapabilities {
   DELIVERY: boolean;
 }
 
+interface PickupLocation {
+  addressLine: string;
+  city: string;
+  latitude: number | null;
+  longitude: number | null;
+}
+
 interface Address {
   id: string;
   label: string;
@@ -54,6 +61,7 @@ export default function CheckoutPage() {
 
   const [cart, setCart] = useState<Cart | null | undefined>(undefined);
   const [capabilities, setCapabilities] = useState<BusinessCapabilities | null>(null);
+  const [pickupLocation, setPickupLocation] = useState<PickupLocation | null>(null);
   const [deliveryAddress, setDeliveryAddress] = useState<Address | null | undefined>(undefined);
   const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType | null>(null);
 
@@ -67,9 +75,10 @@ export default function CheckoutPage() {
       .then((c) => {
         setCart(c);
         if (c) {
-          apiFetch<{ capabilities: BusinessCapabilities }>(`/public/businesses/${c.business.id}`).then((b) => {
+          apiFetch<{ capabilities: BusinessCapabilities } & PickupLocation>(`/public/businesses/${c.business.id}`).then((b) => {
             setCapabilities(b.capabilities);
             setFulfillmentType(b.capabilities.PICKUP ? 'PICKUP' : 'DELIVERY');
+            setPickupLocation({ addressLine: b.addressLine, city: b.city, latitude: b.latitude, longitude: b.longitude });
           });
         }
       })
@@ -191,6 +200,28 @@ export default function CheckoutPage() {
               )}
             </HorizontalChipRow>
           </>
+        )}
+
+        {fulfillmentType === 'PICKUP' && pickupLocation && (
+          <div className="bingo-card" style={{ marginTop: 4 }}>
+            <div style={{ fontSize: 13, color: '#54617a' }}>
+              {pickupLocation.addressLine}, {pickupLocation.city}
+            </div>
+            {pickupLocation.latitude != null && pickupLocation.longitude != null && (
+              <button
+                className="bingo-button secondary small"
+                style={{ width: 'auto', marginTop: 8 }}
+                onClick={() =>
+                  window.open(
+                    `https://www.google.com/maps/dir/?api=1&destination=${pickupLocation.latitude},${pickupLocation.longitude}`,
+                    '_blank',
+                  )
+                }
+              >
+                🧭 Cómo llegar
+              </button>
+            )}
+          </div>
         )}
 
         {fulfillmentType === 'DELIVERY' && (

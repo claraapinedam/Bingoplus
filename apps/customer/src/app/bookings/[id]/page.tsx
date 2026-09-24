@@ -5,7 +5,17 @@ import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
 import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
+import RatingStars from '@/components/RatingStars';
 import { apiFetch, ApiError } from '@/lib/api';
+
+// Booking-review-specific codes from ReviewsService.submitForBooking — kept local rather than
+// folded into lib/orderStatus's API_ERROR_MESSAGES since that file's copy ("...este pedido")
+// is order-flavored and ALREADY_REVIEWED/​the completion check are shared codes across both
+// review endpoints but need booking-flavored wording here.
+const REVIEW_ERROR_MESSAGES: Record<string, string> = {
+  BOOKING_NOT_COMPLETED: 'Podrás calificar esta reserva una vez completada.',
+  ALREADY_REVIEWED: 'Ya calificaste esta reserva.',
+};
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Pendiente de confirmación',
@@ -40,9 +50,22 @@ interface BookingDetail {
   notes: string | null;
   service: { name: string; description: string | null };
   pet: { name: string } | null;
-  business: { tradeName: string; city: string; addressLine: string; phone: string | null };
+  business: { tradeName: string; city: string; addressLine: string; phone: string | null; latitude: number | null; longitude: number | null };
   atCustomerHome: boolean;
   payment: BookingPayment | null;
+}
+
+interface BookingReviewSummary {
+  targetType: 'SERVICE';
+  targetId: string;
+  rating: number;
+  comment: string | null;
+}
+
+interface BookingReviewContext {
+  eligible: boolean;
+  service: { id: string };
+  review: BookingReviewSummary | null;
 }
 
 export default function BookingDetailPage() {
@@ -54,14 +77,54 @@ export default function BookingDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
   const [showCancelForm, setShowCancelForm] = useState(false);
+  const [reviewContext, setReviewContext] = useState<BookingReviewContext | null>(null);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [ratingModalAutoShown, setRatingModalAutoShown] = useState(false);
 
   const load = useCallback(() => {
     apiFetch<BookingDetail>(`/me/bookings/${params.id}`).then(setBooking).catch(() => setBooking(null));
   }, [params.id]);
 
+  const loadReviewContext = useCallback(() => {
+    apiFetch<BookingReviewContext>(`/bookings/${params.id}/reviews`).then(setReviewContext).catch(() => undefined);
+  }, [params.id]);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadReviewContext();
+  }, [load, loadReviewContext]);
+
+  // Mirrors the order-detail page: pop the rating form up automatically the first time it's
+  // actually eligible and nothing's been rated yet, instead of leaving it as an easy-to-miss
+  // section the customer has to scroll down and notice. Only auto-opens once per page visit so
+  // dismissing it doesn't make it reappear on the next refetch while still eligible.
+  useEffect(() => {
+    if (ratingModalAutoShown || booking?.status !== 'COMPLETED' || !reviewContext?.eligible || reviewContext.review) return;
+    setShowRatingModal(true);
+    setRatingModalAutoShown(true);
+  }, [booking?.status, reviewContext, ratingModalAutoShown]);
+
+  async function submitReview() {
+    if (rating === 0) return;
+    setSubmittingReview(true);
+    setReviewError(null);
+    try {
+      const context = await apiFetch<BookingReviewContext>(`/bookings/${params.id}/reviews`, {
+        method: 'POST',
+        body: JSON.stringify({ rating, comment: comment || undefined }),
+      });
+      setReviewContext(context);
+      setShowRatingModal(false);
+    } catch (err) {
+      setReviewError(err instanceof ApiError ? (REVIEW_ERROR_MESSAGES[err.code] ?? err.message) : 'No se pudo enviar la calificación.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  }
 
   async function cancel() {
     setBusy(true);
@@ -198,6 +261,39 @@ export default function BookingDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Por seguridad del negocio: la dirección exacta ("Cómo llegar") solo se ofrece una vez
+              la reserva está confirmada y es en el local del negocio. Para servicio a domicilio
+              (el negocio va donde el cliente) o mientras la reserva sigue pendiente, se ofrece
+              llamar en su lugar. */}
+          {(booking.status === 'PENDING' || booking.status === 'CONFIRMED') &&
+            (booking.status === 'CONFIRMED' &&
+            !booking.atCustomerHome &&
+            booking.business.latitude != null &&
+            booking.business.longitude != null ? (
+              <button
+                className="bingo-button secondary small"
+                style={{ width: 'auto', marginTop: 10 }}
+                onClick={() =>
+                  window.open(
+                    `https://www.google.com/maps/dir/?api=1&destination=${booking.business.latitude},${booking.business.longitude}`,
+                    '_blank',
+                  )
+                }
+              >
+                🧭 Cómo llegar
+              </button>
+            ) : (
+              booking.business.phone && (
+                <a
+                  href={`tel:${booking.business.phone}`}
+                  className="bingo-button secondary small"
+                  style={{ width: 'auto', marginTop: 10, textDecoration: 'none', display: 'inline-block' }}
+                >
+                  📞 Llamar al negocio
+                </a>
+              )
+            ))}
         </div>
 
         {booking.status === 'CONFIRMED' && (
@@ -277,6 +373,84 @@ export default function BookingDetailPage() {
             )}
           </div>
         )}
+
+        {booking.status === 'COMPLETED' && reviewContext?.eligible && (() => {
+          if (reviewContext.review) {
+            return (
+              <>
+                <h2 className="bingo-section-title">Tu calificación</h2>
+                <div className="bingo-card">
+                  <RatingStars value={reviewContext.review.rating} readOnly />
+                  {reviewContext.review.comment && (
+                    <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 6 }}>{reviewContext.review.comment}</div>
+                  )}
+                </div>
+              </>
+            );
+          }
+          if (!showRatingModal) {
+            return (
+              <button className="bingo-button" style={{ marginTop: 16 }} onClick={() => setShowRatingModal(true)}>
+                Calificar servicio
+              </button>
+            );
+          }
+
+          return (
+            <div
+              role="dialog"
+              aria-modal="true"
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(23, 43, 77, 0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 100,
+                padding: 16,
+              }}
+              onClick={() => setShowRatingModal(false)}
+            >
+              <div
+                className="bingo-card"
+                style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 420, width: '100%', maxHeight: '85vh', overflowY: 'auto' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h2 className="bingo-section-title" style={{ margin: 0 }}>Califica tu servicio</h2>
+                  <button
+                    aria-label="Cerrar"
+                    onClick={() => setShowRatingModal(false)}
+                    style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#7f8ea3' }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{booking.business.tradeName}</div>
+                  <RatingStars value={rating} onChange={setRating} />
+                  {rating > 0 && (
+                    <input
+                      className="bingo-input"
+                      style={{ marginTop: 8 }}
+                      placeholder="Comentario (opcional)"
+                      maxLength={500}
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                    />
+                  )}
+                </div>
+
+                {reviewError && <div className="bingo-error-banner">{reviewError}</div>}
+
+                <button className="bingo-button" disabled={submittingReview || rating === 0} onClick={submitReview}>
+                  {submittingReview ? 'Enviando…' : 'Enviar calificación'}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {canCancel && !showCancelForm && (
           <button

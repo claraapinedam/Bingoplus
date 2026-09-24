@@ -140,6 +140,22 @@ describe('ReviewsService', () => {
         expect.objectContaining({ data: expect.objectContaining({ targetType: ReviewTargetType.SERVICE, targetId: 'svc1', bookingId: 'bk1' }) }),
       );
       expect(prisma.service.update).toHaveBeenCalledWith({ where: { id: 'svc1' }, data: { ratingAvg: 4.5, reviewCount: 2 } });
+      // The business owner must hear about it — this is the signal the business-side review inbox
+      // relies on, same as a product-order review notifying the business owner.
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'owner-1', event: 'review.created', entityType: 'Service', entityId: 'svc1' }),
+      );
+    });
+
+    it('reports the freshly-created review back via getContextForBooking, so the customer sees it as read-only instead of a blank form on resubmit', async () => {
+      prisma.booking.findUnique.mockResolvedValue(completedBooking);
+      prisma.review.create = jest.fn().mockResolvedValue({});
+      prisma.review.findFirst.mockResolvedValue({ targetType: ReviewTargetType.SERVICE, targetId: 'svc1', rating: 5, comment: 'Excelente' });
+
+      const result = await service.submitForBooking('u1', 'bk1', { rating: 5, comment: 'Excelente' });
+
+      expect(result.eligible).toBe(true);
+      expect(result.review).toEqual({ targetType: ReviewTargetType.SERVICE, targetId: 'svc1', rating: 5, comment: 'Excelente' });
     });
 
     it('turns a duplicate booking review into ALREADY_REVIEWED, not a 500', async () => {

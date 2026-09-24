@@ -6,7 +6,9 @@ import CustomerShell from '@/components/CustomerShell';
 import ProductCard, { ProductCardData } from '@/components/ProductCard';
 import EmptyState from '@/components/EmptyState';
 import BackButton from '@/components/BackButton';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, getUserLocation } from '@/lib/api';
+import { groupOpeningHours } from '@/lib/openingHours';
+import { formatServiceDuration } from '@/lib/serviceDuration';
 
 interface BusinessDetail {
   id: string;
@@ -16,6 +18,7 @@ interface BusinessDetail {
   coverImageUrl: string | null;
   city: string;
   addressLine: string;
+  phone: string;
   latitude: number | null;
   longitude: number | null;
   ratingAvg: number;
@@ -26,6 +29,9 @@ interface BusinessDetail {
   /** False only for a Directory-only business that exclusively offers "servicio a domicilio" —
    * no premises of its own for a customer to visit, so the address/"Cómo llegar" don't apply. */
   hasPhysicalLocation: boolean;
+  /** Rough "X min" proximity reference from the customer's shared location — null when location
+   * wasn't shared or the business has no coordinates on file. See BusinessesService.getPublicBusiness. */
+  etaMinutes: number | null;
   /** Connect/disconnect status — display only, the real gate is server-side on add-to-cart/checkout. */
   onlineStatus: { online: boolean; source: 'MANUAL' | 'SCHEDULE'; isOpenNow: boolean | null; closesAt: string | null };
 }
@@ -38,16 +44,6 @@ const SERVICE_TYPE_LABELS: Record<string, string> = {
   DOG_WALKING: 'Paseador',
   TRAINING: 'Adiestramiento',
   OTHER: 'Otro',
-};
-
-const WEEKDAY_LABELS: Record<string, string> = {
-  mon: 'Lunes',
-  tue: 'Martes',
-  wed: 'Miércoles',
-  thu: 'Jueves',
-  fri: 'Viernes',
-  sat: 'Sábado',
-  sun: 'Domingo',
 };
 
 interface ServiceSummary {
@@ -79,9 +75,12 @@ export default function StoreDetailPage() {
   const [logoBroken, setLogoBroken] = useState(false);
 
   useEffect(() => {
-    apiFetch<BusinessDetail>(`/public/businesses/${params.id}`)
-      .then(setBusiness)
-      .catch(() => setNotFound(true));
+    getUserLocation().then((loc) => {
+      const qs = loc ? `?lat=${loc.lat}&lng=${loc.lng}` : '';
+      apiFetch<BusinessDetail>(`/public/businesses/${params.id}${qs}`)
+        .then(setBusiness)
+        .catch(() => setNotFound(true));
+    });
     apiFetch<ProductCardData[]>(`/public/products?businessId=${params.id}&pageSize=50`)
       .then(setProducts)
       .catch(() => setProducts([]));
@@ -208,16 +207,21 @@ export default function StoreDetailPage() {
             🔴 Desconectado — no acepta pedidos en este momento
           </div>
         )}
-        {business.hasPhysicalLocation && business.latitude != null && business.longitude != null && (
-          <button
+        {/* Por seguridad del negocio: la dirección exacta ("Cómo llegar") ya no se ofrece aquí para
+            negocios de servicios — solo se revela una vez la reserva está confirmada (ver
+            bookings/[id]) o, para tiendas, al elegir retiro en tienda en el checkout. Aquí solo se
+            ofrece llamar (negocios de servicios) y una referencia de cercanía en minutos. */}
+        {business.capabilities.SERVICES && business.phone && (
+          <a
+            href={`tel:${business.phone}`}
             className="bingo-button secondary small"
-            style={{ width: 'auto', marginTop: 8 }}
-            onClick={() =>
-              window.open(`https://www.google.com/maps/dir/?api=1&destination=${business.latitude},${business.longitude}`, '_blank')
-            }
+            style={{ width: 'auto', marginTop: 8, textDecoration: 'none', display: 'inline-block' }}
           >
-            🧭 Cómo llegar
-          </button>
+            📞 Llamar al negocio
+          </a>
+        )}
+        {business.etaMinutes != null && (
+          <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 6 }}>📍 A {business.etaMinutes} min de ti</div>
         )}
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10, fontSize: 13 }}>
@@ -263,10 +267,8 @@ export default function StoreDetailPage() {
 
         {business.openingHours && (
           <div style={{ marginTop: 12, fontSize: 12, color: '#54617a' }}>
-            {Object.entries(business.openingHours).map(([day, hours]) => (
-              <div key={day}>
-                {WEEKDAY_LABELS[day] ?? day}: {hours.open} – {hours.close}
-              </div>
+            {groupOpeningHours(business.openingHours).map((row) => (
+              <div key={row.label}>{row.label}</div>
             ))}
           </div>
         )}
@@ -290,7 +292,7 @@ export default function StoreDetailPage() {
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{s.name}</div>
                       <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 2 }}>
-                        {SERVICE_TYPE_LABELS[s.type] ?? s.type} · {s.durationMinutes} min
+                        {SERVICE_TYPE_LABELS[s.type] ?? s.type} · {formatServiceDuration(s.type, s.durationMinutes)}
                       </div>
                     </div>
                     <div style={{ fontWeight: 800 }}>${Number(s.price).toFixed(2)}</div>

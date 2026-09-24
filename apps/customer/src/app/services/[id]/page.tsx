@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import CustomerShell from '@/components/CustomerShell';
 import BackButton from '@/components/BackButton';
 import EmptyState from '@/components/EmptyState';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, getUserLocation } from '@/lib/api';
+import { formatServiceDuration } from '@/lib/serviceDuration';
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   VETERINARY: 'Veterinario',
@@ -37,9 +38,12 @@ interface ServiceDetail {
     logoUrl: string | null;
     latitude: number | null;
     longitude: number | null;
+    phone: string | null;
   };
   bookingsEnabled: boolean;
   locationType: 'AT_BUSINESS' | 'AT_CUSTOMER_HOME' | 'BOTH';
+  /** "X min" proximity reference — see ServicesService.getPublic. */
+  etaMinutes: number | null;
 }
 
 export default function ServiceDetailPage() {
@@ -48,9 +52,12 @@ export default function ServiceDetailPage() {
   const [service, setService] = useState<ServiceDetail | null | undefined>(undefined);
 
   useEffect(() => {
-    apiFetch<ServiceDetail>(`/public/services/${params.id}`)
-      .then(setService)
-      .catch(() => setService(null));
+    getUserLocation().then((loc) => {
+      const qs = loc ? `?lat=${loc.lat}&lng=${loc.lng}` : '';
+      apiFetch<ServiceDetail>(`/public/services/${params.id}${qs}`)
+        .then(setService)
+        .catch(() => setService(null));
+    });
   }, [params.id]);
 
   if (service === undefined) {
@@ -92,19 +99,20 @@ export default function ServiceDetailPage() {
             {service.locationType !== 'AT_CUSTOMER_HOME' && ` · ${service.business.addressLine}, ${service.business.city}`}
             {service.locationType === 'AT_CUSTOMER_HOME' && ' · A domicilio del cliente'}
           </div>
-          {service.locationType !== 'AT_CUSTOMER_HOME' && service.business.latitude != null && service.business.longitude != null && (
-            <button
+          {/* Por seguridad del negocio: antes de reservar solo se ofrece llamar, nunca la dirección
+              — "Cómo llegar" aparece recién con la reserva confirmada (o, para servicio a domicilio,
+              se sigue llamando en su lugar). Ver bookings/[id]. */}
+          {service.business.phone && (
+            <a
+              href={`tel:${service.business.phone}`}
               className="bingo-button secondary small"
-              style={{ width: 'auto', marginTop: 8 }}
-              onClick={() =>
-                window.open(
-                  `https://www.google.com/maps/dir/?api=1&destination=${service.business.latitude},${service.business.longitude}`,
-                  '_blank',
-                )
-              }
+              style={{ width: 'auto', marginTop: 8, textDecoration: 'none', display: 'inline-block' }}
             >
-              🧭 Cómo llegar
-            </button>
+              📞 Llamar al negocio
+            </a>
+          )}
+          {service.etaMinutes != null && (
+            <div style={{ fontSize: 12, color: '#7f8ea3', marginTop: 6 }}>📍 A {service.etaMinutes} min de ti</div>
           )}
 
           <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
@@ -113,7 +121,7 @@ export default function ServiceDetailPage() {
               <div style={{ fontSize: 11, color: '#9aa5b1' }}>Precio</div>
             </div>
             <div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{service.durationMinutes} min</div>
+              <div style={{ fontSize: 20, fontWeight: 800 }}>{formatServiceDuration(service.type, service.durationMinutes)}</div>
               <div style={{ fontSize: 11, color: '#9aa5b1' }}>Duración</div>
             </div>
           </div>

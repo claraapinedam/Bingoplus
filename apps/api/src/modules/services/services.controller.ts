@@ -11,6 +11,7 @@ import { ServicesService } from './services.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import { ListBusinessServicesQueryDto, ListPublicServicesQueryDto } from './dto/list-services-query.dto';
+import { GeoQueryDto } from '../../common/dto/geo-query.dto';
 
 @ApiTags('public/services')
 @Controller('public/services')
@@ -25,8 +26,8 @@ export class PublicServicesController {
 
   @Public()
   @Get(':id')
-  getOne(@Param('id') id: string) {
-    return this.servicesService.getPublic(id);
+  getOne(@Param('id') id: string, @Query() geo: GeoQueryDto) {
+    return this.servicesService.getPublic(id, geo.lat !== undefined && geo.lng !== undefined ? { lat: geo.lat, lng: geo.lng } : undefined);
   }
 }
 

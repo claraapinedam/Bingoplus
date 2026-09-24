@@ -50,6 +50,15 @@ export function haversineKm(a: { lat: number; lng: number }, b: { lat: number; l
   return R * 2 * Math.asin(Math.sqrt(h));
 }
 
+/** Rough travel-time estimate for a "X min" proximity label on business/service detail pages —
+ * a flat assumed urban average speed over the haversine distance, not a routed ETA (no roads/
+ * traffic). Good enough as a reference for the customer; real turn-by-turn routing is
+ * MapProvider.calculateETA's job (used for delivery dispatch, not this display-only figure). */
+export function estimateTravelMinutes(distanceKm: number): number {
+  const AVERAGE_SPEED_KMH = 25;
+  return Math.max(1, Math.round((distanceKm / AVERAGE_SPEED_KMH) * 60));
+}
+
 export interface OpeningStatus {
   isOpenNow: boolean | null;
   /** "7:00 PM" — today's closing time, formatted for display; null when unknown or closed. */

@@ -9,6 +9,7 @@ import { ApplyBusinessDto } from './dto/apply-business.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { AddBusinessDocumentDto } from './dto/add-document.dto';
 import { ListMarketplaceQueryDto } from './dto/list-marketplace-query.dto';
+import { GeoQueryDto } from '../../common/dto/geo-query.dto';
 import { SetOnlineOverrideDto } from './dto/set-online-override.dto';
 import { SetCapabilityDto } from '../business-capabilities/dto/set-capability.dto';
 
@@ -58,8 +59,8 @@ export class MarketplaceBusinessesController {
 
   @Public()
   @Get('public/businesses/:id')
-  getPublicOne(@Param('id') id: string) {
-    return this.businessesService.getPublicBusiness(id);
+  getPublicOne(@Param('id') id: string, @Query() geo: GeoQueryDto) {
+    return this.businessesService.getPublicBusiness(id, geo.lat !== undefined && geo.lng !== undefined ? { lat: geo.lat, lng: geo.lng } : undefined);
   }
 
   @Get('me/businesses')

@@ -39,7 +39,9 @@ const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const BOOKING_INCLUDE = {
   service: true,
   pet: { include: { species: true } },
-  business: { select: { id: true, tradeName: true, city: true, addressLine: true, logoUrl: true, phone: true } },
+  business: {
+    select: { id: true, tradeName: true, city: true, addressLine: true, logoUrl: true, phone: true, latitude: true, longitude: true },
+  },
   user: { select: { id: true, firstName: true, lastName: true, phone: true } },
   // Booking payment state (§ cash/card choice) — surfaced on every booking read (customer,
   // business, admin) via the existing 1:1 Payment relation rather than a second field on Booking
