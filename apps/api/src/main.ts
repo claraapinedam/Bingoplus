@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -9,9 +10,17 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   // rawBody: true (§22) — POST /payments/webhooks/:provider needs the exact raw bytes to verify
   // a provider's signature; the parsed JSON body alone isn't enough for that.
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+
+  // Render sits the app behind exactly one reverse proxy — without this, Express's own req.ip
+  // reads the proxy's own connection (e.g. "::1"/loopback) instead of the real client IP from the
+  // X-Forwarded-For header, silently breaking every feature that stamps req.ip for real (the
+  // signed-contract audit trail's signedIp being the one that surfaced this — see
+  // ContractsService.sign()/RiderContractsService's equivalent). "1" trusts exactly one hop,
+  // matching Render's actual topology, rather than the whole X-Forwarded-For chain.
+  app.set('trust proxy', 1);
 
   // Every uploaded photo/PDF (business logos, pet-friendly-place photos, signed contracts, …) is
   // served from this API and embedded as an <img>/<a> in a different app on a different port
