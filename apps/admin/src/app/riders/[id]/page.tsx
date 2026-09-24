@@ -73,6 +73,7 @@ interface RiderContract {
   bingoCommissionPercent: string | number;
   riderTaxWithholdingPercent: string | number;
   signedAt: string | null;
+  signedIp: string | null;
   pdfUrl: string | null;
   createdAt: string;
 }
@@ -318,10 +319,15 @@ export default function AdminRiderDetailPage() {
                 Comisión BINGO+: <strong>{Number(contract.bingoCommissionPercent).toFixed(2)}%</strong> · Retención de impuesto:{' '}
                 <strong>{Number(contract.riderTaxWithholdingPercent).toFixed(2)}%</strong>
               </div>
-              <div style={{ fontSize: 12, color: '#7f8ea3' }}>
-                Congelado al generarse el contrato el {new Date(contract.createdAt).toLocaleDateString('es-EC')}.
-                {contract.signedAt && ` Firmado el ${new Date(contract.signedAt).toLocaleDateString('es-EC')}.`}
+              <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 4 }}>
+                Congelado al generarse el contrato el {new Date(contract.createdAt).toLocaleString('es-EC')}.
               </div>
+              {contract.signedAt && (
+                <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 10 }}>
+                  Firmado el {new Date(contract.signedAt).toLocaleString('es-EC')}
+                  {contract.signedIp && ` desde IP ${contract.signedIp}`}.
+                </div>
+              )}
               {contract.pdfUrl && (
                 <a href={contract.pdfUrl} target="_blank" rel="noreferrer" className="bingo-button secondary small" style={{ marginTop: 10, display: 'inline-block' }}>
                   Ver PDF

@@ -392,10 +392,15 @@ export default function BusinessDetailPage() {
                     Plan Directorio: <strong>{contract.membershipPlanName}</strong> ({Number(contract.membershipPriceUsd).toFixed(2)} USD)
                   </div>
                 )}
-                <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 10 }}>
+                <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 4 }}>
                   Generado: {new Date(contract.createdAt).toLocaleString('es-EC')}.
-                  {contract.signedAt && ` Firmado: ${new Date(contract.signedAt).toLocaleString('es-EC')} desde IP ${contract.signedIp}.`}
                 </div>
+                {contract.signedAt && (
+                  <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 10, wordBreak: 'break-word' }}>
+                    Firmado: {new Date(contract.signedAt).toLocaleString('es-EC')}
+                    {contract.signedIp && ` desde IP ${contract.signedIp}`}.
+                  </div>
+                )}
                 {contract.pdfUrl && (
                   <a href={contract.pdfUrl} target="_blank" rel="noreferrer" className="bingo-button secondary small" style={{ display: 'inline-block' }}>
                     Ver PDF firmado
