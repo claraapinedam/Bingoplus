@@ -1111,24 +1111,50 @@ model Rider {
 // terms at creation time, never re-read live once written — the same "frozen photo" reasoning as
 // BusinessContract.commissionRatePercent, just sourced from DeliveryFareConfig instead of Commission.
 model RiderContract {
-  id                         String         @id @default(cuid())
-  riderId                    String
-  status                     ContractStatus @default(PENDING_SIGNATURE)
-  idType                     RiderIdType
+  id                          String         @id @default(cuid())
+  riderId                     String
+  status                      ContractStatus @default(PENDING_SIGNATURE)
+  idType                      RiderIdType
   // Razón social for RUC, or the rider's own User.firstName+lastName for CEDULA — always
   // populated, exactly like BusinessContract.legalName, since the PDF signer line needs it either way.
-  legalName                  String
-  taxId                      String
+  legalName                   String
+  taxId                       String
   // Frozen at contract-generation time from DeliveryFareConfig — see the model-level comment.
-  bingoCommissionPercent     Decimal        @db.Decimal(5, 2)
-  riderTaxWithholdingPercent Decimal        @db.Decimal(5, 2)
-  contractText               String
-  signatureDataUrl           String?
-  signedAt                   DateTime?
-  signedIp                   String?
-  pdfUrl                     String?
-  createdAt                  DateTime       @default(now())
-  updatedAt                  DateTime       @updatedAt
+  bingoCommissionPercent      Decimal        @db.Decimal(5, 2)
+  riderTaxWithholdingPercent  Decimal        @db.Decimal(5, 2)
+  // Every other placeholder the real contract text (see ContractTemplateService's RIDER default)
+  // substitutes at generation time — same "frozen photo" reasoning as the fields above, mirroring
+  // BusinessContract's own bingoPlus*/bank* snapshot fields exactly.
+  riderPhone                  String?
+  riderEmail                  String?
+  riderAddress                String?
+  // "No aplica" for a bicycle (per the variable dictionary), the real value otherwise — stored as
+  // the already-resolved display string, not the raw VehicleType, so the frozen text never needs
+  // to re-derive it.
+  vehicleType                 String?
+  vehicleColor                String?
+  vehicleBrand                String?
+  vehicleModel                String?
+  vehicleYear                 String?
+  vehiclePlate                String?
+  licenseNumber               String?
+  licenseExpiration           String?
+  bankName                    String?
+  bankAccountType             String?
+  bankAccountNumber           String?
+  bankAccountHolderName       String?
+  bingoPlusLegalName          String?
+  bingoPlusTaxId              String?
+  bingoPlusAddress            String?
+  bingoPlusRepresentativeName String?
+  bingoPlusSignatureImageUrl  String?
+  contractText                String
+  signatureDataUrl            String?
+  signedAt                    DateTime?
+  signedIp                    String?
+  pdfUrl                      String?
+  createdAt                   DateTime       @default(now())
+  updatedAt                   DateTime       @updatedAt
 
   rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
 

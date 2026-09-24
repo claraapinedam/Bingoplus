@@ -7,17 +7,42 @@ export interface RiderContractPdfInput {
   taxId: string;
   contractBodyText: string;
   bingoplusRepresentativeName: string;
-  bingoplusRuc: string;
+  /** Fetched bytes of PlatformLegalInfo.signatureImageUrl — null when BINGO+ hasn't uploaded one
+   * yet, in which case this section falls back to a plain text label with no image. */
+  bingoplusSignatureImage: Buffer | null;
   signedAt: Date;
   signedIp: string;
   /** Decoded PNG bytes from the rider's drawn signature canvas. */
   signatureImage: Buffer;
 }
 
+// Cheap line-classifiers for the already-resolved contract text — mirrors contract-pdf.builder.ts
+// (BusinessContract) exactly, just with this document's own section-header vocabulary (no "ANEXO
+// COMERCIAL"/"DATOS DEL NEGOCIO" here — this one has "ANEXO OPERATIVO"/"DATOS DEL RIDER").
+function isClauseHeader(line: string): boolean {
+  return /^CLÁUSULA\s/.test(line);
+}
+
+function isSectionHeader(line: string): boolean {
+  return (
+    /^\d+\.\s/.test(line) ||
+    [
+      'CONTRATO DE PRESTACIÓN DE SERVICIOS DE ENTREGA',
+      'Y USO DE LA PLATAFORMA BINGO+',
+      'COMPARECIENTES',
+      'ANEXO OPERATIVO',
+      'DATOS DEL RIDER',
+    ].includes(line)
+  );
+}
+
 /**
- * Mirrors buildContractPdf (BusinessContract) almost exactly — same layout, footer stamping and
- * page-buffering technique — just Rider-appropriate wording. The rider always signs personally
- * (no separate legal representative like Business/RUC has), even when operating under an RUC.
+ * Renders the signed rider contract to a PDF buffer entirely in memory — mirrors
+ * contract-pdf.builder.ts (BusinessContract) exactly: `contractBodyText` is the full,
+ * already-resolved contract (title, COMPARECIENTES, every clause, and the Anexo Operativo), so
+ * this builder only lays it out and appends the actual signature artifacts (both BINGO+'s uploaded
+ * signature image and the rider's own drawn one, plus the signing timestamp/IP stamp) — no
+ * separate comparecientes summary, which would otherwise duplicate what the text itself states.
  */
 export function buildRiderContractPdf(input: RiderContractPdfInput): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -27,40 +52,41 @@ export function buildRiderContractPdf(input: RiderContractPdfInput): Promise<Buf
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.fontSize(18).font('Helvetica-Bold').text('Contrato de Afiliación de Rider — BINGO+', { align: 'center' });
-    doc.moveDown(0.5);
-    doc.fontSize(9).font('Helvetica').fillColor('#666').text(`ID de contrato: ${input.contractId}`, { align: 'center' });
+    doc.fontSize(9).font('Helvetica').fillColor('#666').text(`ID de contrato: ${input.contractId}`, { align: 'right' });
     doc.fillColor('black');
+    doc.moveDown(0.8);
+
+    for (const line of input.contractBodyText.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        doc.moveDown(0.6);
+      } else if (isClauseHeader(trimmed) || isSectionHeader(trimmed)) {
+        doc.moveDown(0.4);
+        doc.fontSize(11).font('Helvetica-Bold').text(trimmed, { align: 'left' });
+        doc.fontSize(10).font('Helvetica');
+      } else {
+        doc.fontSize(10).font('Helvetica').text(trimmed, { align: 'justify', lineGap: 2 });
+      }
+    }
     doc.moveDown(1.5);
 
-    doc.fontSize(12).font('Helvetica-Bold').text('Comparecientes');
-    doc.moveDown(0.3);
-    doc.fontSize(10).font('Helvetica');
-    doc.text(`BINGO+, representado por ${input.bingoplusRepresentativeName}, RUC ${input.bingoplusRuc} (en adelante, "BINGO+").`);
-    doc.moveDown(0.3);
-    if (input.idType === 'RUC') {
-      doc.text(`${input.legalName}, RUC ${input.taxId} (en adelante, "el Rider").`);
-    } else if (input.idType === 'PASAPORTE') {
-      doc.text(`${input.legalName}, pasaporte ${input.taxId} (en adelante, "el Rider").`);
-    } else {
-      doc.text(`${input.legalName}, cédula de identidad ${input.taxId} (en adelante, "el Rider").`);
+    if (doc.y > doc.page.height - 200) doc.addPage();
+    doc.fontSize(12).font('Helvetica-Bold').text('FIRMA DIGITAL DE BINGO+');
+    doc.moveDown(0.5);
+    if (input.bingoplusSignatureImage) {
+      doc.image(input.bingoplusSignatureImage, { fit: [220, 90] });
+      doc.moveDown(0.3);
     }
+    doc.font('Helvetica').text(`Por BINGO+ — ${input.bingoplusRepresentativeName}`);
     doc.moveDown(1.2);
 
-    doc.fontSize(10).text(input.contractBodyText, { align: 'justify', lineGap: 2 });
-    doc.moveDown(1.5);
-
-    doc.fontSize(12).font('Helvetica-Bold').text('Firmas');
+    doc.fontSize(12).font('Helvetica-Bold').text('FIRMA DIGITAL DE EL RIDER');
     doc.moveDown(0.5);
-
-    doc.fontSize(10).font('Helvetica-Oblique').text(`/f/ ${input.bingoplusRepresentativeName}`);
-    doc.font('Helvetica').text(`Por BINGO+ — RUC ${input.bingoplusRuc}`);
-    doc.moveDown(1);
 
     if (doc.y > doc.page.height - 200) doc.addPage();
     doc.image(input.signatureImage, { fit: [220, 90] });
     doc.moveDown(0.3);
-    doc.font('Helvetica').text(`Por el Rider — ${input.legalName}`);
+    doc.font('Helvetica').text(`Por el Rider — ${input.legalName} — ${input.idType} ${input.taxId}`);
     doc.text(`Firmado el ${input.signedAt.toLocaleString('es-EC')} desde la IP ${input.signedIp}`);
 
     const range = doc.bufferedPageRange();

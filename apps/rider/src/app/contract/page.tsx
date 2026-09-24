@@ -3,19 +3,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError, getAccessToken } from '@/lib/api';
-
-const BINGOPLUS_SIGNATURE_LABEL = 'BINGO+ (firma digital por defecto)';
+import ContractDocument from '@/components/ContractDocument';
 
 interface RiderContract {
   id: string;
   status: 'PENDING_SIGNATURE' | 'SIGNED' | 'SUPERSEDED';
-  idType: 'RUC' | 'CEDULA';
+  idType: 'RUC' | 'CEDULA' | 'PASAPORTE';
   legalName: string;
   taxId: string;
   bingoCommissionPercent: string | number;
   riderTaxWithholdingPercent: string | number;
   contractText: string;
   pdfUrl: string | null;
+  bingoPlusRepresentativeName: string | null;
+  bingoPlusSignatureImageUrl: string | null;
 }
 
 // The canvas's CSS size (style width: 100%) and its internal pixel resolution (width=520
@@ -156,28 +157,23 @@ export default function RiderContractPage() {
         Tu solicitud fue aprobada. Lee y firma el contrato para activar tu cuenta en BINGO+.
       </p>
 
-      <div className="bingo-card" style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 8px' }}>Comparecientes</h2>
-        <p style={{ fontSize: 13, margin: '0 0 4px' }}>{BINGOPLUS_SIGNATURE_LABEL}</p>
-        <p style={{ fontSize: 13, margin: 0 }}>
-          {contract.idType === 'RUC' ? `${contract.legalName} — RUC ${contract.taxId}` : `${contract.legalName} — Cédula ${contract.taxId}`}
-        </p>
+      {/* The full resolved contract text below already opens with its own COMPARECIENTES clause
+          (real names, ID type/number, domicilio) and states the commission/tax figures in its
+          Anexo Operativo — a separate summary card here would just duplicate it. */}
+      <div className="bingo-card" style={{ marginBottom: 16, maxHeight: 420, overflowY: 'auto' }}>
+        <ContractDocument text={contract.contractText} />
       </div>
 
-      <div className="bingo-card" style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 8px' }}>Comisión y retención</h2>
-        <p style={{ fontSize: 13, margin: 0 }}>
-          Comisión BINGO+: <strong>{Number(contract.bingoCommissionPercent).toFixed(2)}%</strong> · Retención de impuesto:{' '}
-          <strong>{Number(contract.riderTaxWithholdingPercent).toFixed(2)}%</strong>
-        </p>
-      </div>
-
-      <div
-        className="bingo-card"
-        style={{ marginBottom: 16, whiteSpace: 'pre-wrap', fontSize: 12.5, lineHeight: 1.6, maxHeight: 320, overflowY: 'auto' }}
-      >
-        {contract.contractText}
-      </div>
+      {contract.bingoPlusSignatureImageUrl && (
+        <div className="bingo-card" style={{ marginBottom: 16 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 8px' }}>Firma de BINGO+</h2>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={contract.bingoPlusSignatureImageUrl} alt="Firma de BINGO+" style={{ maxWidth: 220, maxHeight: 90, display: 'block' }} />
+          {contract.bingoPlusRepresentativeName && (
+            <p style={{ fontSize: 12, color: '#7f8ea3', margin: '6px 0 0' }}>Por BINGO+ — {contract.bingoPlusRepresentativeName}</p>
+          )}
+        </div>
+      )}
 
       <div className="bingo-card" style={{ marginBottom: 16 }}>
         <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 8px' }}>Tu firma</h2>

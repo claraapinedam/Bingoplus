@@ -1,0 +1,22 @@
+-- AlterTable
+ALTER TABLE "RiderContract" ADD COLUMN     "bankAccountHolderName" TEXT,
+ADD COLUMN     "bankAccountNumber" TEXT,
+ADD COLUMN     "bankAccountType" TEXT,
+ADD COLUMN     "bankName" TEXT,
+ADD COLUMN     "bingoPlusAddress" TEXT,
+ADD COLUMN     "bingoPlusLegalName" TEXT,
+ADD COLUMN     "bingoPlusRepresentativeName" TEXT,
+ADD COLUMN     "bingoPlusSignatureImageUrl" TEXT,
+ADD COLUMN     "bingoPlusTaxId" TEXT,
+ADD COLUMN     "licenseExpiration" TEXT,
+ADD COLUMN     "licenseNumber" TEXT,
+ADD COLUMN     "riderAddress" TEXT,
+ADD COLUMN     "riderEmail" TEXT,
+ADD COLUMN     "riderPhone" TEXT,
+ADD COLUMN     "vehicleBrand" TEXT,
+ADD COLUMN     "vehicleColor" TEXT,
+ADD COLUMN     "vehicleModel" TEXT,
+ADD COLUMN     "vehiclePlate" TEXT,
+ADD COLUMN     "vehicleType" TEXT,
+ADD COLUMN     "vehicleYear" TEXT;
+

@@ -1,21 +1,48 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { RiderContractsService } from './rider-contracts.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { StorageProvider } from '../uploads/providers/storage-provider.interface';
 import { DeliveryFareConfigService } from '../delivery/delivery-fare-config.service';
 import { ContractTemplateService, DEFAULT_RIDER_CONTRACT_TEMPLATE } from './contract-template.service';
+import { LegalInfoService, LegalInfoValues } from './legal-info.service';
 
 // A real, minimal 1x1 transparent PNG — pdfkit's doc.image() needs actual valid PNG bytes to not throw.
 const VALID_PNG_DATA_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+const VALID_LEGAL_INFO: LegalInfoValues = {
+  legalName: 'BINGO+ S.A.S.',
+  taxId: '1792345678001',
+  addressLine: 'Av. Siempre Viva 123, Quito',
+  latitude: null,
+  longitude: null,
+  legalRepresentativeName: 'María Dolores Pérez',
+  signatureImageUrl: null,
+  privacyEmail: null,
+};
+
+function baseRider(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'r1',
+    idType: 'CEDULA',
+    legalName: null,
+    nationalIdNumber: '0102030405',
+    address: 'Av. Siempre Viva 456',
+    user: { firstName: 'Juan', lastName: 'Pérez', email: 'r@example.com', phone: '0991234567' },
+    vehicles: [],
+    documents: [],
+    payoutMethod: null,
+    ...overrides,
+  };
+}
 
 describe('RiderContractsService', () => {
   let service: RiderContractsService;
   let prisma: any;
   let email: { sendSignedContractEmail: jest.Mock };
   let fareConfig: { get: jest.Mock };
+  let legalInfo: { get: jest.Mock; set: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -26,17 +53,17 @@ describe('RiderContractsService', () => {
     };
     email = { sendSignedContractEmail: jest.fn().mockResolvedValue(undefined) };
     fareConfig = { get: jest.fn().mockResolvedValue({ bingoCommissionPercent: 0.2, riderTaxWithholdingPercent: 0.08 }) };
-    const config = { get: jest.fn((_key: string, fallback?: unknown) => fallback) } as unknown as ConfigService;
     const storage = { upload: jest.fn().mockResolvedValue({ url: 'http://localhost:3001/api/v1/uploads/test.pdf' }) } as unknown as StorageProvider;
     const templates = { get: jest.fn().mockResolvedValue(DEFAULT_RIDER_CONTRACT_TEMPLATE), set: jest.fn() };
+    legalInfo = { get: jest.fn().mockResolvedValue(VALID_LEGAL_INFO), set: jest.fn() };
 
     service = new RiderContractsService(
       prisma as unknown as PrismaService,
-      config,
       email as unknown as EmailService,
       storage,
       fareConfig as unknown as DeliveryFareConfigService,
       templates as unknown as ContractTemplateService,
+      legalInfo as unknown as LegalInfoService,
     );
   });
 
@@ -52,13 +79,7 @@ describe('RiderContractsService', () => {
 
     it('rejects a RUC rider with no razón social on file', async () => {
       prisma.riderContract.findFirst.mockResolvedValue(null);
-      prisma.rider.findUniqueOrThrow.mockResolvedValue({
-        id: 'r1',
-        idType: 'RUC',
-        legalName: null,
-        nationalIdNumber: '1793001',
-        user: { firstName: 'Juan', lastName: 'Pérez' },
-      });
+      prisma.rider.findUniqueOrThrow.mockResolvedValue(baseRider({ idType: 'RUC', legalName: null }));
 
       await expect(service.createForApprovedRider('r1')).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.riderContract.create).not.toHaveBeenCalled();
@@ -66,26 +87,32 @@ describe('RiderContractsService', () => {
 
     it('rejects a rider missing idType/nationalIdNumber entirely', async () => {
       prisma.riderContract.findFirst.mockResolvedValue(null);
-      prisma.rider.findUniqueOrThrow.mockResolvedValue({
-        id: 'r1',
-        idType: null,
-        legalName: null,
-        nationalIdNumber: null,
-        user: { firstName: 'Juan', lastName: 'Pérez' },
-      });
+      prisma.rider.findUniqueOrThrow.mockResolvedValue(baseRider({ idType: null, nationalIdNumber: null }));
 
       await expect(service.createForApprovedRider('r1')).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('rejects when BINGO+ legal info has not been configured yet', async () => {
+      legalInfo.get.mockResolvedValueOnce({
+        legalName: '',
+        taxId: '',
+        addressLine: '',
+        latitude: null,
+        longitude: null,
+        legalRepresentativeName: '',
+        signatureImageUrl: null,
+        privacyEmail: null,
+      });
+      prisma.riderContract.findFirst.mockResolvedValue(null);
+      prisma.rider.findUniqueOrThrow.mockResolvedValue(baseRider());
+
+      await expect(service.createForApprovedRider('r1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.riderContract.create).not.toHaveBeenCalled();
+    });
+
     it('uses the rider\'s own account name as legalName for CEDULA', async () => {
       prisma.riderContract.findFirst.mockResolvedValue(null);
-      prisma.rider.findUniqueOrThrow.mockResolvedValue({
-        id: 'r1',
-        idType: 'CEDULA',
-        legalName: null,
-        nationalIdNumber: '0102030405',
-        user: { firstName: 'Juan', lastName: 'Pérez' },
-      });
+      prisma.rider.findUniqueOrThrow.mockResolvedValue(baseRider({ idType: 'CEDULA', legalName: null }));
       prisma.riderContract.create.mockResolvedValue({ id: 'c1' });
 
       await service.createForApprovedRider('r1');
@@ -99,13 +126,7 @@ describe('RiderContractsService', () => {
 
     it('uses razón social as legalName for RUC', async () => {
       prisma.riderContract.findFirst.mockResolvedValue(null);
-      prisma.rider.findUniqueOrThrow.mockResolvedValue({
-        id: 'r1',
-        idType: 'RUC',
-        legalName: 'Juan Pérez Cía. Ltda.',
-        nationalIdNumber: '1793001',
-        user: { firstName: 'Juan', lastName: 'Pérez' },
-      });
+      prisma.rider.findUniqueOrThrow.mockResolvedValue(baseRider({ idType: 'RUC', legalName: 'Juan Pérez Cía. Ltda.' }));
       prisma.riderContract.create.mockResolvedValue({ id: 'c1' });
 
       await service.createForApprovedRider('r1');
@@ -117,13 +138,7 @@ describe('RiderContractsService', () => {
 
     it('freezes the real DeliveryFareConfig commission/tax percentages onto the contract as a snapshot', async () => {
       prisma.riderContract.findFirst.mockResolvedValue(null);
-      prisma.rider.findUniqueOrThrow.mockResolvedValue({
-        id: 'r1',
-        idType: 'CEDULA',
-        legalName: null,
-        nationalIdNumber: '0102030405',
-        user: { firstName: 'Juan', lastName: 'Pérez' },
-      });
+      prisma.rider.findUniqueOrThrow.mockResolvedValue(baseRider());
       prisma.riderContract.create.mockResolvedValue({ id: 'c1' });
 
       await service.createForApprovedRider('r1');
@@ -131,6 +146,57 @@ describe('RiderContractsService', () => {
       expect(prisma.riderContract.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ bingoCommissionPercent: 20, riderTaxWithholdingPercent: 8 }),
+        }),
+      );
+    });
+
+    it('resolves vehicle fields to "No aplica" for a bicycle', async () => {
+      prisma.riderContract.findFirst.mockResolvedValue(null);
+      prisma.rider.findUniqueOrThrow.mockResolvedValue(
+        baseRider({ vehicles: [{ type: 'BIKE', color: 'Rojo', brand: null, model: null, year: null, plate: null }] }),
+      );
+      prisma.riderContract.create.mockResolvedValue({ id: 'c1' });
+
+      await service.createForApprovedRider('r1');
+
+      expect(prisma.riderContract.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            vehicleType: 'Bicicleta',
+            vehicleColor: 'Rojo',
+            vehicleBrand: 'No aplica',
+            vehicleModel: 'No aplica',
+            vehicleYear: 'No aplica',
+            vehiclePlate: 'No aplica',
+            licenseNumber: 'No aplica',
+          }),
+        }),
+      );
+    });
+
+    it('resolves full vehicle/license fields for a motorcycle', async () => {
+      prisma.riderContract.findFirst.mockResolvedValue(null);
+      prisma.rider.findUniqueOrThrow.mockResolvedValue(
+        baseRider({
+          vehicles: [{ type: 'MOTORCYCLE', color: 'Negro', brand: 'Honda', model: 'CB1', year: 2022, plate: 'ABC-123' }],
+          documents: [{ type: 'LICENSE', documentNumber: 'LIC-001', expirationDate: null }],
+        }),
+      );
+      prisma.riderContract.create.mockResolvedValue({ id: 'c1' });
+
+      await service.createForApprovedRider('r1');
+
+      expect(prisma.riderContract.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            vehicleType: 'Motocicleta',
+            vehicleColor: 'Negro',
+            vehicleBrand: 'Honda',
+            vehicleModel: 'CB1',
+            vehicleYear: '2022',
+            vehiclePlate: 'ABC-123',
+            licenseNumber: 'LIC-001',
+          }),
         }),
       );
     });

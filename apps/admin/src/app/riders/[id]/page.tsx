@@ -76,6 +76,8 @@ interface RiderContract {
   signedIp: string | null;
   pdfUrl: string | null;
   createdAt: string;
+  bingoPlusRepresentativeName: string | null;
+  bingoPlusSignatureImageUrl: string | null;
 }
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
@@ -354,6 +356,15 @@ export default function AdminRiderDetailPage() {
                 <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 10 }}>
                   Firmado el {new Date(contract.signedAt).toLocaleString('es-EC')}
                   {contract.signedIp && ` desde IP ${contract.signedIp}`}.
+                </div>
+              )}
+              {contract.bingoPlusSignatureImageUrl && (
+                <div style={{ marginBottom: 10 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={contract.bingoPlusSignatureImageUrl} alt="Firma de BINGO+" style={{ maxWidth: 160, maxHeight: 70, display: 'block' }} />
+                  {contract.bingoPlusRepresentativeName && (
+                    <p style={{ fontSize: 11, color: '#7f8ea3', margin: '4px 0 0' }}>Por BINGO+ — {contract.bingoPlusRepresentativeName}</p>
+                  )}
                 </div>
               )}
               {contract.pdfUrl && (
