@@ -8,7 +8,6 @@ import OrdersTab from '@/components/business-tabs/OrdersTab';
 import CouponsTab from '@/components/business-tabs/CouponsTab';
 import PaymentsTab from '@/components/business-tabs/PaymentsTab';
 import CommissionsTab from '@/components/business-tabs/CommissionsTab';
-import ContractTab from '@/components/business-tabs/ContractTab';
 import ServicesTab from '@/components/business-tabs/ServicesTab';
 import BookingsTab from '@/components/business-tabs/BookingsTab';
 import PromotionsTab from '@/components/business-tabs/PromotionsTab';
@@ -67,12 +66,19 @@ interface Business {
 interface Contract {
   id: string;
   status: 'PENDING_SIGNATURE' | 'SIGNED' | 'SUPERSEDED';
+  idType: 'RUC' | 'CEDULA';
+  legalName: string;
+  representativeName: string | null;
+  taxId: string;
   sellsProducts: boolean;
   directoryListing: boolean;
   commissionRatePercent: string | number | null;
   membershipPlanName: string | null;
   membershipPriceUsd: string | number | null;
   membershipBillingFrequency: string | null;
+  pdfUrl: string | null;
+  signedAt: string | null;
+  signedIp: string | null;
   createdAt: string;
 }
 
@@ -106,7 +112,6 @@ const TABS = [
   { value: 'payments', label: 'Pagos' },
   { value: 'commissions', label: 'Comisiones' },
   { value: 'reviews', label: 'Reseñas' },
-  { value: 'contract', label: 'Contrato' },
 ];
 
 export default function BusinessDetailPage() {
@@ -357,6 +362,50 @@ export default function BusinessDetailPage() {
           </div>
 
           <div className="bingo-card">
+            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 10px' }}>Contrato</h2>
+            {contract === undefined ? (
+              <p style={{ fontSize: 13 }}>Cargando…</p>
+            ) : contract === null ? (
+              <p style={{ fontSize: 13, color: '#7f8ea3' }}>
+                Este negocio todavía no tiene un contrato — se genera automáticamente al aprobar la solicitud.
+              </p>
+            ) : (
+              <>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>
+                  Estado: <span className={`bingo-badge badge-${contract.status.toLowerCase()}`}>{contract.status}</span>
+                </div>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>
+                  Cubre: {[contract.sellsProducts && 'Tienda', contract.directoryListing && 'Directorio'].filter(Boolean).join(' + ') || '—'}
+                </div>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>
+                  {contract.idType === 'RUC'
+                    ? `${contract.legalName} — representado por ${contract.representativeName} — RUC ${contract.taxId}`
+                    : `${contract.legalName} — Cédula ${contract.taxId}`}
+                </div>
+                {contract.commissionRatePercent != null && (
+                  <div style={{ fontSize: 13, marginBottom: 6 }}>
+                    Comisión BINGO+: <strong>{Number(contract.commissionRatePercent).toFixed(2)}%</strong>
+                  </div>
+                )}
+                {contract.membershipPlanName && (
+                  <div style={{ fontSize: 13, marginBottom: 6 }}>
+                    Plan Directorio: <strong>{contract.membershipPlanName}</strong> ({Number(contract.membershipPriceUsd).toFixed(2)} USD)
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: '#7f8ea3', marginBottom: 10 }}>
+                  Generado: {new Date(contract.createdAt).toLocaleString('es-EC')}.
+                  {contract.signedAt && ` Firmado: ${new Date(contract.signedAt).toLocaleString('es-EC')} desde IP ${contract.signedIp}.`}
+                </div>
+                {contract.pdfUrl && (
+                  <a href={contract.pdfUrl} target="_blank" rel="noreferrer" className="bingo-button secondary small" style={{ display: 'inline-block' }}>
+                    Ver PDF firmado
+                  </a>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="bingo-card">
             <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 14px' }}>Capacidades</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {CAPABILITY_ORDER.map((cap) => {
@@ -466,7 +515,6 @@ export default function BusinessDetailPage() {
       {tab === 'payments' && <PaymentsTab businessId={business.id} />}
       {tab === 'commissions' && <CommissionsTab businessId={business.id} />}
       {tab === 'reviews' && <ReviewsList targetType="BUSINESS" targetId={business.id} />}
-      {tab === 'contract' && <ContractTab businessId={business.id} />}
     </AdminShell>
   );
 }
