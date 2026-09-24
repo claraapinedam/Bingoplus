@@ -17,6 +17,8 @@ import { BusinessesService } from '../businesses/businesses.service';
 import { SetDefaultCommissionRateDto } from './dto/set-default-commission-rate.dto';
 import { ContractTemplateService } from '../contracts/contract-template.service';
 import { SetContractTemplateDto } from './dto/set-contract-template.dto';
+import { LegalInfoService } from '../contracts/legal-info.service';
+import { SetLegalInfoDto } from '../contracts/dto/set-legal-info.dto';
 
 /**
  * Marketplace ranking configuration — kept out of code per the project rule that these weights
@@ -34,6 +36,7 @@ export class AdminSettingsController {
     private readonly dispatchConfig: DispatchService,
     private readonly businesses: BusinessesService,
     private readonly contractTemplates: ContractTemplateService,
+    private readonly legalInfo: LegalInfoService,
   ) {}
 
   @Get('ranking-weights')
@@ -123,5 +126,18 @@ export class AdminSettingsController {
   ) {
     const content = await this.contractTemplates.set(type, dto.content, admin.id);
     return { type, content };
+  }
+
+  /** BINGO+'s own legal identity — feeds the "[RAZÓN SOCIAL BINGO+]" family of placeholders in
+   * the business affiliation contract (see ContractsService/LegalInfoService). */
+  @Get('legal-info')
+  getLegalInfo() {
+    return this.legalInfo.get();
+  }
+
+  @Audit('settings.legal-info.update', 'PlatformLegalInfo')
+  @Patch('legal-info')
+  setLegalInfo(@CurrentUser() admin: AuthenticatedUser, @Body() dto: SetLegalInfoDto) {
+    return this.legalInfo.set(dto, admin.id);
   }
 }

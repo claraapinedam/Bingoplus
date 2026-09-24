@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
 import AdminShell from '@/components/AdminShell';
 import { apiFetch, decodeRoles, getAccessToken, ApiError } from '@/lib/api';
+import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 
 interface RankingWeights {
   speciesMatch: number;
@@ -47,6 +49,19 @@ interface DispatchConfig {
   radiusExpansionKm: number[];
   retryBackoffSeconds: number;
   maxDispatchAttempts: number;
+}
+
+/** BINGO+'s own legal identity (razón social, RUC, dirección, representante legal) — feeds the
+ * "[RAZÓN SOCIAL BINGO+]"/"[RUC BINGO+]"/"[DIRECCIÓN BINGO+]"/"[REPRESENTANTE LEGAL BINGO+]"
+ * placeholders in the per-business affiliation contract text (ContractsService). Contract
+ * generation fails until this is configured at least once. */
+interface LegalInfoConfig {
+  legalName: string;
+  taxId: string;
+  addressLine: string;
+  latitude: number | null;
+  longitude: number | null;
+  legalRepresentativeName: string;
 }
 
 const WEIGHT_LABELS: { key: keyof RankingWeights; label: string }[] = [
@@ -143,21 +158,25 @@ export default function AdminSettingsPage() {
   const [deliveryFare, setDeliveryFare] = useState<DeliveryFareConfig | null>(null);
   const [dispatchConfig, setDispatchConfig] = useState<DispatchConfig | null>(null);
   const [radiusExpansionText, setRadiusExpansionText] = useState('');
+  const [legalInfo, setLegalInfo] = useState<LegalInfoConfig | null>(null);
   const [weightsBusy, setWeightsBusy] = useState(false);
   const [pricingBusy, setPricingBusy] = useState(false);
   const [commissionBusy, setCommissionBusy] = useState(false);
   const [deliveryFareBusy, setDeliveryFareBusy] = useState(false);
   const [dispatchBusy, setDispatchBusy] = useState(false);
+  const [legalInfoBusy, setLegalInfoBusy] = useState(false);
   const [weightsMsg, setWeightsMsg] = useState<string | null>(null);
   const [pricingMsg, setPricingMsg] = useState<string | null>(null);
   const [commissionMsg, setCommissionMsg] = useState<string | null>(null);
   const [deliveryFareMsg, setDeliveryFareMsg] = useState<string | null>(null);
   const [dispatchMsg, setDispatchMsg] = useState<string | null>(null);
+  const [legalInfoMsg, setLegalInfoMsg] = useState<string | null>(null);
   const [weightsErr, setWeightsErr] = useState<string | null>(null);
   const [pricingErr, setPricingErr] = useState<string | null>(null);
   const [commissionErr, setCommissionErr] = useState<string | null>(null);
   const [deliveryFareErr, setDeliveryFareErr] = useState<string | null>(null);
   const [dispatchErr, setDispatchErr] = useState<string | null>(null);
+  const [legalInfoErr, setLegalInfoErr] = useState<string | null>(null);
   // Defense in depth only — the backend's RolesGuard is the real gate (AdminSettingsController
   // never grants RoleName.USER). AdminShell's nav already hides the link for that role.
   const [restricted, setRestricted] = useState(false);
@@ -178,7 +197,26 @@ export default function AdminSettingsPage() {
         setRadiusExpansionText(config.radiusExpansionKm.join(', '));
       })
       .catch(() => setDispatchConfig(null));
+    apiFetch<LegalInfoConfig>('/admin/settings/legal-info').then(setLegalInfo).catch(() => setLegalInfo(null));
   }, []);
+
+  const { isLoaded: mapsLoaded } = useJsApiLoader({
+    id: GOOGLE_MAPS_LOADER_ID,
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
+  const legalAddressAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  function handleLegalAddressPlaceChanged() {
+    const place = legalAddressAutocompleteRef.current?.getPlace();
+    if (!place?.geometry?.location || !legalInfo) return;
+    setLegalInfo({
+      ...legalInfo,
+      addressLine: place.formatted_address ?? place.name ?? legalInfo.addressLine,
+      latitude: place.geometry.location.lat(),
+      longitude: place.geometry.location.lng(),
+    });
+  }
 
   if (restricted) {
     return (
@@ -301,6 +339,33 @@ export default function AdminSettingsPage() {
       setDispatchErr(err instanceof ApiError ? err.message : 'No se pudo guardar.');
     } finally {
       setDispatchBusy(false);
+    }
+  }
+
+  async function saveLegalInfo() {
+    if (!legalInfo) return;
+    setLegalInfoBusy(true);
+    setLegalInfoErr(null);
+    setLegalInfoMsg(null);
+    try {
+      const body: Record<string, unknown> = {
+        legalName: legalInfo.legalName,
+        taxId: legalInfo.taxId,
+        addressLine: legalInfo.addressLine,
+        legalRepresentativeName: legalInfo.legalRepresentativeName,
+      };
+      if (legalInfo.latitude != null) body.latitude = legalInfo.latitude;
+      if (legalInfo.longitude != null) body.longitude = legalInfo.longitude;
+      const saved = await apiFetch<LegalInfoConfig>('/admin/settings/legal-info', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      setLegalInfo(saved);
+      setLegalInfoMsg('Información legal de BINGO+ actualizada.');
+    } catch (err) {
+      setLegalInfoErr(err instanceof ApiError ? err.message : 'No se pudo guardar.');
+    } finally {
+      setLegalInfoBusy(false);
     }
   }
 
@@ -484,6 +549,79 @@ export default function AdminSettingsPage() {
 
               <button className="bingo-button" disabled={dispatchBusy} onClick={saveDispatchConfig}>
                 {dispatchBusy ? 'Guardando…' : 'Guardar emparejamiento'}
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="bingo-card">
+          <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>Información legal de BINGO+</h2>
+          <p style={{ fontSize: 12, color: '#7f8ea3', margin: '0 0 12px' }}>
+            Razón social, RUC, dirección y representante legal de BINGO+ — se usan para llenar el contrato de
+            afiliación que firma cada negocio. Sin esto configurado, la generación de contratos falla.
+          </p>
+
+          {legalInfo === null ? (
+            <p>Cargando…</p>
+          ) : (
+            <>
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Razón social</label>
+                <input
+                  className="bingo-input"
+                  value={legalInfo.legalName}
+                  onChange={(e) => setLegalInfo({ ...legalInfo, legalName: e.target.value })}
+                />
+              </div>
+
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>RUC</label>
+                <input
+                  className="bingo-input"
+                  value={legalInfo.taxId}
+                  onChange={(e) => setLegalInfo({ ...legalInfo, taxId: e.target.value })}
+                />
+              </div>
+
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Dirección</label>
+                {mapsLoaded ? (
+                  <Autocomplete
+                    onLoad={(ac) => {
+                      legalAddressAutocompleteRef.current = ac;
+                    }}
+                    onPlaceChanged={handleLegalAddressPlaceChanged}
+                    options={{ componentRestrictions: { country: 'ec' }, fields: ['formatted_address', 'name', 'geometry'] }}
+                  >
+                    <input
+                      className="bingo-input"
+                      value={legalInfo.addressLine}
+                      onChange={(e) => setLegalInfo({ ...legalInfo, addressLine: e.target.value })}
+                    />
+                  </Autocomplete>
+                ) : (
+                  <input
+                    className="bingo-input"
+                    value={legalInfo.addressLine}
+                    onChange={(e) => setLegalInfo({ ...legalInfo, addressLine: e.target.value })}
+                  />
+                )}
+              </div>
+
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Representante legal</label>
+                <input
+                  className="bingo-input"
+                  value={legalInfo.legalRepresentativeName}
+                  onChange={(e) => setLegalInfo({ ...legalInfo, legalRepresentativeName: e.target.value })}
+                />
+              </div>
+
+              {legalInfoErr && <div style={{ color: 'var(--bingo-error)', fontSize: 13, marginBottom: 10 }}>{legalInfoErr}</div>}
+              {legalInfoMsg && <div style={{ color: 'var(--bingo-success)', fontSize: 13, marginBottom: 10 }}>{legalInfoMsg}</div>}
+
+              <button className="bingo-button" disabled={legalInfoBusy} onClick={saveLegalInfo}>
+                {legalInfoBusy ? 'Guardando…' : 'Guardar'}
               </button>
             </>
           )}

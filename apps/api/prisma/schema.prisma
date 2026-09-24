@@ -285,32 +285,45 @@ enum BusinessIdType {
   CEDULA
 }
 
+enum BusinessBankAccountType {
+  SAVINGS
+  CHECKING
+}
+
 model Business {
-  id                 String                                 @id @default(cuid())
-  ownerId            String
-  tradeName          String
+  id                    String                                 @id @default(cuid())
+  ownerId               String
+  tradeName             String
   // RUC: legalName is the "Razón Social". CEDULA: legalName is just the person's own name —
   // representativeName is only meaningful (and collected) for RUC, where a company signs through
   // a named legal representative rather than being the natural person itself.
-  idType             BusinessIdType                         @default(RUC)
-  legalName          String
-  representativeName String?
-  taxId              String
-  email              String
-  phone              String
-  description        String?
-  logoUrl            String?
-  coverImageUrl      String?
-  addressLine        String
-  city               String
-  latitude           Float?
-  longitude          Float?
-  location           Unsupported("geography(Point, 4326)")?
-  openingHours       Json?
+  idType                BusinessIdType                         @default(RUC)
+  legalName             String
+  representativeName    String?
+  taxId                 String
+  email                 String
+  phone                 String
+  // Required at application time (§ contrato de afiliación real, Anexo Comercial numeral 4 — la
+  // liquidación quincenal se paga por depósito/transferencia a esta cuenta). Nullable in the
+  // schema only because it postdates existing rows; BusinessesService.apply enforces it for every
+  // new application via ApplyBusinessDto.
+  bankName              String?
+  bankAccountType       BusinessBankAccountType?
+  bankAccountNumber     String?
+  bankAccountHolderName String?
+  description           String?
+  logoUrl               String?
+  coverImageUrl         String?
+  addressLine           String
+  city                  String
+  latitude              Float?
+  longitude             Float?
+  location              Unsupported("geography(Point, 4326)")?
+  openingHours          Json?
   // FASE 9 §3 — IANA zone (e.g. "America/Guayaquil"), never inferred. Defaulted rather than
   // nullable so every date computed against this business (availability, bookings, reminders,
   // promotions) always has an unambiguous zone instead of silently falling back to server time.
-  timezone           String                                 @default("America/Guayaquil")
+  timezone              String                                 @default("America/Guayaquil")
   // Connect/disconnect toggle (business-self-service, unrelated to `status` below which is
   // admin-controlled account standing). null = "sigue el horario automáticamente" — effective
   // online/offline is computed on read as: manualOverride if set, else getOpeningStatus(openingHours)
@@ -320,18 +333,18 @@ model Business {
   // auto-expiry because it's the simpler, more predictable contract: "off means off until you say
   // otherwise" avoids a business believing they're still closed/open only to have it silently flip
   // under them at a boundary they didn't watch for.
-  manualOverride     BusinessOnlineOverride?
+  manualOverride        BusinessOnlineOverride?
   // When manualOverride was last set (including to null, i.e. the moment "volver a automático" was
   // pressed) — informational only, nothing currently computes off of it, but every other manual
   // state change in this codebase keeps a timestamp (e.g. BusinessDocument.reviewedAt) so this
   // doesn't stay silent about when a business took control away from the schedule.
-  manualOverrideAt   DateTime?
-  status             BusinessStatus                         @default(PENDING)
-  ratingAvg          Float                                  @default(0)
-  reviewCount        Int                                    @default(0)
-  deletedAt          DateTime?
-  createdAt          DateTime                               @default(now())
-  updatedAt          DateTime                               @updatedAt
+  manualOverrideAt      DateTime?
+  status                BusinessStatus                         @default(PENDING)
+  ratingAvg             Float                                  @default(0)
+  reviewCount           Int                                    @default(0)
+  deletedAt             DateTime?
+  createdAt             DateTime                               @default(now())
+  updatedAt             DateTime                               @updatedAt
 
   // `ownerId` above is the denormalized legal/primary owner (kept for quick reads and the
   // onboarding record); actual access control reads from `businessUsers` (BusinessUser), which
@@ -406,36 +419,50 @@ enum ContractStatus {
 // signer identity at creation time rather than reading live off Business, so a later profile
 // edit never silently rewrites what was actually agreed to and signed.
 model BusinessContract {
-  id                         String         @id @default(cuid())
-  businessId                 String
-  status                     ContractStatus @default(PENDING_SIGNATURE)
-  idType                     BusinessIdType
-  legalName                  String
-  representativeName         String?
-  taxId                      String
+  id                          String         @id @default(cuid())
+  businessId                  String
+  status                      ContractStatus @default(PENDING_SIGNATURE)
+  idType                      BusinessIdType
+  legalName                   String
+  representativeName          String?
+  taxId                       String
   // Which capabilities this contract's terms actually cover — the signal used to detect drift
   // when Admin later enables a capability the business's currently-governing contract doesn't
   // cover yet, and what gets applied (via ContractsService.sign) once the new one is signed.
-  sellsProducts              Boolean        @default(false)
-  directoryListing           Boolean        @default(false)
+  sellsProducts               Boolean        @default(false)
+  directoryListing            Boolean        @default(false)
   // Frozen at contract-generation time — the actual figures this contract's fee clause quotes.
   // Admin's "current commission rate" or a MembershipPlan's price can keep changing after this
   // moment (a new Commission row from a later re-approval, an edited plan price); this is the
   // read-only "photo" of what THIS business actually agreed to, never recomputed from those live
   // tables once written, exactly the way it should never change without a newly-signed contract.
-  commissionRatePercent      Decimal?       @db.Decimal(5, 2)
-  membershipPlanName         String?
-  membershipPriceUsd         Decimal?       @db.Decimal(10, 2)
-  membershipBillingFrequency String?
-  contractText               String
+  commissionRatePercent       Decimal?       @db.Decimal(5, 2)
+  membershipPlanName          String?
+  membershipPriceUsd          Decimal?       @db.Decimal(10, 2)
+  membershipBillingFrequency  String?
+  // Same "frozen photo" reasoning as the fee fields above, extended to every other placeholder the
+  // real contract text (see ContractTemplateService's BUSINESS default) substitutes at generation
+  // time — a later edit to Business.tradeName/addressLine/bankAccountNumber, or to
+  // PlatformLegalInfo, must never rewrite what a specific signed contract actually says.
+  businessTradeName           String?
+  businessAddressLine         String?
+  bankName                    String?
+  bankAccountType             String?
+  bankAccountNumber           String?
+  bankAccountHolderName       String?
+  bingoPlusLegalName          String?
+  bingoPlusTaxId              String?
+  bingoPlusAddress            String?
+  bingoPlusRepresentativeName String?
+  contractText                String
   // Raw base64 PNG from the signature canvas — kept alongside the rendered PDF as the primary
   // audit artifact of what was actually drawn.
-  signatureDataUrl           String?
-  signedAt                   DateTime?
-  signedIp                   String?
-  pdfUrl                     String?
-  createdAt                  DateTime       @default(now())
-  updatedAt                  DateTime       @updatedAt
+  signatureDataUrl            String?
+  signedAt                    DateTime?
+  signedIp                    String?
+  pdfUrl                      String?
+  createdAt                   DateTime       @default(now())
+  updatedAt                   DateTime       @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -920,6 +947,25 @@ model PricingConfiguration {
   createdAt         DateTime @default(now())
 }
 
+// BINGO+'s own legal identity — same append-only, latest-row-wins shape as PricingConfiguration.
+// Feeds the "[RAZÓN SOCIAL BINGO+]"/"[RUC BINGO+]"/"[DIRECCIÓN BINGO+]"/"[REPRESENTANTE LEGAL
+// BINGO+]" placeholders in the real business affiliation contract (ContractsService), replacing
+// what used to be two hardcoded env vars (BINGOPLUS_LEGAL_REPRESENTATIVE_NAME/BINGOPLUS_LEGAL_RUC)
+// with admin-editable, auditable data. A contract freezes these onto BusinessContract.bingoPlus*
+// at generation time, exactly like every other contract variable — editing this here never rewrites
+// a contract already generated or signed.
+model PlatformLegalInfo {
+  id                      String   @id @default(cuid())
+  legalName               String
+  taxId                   String
+  addressLine             String
+  latitude                Float?
+  longitude               Float?
+  legalRepresentativeName String
+  updatedBy               String?
+  createdAt               DateTime @default(now())
+}
+
 enum ContractTemplateType {
   BUSINESS
   RIDER
@@ -1376,12 +1422,12 @@ enum DeliveryChatSenderType {
 // enforces "no messages once terminal, and only once a rider is actually assigned" by reading
 // Delivery.status/riderId live on every send — never a cached/duplicated flag here.
 model DeliveryChatMessage {
-  id           String                  @id @default(cuid())
+  id           String                 @id @default(cuid())
   deliveryId   String
   senderType   DeliveryChatSenderType
   senderUserId String
   text         String
-  createdAt    DateTime                @default(now())
+  createdAt    DateTime               @default(now())
   readAt       DateTime?
 
   delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)

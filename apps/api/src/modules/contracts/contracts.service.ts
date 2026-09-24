@@ -1,23 +1,33 @@
 import { randomUUID } from 'crypto';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { BusinessCapabilityType, BusinessStatus, ContractStatus, ContractTemplateType, Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Business, BusinessCapabilityType, BusinessStatus, ContractStatus, ContractTemplateType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { STORAGE_PROVIDER_TOKEN, StorageProvider } from '../uploads/providers/storage-provider.interface';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { ContractTemplateService } from './contract-template.service';
+import { LegalInfoService } from './legal-info.service';
 import { buildContractPdf } from './pdf/contract-pdf.builder';
+
+const BANK_ACCOUNT_TYPE_LABELS: Record<string, string> = {
+  SAVINGS: 'Ahorros',
+  CHECKING: 'Corriente',
+};
+
+const BILLING_FREQUENCY_LABELS: Record<string, string> = {
+  MONTHLY: 'mensual',
+  YEARLY: 'anual',
+};
 
 @Injectable()
 export class ContractsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
     private readonly email: EmailService,
     @Inject(STORAGE_PROVIDER_TOKEN) private readonly storage: StorageProvider,
     private readonly capabilities: BusinessCapabilitiesService,
     private readonly templates: ContractTemplateService,
+    private readonly legalInfo: LegalInfoService,
   ) {}
 
   /**
@@ -89,12 +99,8 @@ export class ContractsService {
     return { requiresSignature: true, contract };
   }
 
-  private async createPendingContract(
-    business: { id: string; idType: 'RUC' | 'CEDULA'; legalName: string; representativeName: string | null; taxId: string },
-    sellsProducts: boolean,
-    directoryListing: boolean,
-  ) {
-    const snapshot = await this.buildFeeSnapshot(business.id);
+  private async createPendingContract(business: Business, sellsProducts: boolean, directoryListing: boolean) {
+    const snapshot = await this.buildContractSnapshot(business, sellsProducts, directoryListing);
     return this.prisma.businessContract.create({
       data: {
         businessId: business.id,
@@ -104,11 +110,7 @@ export class ContractsService {
         taxId: business.taxId,
         sellsProducts,
         directoryListing,
-        commissionRatePercent: snapshot.commissionRatePercent,
-        membershipPlanName: snapshot.membershipPlanName,
-        membershipPriceUsd: snapshot.membershipPriceUsd,
-        membershipBillingFrequency: snapshot.membershipBillingFrequency,
-        contractText: snapshot.contractText,
+        ...snapshot,
       },
     });
   }
@@ -140,11 +142,11 @@ export class ContractsService {
   }
 
   /**
-   * Consumes the business's drawn signature: renders the final PDF (BINGO+'s fixed
-   * representative/RUC block plus the business's own signature image), stores it as a
-   * BusinessDocument attachment, and emails a copy to the business's onboarding contact address.
-   * `signedIp` is the caller's real request IP — the "garantía digital de validez" the contract
-   * calls for, stamped on every PDF page alongside the contract's own id.
+   * Consumes the business's drawn signature: substitutes the two date tokens that were left
+   * literal at generation time (the actual moment of signature wasn't knowable until now), renders
+   * the final PDF, stores it as a BusinessDocument attachment, and emails a copy to the business's
+   * onboarding contact address. `signedIp` is the caller's real request IP — the "garantía digital
+   * de validez" the contract calls for, stamped on every PDF page alongside the contract's own id.
    *
    * Two distinct businesses can reach this: a first-ever contract (business.status is still
    * APPROVED) flips it to ACTIVE, same as before. A capability-expansion contract for an
@@ -165,11 +167,14 @@ export class ContractsService {
     const signatureImage = decodeDataUrlPng(signatureDataUrl);
     const signedAt = new Date();
 
-    const bingoplusRepresentativeName = this.config.get<string>(
-      'BINGOPLUS_LEGAL_REPRESENTATIVE_NAME',
-      'Representante Legal BINGO+ (dato de prueba)',
-    );
-    const bingoplusRuc = this.config.get<string>('BINGOPLUS_LEGAL_RUC', '9999999999001');
+    // [FECHA DE ACEPTACIÓN] (fecha y hora) / [FECHA DE VIGENCIA] (solo fecha) per the variable
+    // dictionary — the only two tokens not resolvable at generation time, since the actual moment
+    // of signature isn't known until right now.
+    const acceptedAtLabel = signedAt.toLocaleString('es-EC', { dateStyle: 'long', timeStyle: 'short' });
+    const effectiveDateLabel = signedAt.toLocaleDateString('es-EC', { dateStyle: 'long' });
+    const finalContractText = contract.contractText
+      .replaceAll('{{fecha_aceptacion}}', acceptedAtLabel)
+      .replaceAll('{{fecha_vigencia}}', effectiveDateLabel);
 
     const pdfBuffer = await buildContractPdf({
       contractId: contract.id,
@@ -177,9 +182,7 @@ export class ContractsService {
       legalName: contract.legalName,
       representativeName: contract.representativeName,
       taxId: contract.taxId,
-      contractBodyText: contract.contractText,
-      bingoplusRepresentativeName,
-      bingoplusRuc,
+      contractBodyText: finalContractText,
       signedAt,
       signedIp,
       signatureImage,
@@ -191,7 +194,7 @@ export class ContractsService {
     const ops: Prisma.PrismaPromise<unknown>[] = [
       this.prisma.businessContract.update({
         where: { id: contract.id },
-        data: { status: ContractStatus.SIGNED, signedAt, signedIp, signatureDataUrl, pdfUrl },
+        data: { status: ContractStatus.SIGNED, signedAt, signedIp, signatureDataUrl, pdfUrl, contractText: finalContractText },
       }),
       this.prisma.businessDocument.create({
         data: { businessId, type: 'CONTRACT', fileUrl: pdfUrl, status: 'APPROVED' },
@@ -227,26 +230,29 @@ export class ContractsService {
     return url;
   }
 
-  /** Fictitious boilerplate clauses (placeholder pending real legal review), but the fees quoted
-   * are always the business's actual, already-configured commission rate and membership plan —
-   * never invented numbers. Also returns those same figures as plain values, frozen onto the
-   * contract row itself (see the schema comment on BusinessContract) rather than left as
-   * something only readable by parsing this prose back apart. Deliberately never touches
-   * delivery fare figures — those are Admin-configured platform-wide (DeliveryFareConfig),
-   * not something a business negotiates or owes BINGO+ for individually. */
-  private async buildFeeSnapshot(businessId: string): Promise<{
-    commissionRatePercent: number | null;
-    membershipPlanName: string | null;
-    membershipPriceUsd: number | null;
-    membershipBillingFrequency: string | null;
-    contractText: string;
-  }> {
+  /**
+   * Resolves every `{{token}}` the real contract template (ContractTemplateService's BUSINESS
+   * default, or whatever Admin has since edited it to) can reference, and freezes the resolved
+   * values onto the returned snapshot — see the schema comment on BusinessContract for why: a
+   * later profile edit, commission change, or membership-plan price change must never retroactively
+   * rewrite what a specific business actually agreed to and signed. The two date tokens
+   * ({{fecha_aceptacion}}/{{fecha_vigencia}}) are deliberately left unresolved in `contractText`
+   * here — see sign(), which is the only place the actual signing moment is known.
+   */
+  private async buildContractSnapshot(business: Business, sellsProducts: boolean, directoryListing: boolean) {
+    const legal = await this.legalInfo.get();
+    if (!legal.legalName || !legal.taxId || !legal.addressLine || !legal.legalRepresentativeName) {
+      throw new BadRequestException(
+        'BINGO+ legal info is not configured yet — set it in Configuración → Información legal before generating a contract.',
+      );
+    }
+
     const commission = await this.prisma.commission.findFirst({
-      where: { businessId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+      where: { businessId: business.id, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
       orderBy: { effectiveFrom: 'desc' },
     });
     const membership = await this.prisma.businessMembership.findUnique({
-      where: { businessId },
+      where: { businessId: business.id },
       include: { plan: true },
     });
 
@@ -255,18 +261,59 @@ export class ContractsService {
     const membershipPriceUsd = membership ? Number(membership.plan.price) : null;
     const membershipBillingFrequency = membership?.plan.billingFrequency ?? null;
 
-    const commissionLine = commission
-      ? `BINGO+ cobrará al Negocio una comisión del ${commissionRatePercent!.toFixed(2)}% sobre cada venta realizada a través del Marketplace.`
-      : 'La comisión aplicable al Negocio se definirá conforme a la tarifa vigente de BINGO+ para su categoría.';
+    const razonSocialNegocio = business.legalName?.trim() || business.tradeName;
+    const nombreComercialNegocio = business.tradeName?.trim() || business.legalName;
+    const tipoIdentificacion = business.idType === 'RUC' ? 'RUC' : 'cédula de ciudadanía';
+    const representanteNegocio = business.idType === 'RUC' ? business.representativeName ?? '' : business.legalName;
+    const calidadRepresentante = business.idType === 'RUC' ? 'Representante Legal' : 'titular, por sus propios derechos';
+    const domicilioNegocio = `${business.addressLine}, ${business.city}`;
 
-    const membershipLine = membership
-      ? `Adicionalmente, el Negocio pagará una membresía de ${membership.plan.currency} ${membership.plan.price} por período ${membership.plan.billingFrequency === 'MONTHLY' ? 'mensual' : 'anual'} por su presencia en el Directorio de BINGO+.`
-      : '';
+    const bankAccountTypeLabel = business.bankAccountType ? BANK_ACCOUNT_TYPE_LABELS[business.bankAccountType] ?? business.bankAccountType : '';
+    const planDirectorio = membership
+      ? `${membershipPlanName} — ${membership.plan.currency} ${Number(membership.plan.price).toFixed(2)} / ${BILLING_FREQUENCY_LABELS[membershipBillingFrequency ?? ''] ?? 'periodo'}`
+      : 'No aplica';
 
     const template = await this.templates.get(ContractTemplateType.BUSINESS);
-    const contractText = template.replace('{{tarifas_comisiones}}', `${commissionLine} ${membershipLine}`.trim());
+    const contractText = template
+      .replaceAll('{{razon_social_bingoplus}}', legal.legalName)
+      .replaceAll('{{ruc_bingoplus}}', legal.taxId)
+      .replaceAll('{{direccion_bingoplus}}', legal.addressLine)
+      .replaceAll('{{representante_legal_bingoplus}}', legal.legalRepresentativeName)
+      .replaceAll('{{razon_social_negocio}}', razonSocialNegocio)
+      .replaceAll('{{nombre_comercial_negocio}}', nombreComercialNegocio)
+      .replaceAll('{{tipo_identificacion_negocio}}', tipoIdentificacion)
+      .replaceAll('{{numero_identificacion_negocio}}', business.taxId)
+      .replaceAll('{{domicilio_negocio}}', domicilioNegocio)
+      .replaceAll('{{representante_negocio}}', representanteNegocio)
+      .replaceAll('{{calidad_representante_negocio}}', calidadRepresentante)
+      .replaceAll('{{check_tienda}}', sellsProducts && !directoryListing ? '☒' : '☐')
+      .replaceAll('{{check_directorio}}', directoryListing && !sellsProducts ? '☒' : '☐')
+      .replaceAll('{{check_tienda_directorio}}', sellsProducts && directoryListing ? '☒' : '☐')
+      .replaceAll('{{comision_marketplace}}', commissionRatePercent !== null ? commissionRatePercent.toFixed(2) : '0.00')
+      .replaceAll('{{plan_directorio}}', planDirectorio)
+      .replaceAll('{{banco}}', business.bankName ?? '')
+      .replaceAll('{{tipo_cuenta}}', bankAccountTypeLabel)
+      .replaceAll('{{numero_cuenta}}', business.bankAccountNumber ?? '')
+      .replaceAll('{{titular_cuenta}}', business.bankAccountHolderName ?? '');
+    // {{fecha_aceptacion}}/{{fecha_vigencia}} deliberately left unresolved — see sign().
 
-    return { commissionRatePercent, membershipPlanName, membershipPriceUsd, membershipBillingFrequency, contractText };
+    return {
+      commissionRatePercent,
+      membershipPlanName,
+      membershipPriceUsd,
+      membershipBillingFrequency,
+      businessTradeName: business.tradeName,
+      businessAddressLine: domicilioNegocio,
+      bankName: business.bankName,
+      bankAccountType: bankAccountTypeLabel || null,
+      bankAccountNumber: business.bankAccountNumber,
+      bankAccountHolderName: business.bankAccountHolderName,
+      bingoPlusLegalName: legal.legalName,
+      bingoPlusTaxId: legal.taxId,
+      bingoPlusAddress: legal.addressLine,
+      bingoPlusRepresentativeName: legal.legalRepresentativeName,
+      contractText,
+    };
   }
 }
 

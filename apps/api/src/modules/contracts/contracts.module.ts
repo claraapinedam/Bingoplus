@@ -4,6 +4,7 @@ import { ContractsService } from './contracts.service';
 import { RiderContractsController } from './rider-contracts.controller';
 import { RiderContractsService } from './rider-contracts.service';
 import { ContractTemplateService } from './contract-template.service';
+import { LegalInfoService } from './legal-info.service';
 import { EmailModule } from '../email/email.module';
 import { UploadsModule } from '../uploads/uploads.module';
 import { BusinessCapabilitiesModule } from '../business-capabilities/business-capabilities.module';
@@ -12,7 +13,7 @@ import { DeliveryFareModule } from '../delivery/delivery-fare.module';
 @Module({
   imports: [EmailModule, UploadsModule, BusinessCapabilitiesModule, DeliveryFareModule],
   controllers: [ContractsController, RiderContractsController],
-  providers: [ContractsService, RiderContractsService, ContractTemplateService],
-  exports: [ContractsService, RiderContractsService, ContractTemplateService],
+  providers: [ContractsService, RiderContractsService, ContractTemplateService, LegalInfoService],
+  exports: [ContractsService, RiderContractsService, ContractTemplateService, LegalInfoService],
 })
 export class ContractsModule {}

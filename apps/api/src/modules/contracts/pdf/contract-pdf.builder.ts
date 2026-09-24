@@ -7,12 +7,26 @@ export interface ContractPdfInput {
   representativeName: string | null;
   taxId: string;
   contractBodyText: string;
-  bingoplusRepresentativeName: string;
-  bingoplusRuc: string;
   signedAt: Date;
   signedIp: string;
   /** Decoded PNG bytes from the business's drawn signature canvas. */
   signatureImage: Buffer;
+}
+
+// Cheap line-classifiers for the already-resolved contract text, so clause/section headings get
+// bolded instead of the whole thing rendering as one undifferentiated block of prose — mirrors the
+// same detection the business/admin frontends use to format this identical string.
+function isClauseHeader(line: string): boolean {
+  return /^CLÁUSULA\s/.test(line);
+}
+
+function isSectionHeader(line: string): boolean {
+  return (
+    /^\d+\.\s/.test(line) ||
+    ['CONTRATO DE AFILIACIÓN Y USO DE LA PLATAFORMA BINGO+', 'COMPARECIENTES', 'ANEXO COMERCIAL', 'DATOS DEL NEGOCIO'].includes(
+      line,
+    )
+  );
 }
 
 /**
@@ -21,6 +35,12 @@ export interface ContractPdfInput {
  * all content flows (via `bufferPages`), since pdfkit only knows the final page count once the
  * body text has actually been laid out. That footer is the "garantía digital de validez" the
  * contract calls for, alongside the drawn signature image itself.
+ *
+ * `contractBodyText` is the full, already-resolved contract — title, COMPARECIENTES, every
+ * clause, and the Anexo Comercial (see ContractTemplateService's BUSINESS default) — so this
+ * builder only lays it out and appends the actual signature artifacts (the drawn PNG plus the
+ * signing timestamp/IP stamp); it no longer renders its own separate comparecientes summary,
+ * which would otherwise duplicate what the text itself already states.
  */
 export function buildContractPdf(input: ContractPdfInput): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -30,35 +50,26 @@ export function buildContractPdf(input: ContractPdfInput): Promise<Buffer> {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.fontSize(18).font('Helvetica-Bold').text('Contrato de Afiliación de Negocio — BINGO+', { align: 'center' });
-    doc.moveDown(0.5);
-    doc.fontSize(9).font('Helvetica').fillColor('#666').text(`ID de contrato: ${input.contractId}`, { align: 'center' });
+    doc.fontSize(9).font('Helvetica').fillColor('#666').text(`ID de contrato: ${input.contractId}`, { align: 'right' });
     doc.fillColor('black');
-    doc.moveDown(1.5);
+    doc.moveDown(0.8);
 
-    doc.fontSize(12).font('Helvetica-Bold').text('Comparecientes');
-    doc.moveDown(0.3);
-    doc.fontSize(10).font('Helvetica');
-    doc.text(`BINGO+, representado por ${input.bingoplusRepresentativeName}, RUC ${input.bingoplusRuc} (en adelante, "BINGO+").`);
-    doc.moveDown(0.3);
-    if (input.idType === 'RUC') {
-      doc.text(
-        `${input.legalName}, representado por ${input.representativeName}, RUC ${input.taxId} (en adelante, "el Negocio").`,
-      );
-    } else {
-      doc.text(`${input.legalName}, cédula de identidad ${input.taxId} (en adelante, "el Negocio").`);
+    for (const line of input.contractBodyText.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        doc.moveDown(0.6);
+      } else if (isClauseHeader(trimmed) || isSectionHeader(trimmed)) {
+        doc.moveDown(0.4);
+        doc.fontSize(11).font('Helvetica-Bold').text(trimmed, { align: 'left' });
+        doc.fontSize(10).font('Helvetica');
+      } else {
+        doc.fontSize(10).font('Helvetica').text(trimmed, { align: 'justify', lineGap: 2 });
+      }
     }
-    doc.moveDown(1.2);
-
-    doc.fontSize(10).text(input.contractBodyText, { align: 'justify', lineGap: 2 });
     doc.moveDown(1.5);
 
-    doc.fontSize(12).font('Helvetica-Bold').text('Firmas');
+    doc.fontSize(12).font('Helvetica-Bold').text('FIRMA DIGITAL DE EL NEGOCIO');
     doc.moveDown(0.5);
-
-    doc.fontSize(10).font('Helvetica-Oblique').text(`/f/ ${input.bingoplusRepresentativeName}`);
-    doc.font('Helvetica').text(`Por BINGO+ — RUC ${input.bingoplusRuc}`);
-    doc.moveDown(1);
 
     if (doc.y > doc.page.height - 200) doc.addPage();
     doc.image(input.signatureImage, { fit: [220, 90] });

@@ -41,6 +41,10 @@ export interface BusinessApplyValues {
   directoryListing: boolean;
   membershipPlanId: string | undefined;
   couponCode: string | undefined;
+  bankName: string;
+  bankAccountType: 'SAVINGS' | 'CHECKING';
+  bankAccountNumber: string;
+  bankAccountHolderName: string;
 }
 
 interface Category {
@@ -128,6 +132,13 @@ export default function BusinessApplyForm({
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [latitude, setLatitude] = useState<number | undefined>(undefined);
   const [longitude, setLongitude] = useState<number | undefined>(undefined);
+  const [bankName, setBankName] = useState('');
+  const [bankAccountType, setBankAccountType] = useState<'SAVINGS' | 'CHECKING' | null>(null);
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankAccountHolderName, setBankAccountHolderName] = useState('');
+  // The holder is normally the business itself — prefill from legalName as a convenience default,
+  // but only until the user types their own value; never overwrite a manual edit afterwards.
+  const [bankHolderTouched, setBankHolderTouched] = useState(false);
 
   const sellsProducts = goal === 'PRODUCTS' || goal === 'BOTH';
   // Directory presence is what's monetized via membership, independent of SELLS_PRODUCTS —
@@ -160,6 +171,10 @@ export default function BusinessApplyForm({
     categorySlugs.length > 0 &&
     speciesSlugs.length > 0 &&
     (!wantsDirectory || membershipPlanId !== '') &&
+    bankName.trim() !== '' &&
+    bankAccountType !== null &&
+    bankAccountNumber.trim() !== '' &&
+    bankAccountHolderName.trim() !== '' &&
     acceptedTerms &&
     acceptedPrivacy;
 
@@ -261,6 +276,12 @@ export default function BusinessApplyForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goal]);
 
+  // Keeps the account-holder prefill in sync with the legal name as it's typed, but only until the
+  // applicant deliberately edits the holder field themselves — from then on it's fully manual.
+  useEffect(() => {
+    if (!bankHolderTouched) setBankAccountHolderName(legalName);
+  }, [legalName, bankHolderTouched]);
+
   useEffect(() => {
     if (!wantsDirectory) return;
     apiFetch<MembershipPlan[]>('/public/membership-plans').then((list) => {
@@ -275,7 +296,7 @@ export default function BusinessApplyForm({
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!isValid || !goal || !idType) return;
+    if (!isValid || !goal || !idType || !bankAccountType) return;
     onSubmit({
       tradeName,
       idType,
@@ -299,6 +320,10 @@ export default function BusinessApplyForm({
       directoryListing: wantsDirectory,
       membershipPlanId: wantsDirectory ? membershipPlanId : undefined,
       couponCode: wantsDirectory && couponCode ? couponCode : undefined,
+      bankName,
+      bankAccountType,
+      bankAccountNumber,
+      bankAccountHolderName,
     });
   }
 
@@ -576,6 +601,61 @@ export default function BusinessApplyForm({
           </div>
         </div>
       )}
+
+      <div className="bingo-card">
+        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Información bancaria</label>
+        <p style={{ fontSize: 11, color: '#7f8ea3', margin: '0 0 12px' }}>
+          BINGO+ liquida tus ventas cada dos semanas a esta cuenta, tal como se detalla en tu contrato de afiliación.
+        </p>
+        <div className="dashboard-form-grid">
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Banco *</label>
+            <input className="bingo-input" required value={bankName} onChange={(e) => setBankName(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Tipo de cuenta *</label>
+            <div className="bingo-chip-row">
+              <button
+                type="button"
+                className={`bingo-chip${bankAccountType === 'SAVINGS' ? ' active' : ''}`}
+                onClick={() => setBankAccountType('SAVINGS')}
+              >
+                Ahorros
+              </button>
+              <button
+                type="button"
+                className={`bingo-chip${bankAccountType === 'CHECKING' ? ' active' : ''}`}
+                onClick={() => setBankAccountType('CHECKING')}
+              >
+                Corriente
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="dashboard-form-grid" style={{ marginTop: 14 }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Número de cuenta *</label>
+            <input
+              className="bingo-input"
+              required
+              value={bankAccountNumber}
+              onChange={(e) => setBankAccountNumber(e.target.value)}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Titular de la cuenta *</label>
+            <input
+              className="bingo-input"
+              required
+              value={bankAccountHolderName}
+              onChange={(e) => {
+                setBankHolderTouched(true);
+                setBankAccountHolderName(e.target.value);
+              }}
+            />
+          </div>
+        </div>
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <label style={{ fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>

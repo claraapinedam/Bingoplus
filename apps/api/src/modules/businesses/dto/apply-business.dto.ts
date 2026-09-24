@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BusinessIdType } from '@prisma/client';
+import { BusinessBankAccountType, BusinessIdType } from '@prisma/client';
 import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsLatitude, IsLongitude, IsOptional, IsString } from 'class-validator';
 
 export class ApplyBusinessDto {
@@ -80,6 +80,22 @@ export class ApplyBusinessDto {
   @IsOptional()
   @IsLongitude()
   longitude?: number;
+
+  @ApiProperty({ description: 'Información bancaria del negocio — para la liquidación quincenal (Anexo Comercial del contrato de afiliación).' })
+  @IsString()
+  bankName!: string;
+
+  @ApiProperty({ enum: BusinessBankAccountType })
+  @IsEnum(BusinessBankAccountType)
+  bankAccountType!: BusinessBankAccountType;
+
+  @ApiProperty()
+  @IsString()
+  bankAccountNumber!: string;
+
+  @ApiProperty({ description: 'Titular de la cuenta — normalmente coincide con la razón social o el representante del negocio.' })
+  @IsString()
+  bankAccountHolderName!: string;
 
   @ApiProperty({
     description:

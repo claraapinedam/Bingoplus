@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiError, getAccessToken, getActiveBusinessId } from '@/lib/api';
 import { BusinessContract, getBusinessContract, signBusinessContract } from '@/lib/business';
-
-const BINGOPLUS_SIGNATURE_LABEL = 'BINGO+ (firma digital por defecto)';
+import ContractDocument from '@/components/ContractDocument';
 
 // The canvas's CSS size (style width: 100%) and its internal pixel resolution (width=520
 // attribute) rarely match on a real phone screen — without rescaling here, the drawn stroke
@@ -142,22 +141,11 @@ export default function ContractPage() {
         Tu negocio fue aprobado. Lee y firma el contrato para activarlo en BINGO+.
       </p>
 
-      <div className="bingo-card" style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 8px' }}>Comparecientes</h2>
-        <p style={{ fontSize: 13, margin: '0 0 4px' }}>{BINGOPLUS_SIGNATURE_LABEL}</p>
-        {contract.idType === 'RUC' ? (
-          <p style={{ fontSize: 13, margin: 0 }}>
-            {contract.legalName} — representado por {contract.representativeName} — RUC {contract.taxId}
-          </p>
-        ) : (
-          <p style={{ fontSize: 13, margin: 0 }}>
-            {contract.legalName} — Cédula {contract.taxId}
-          </p>
-        )}
-      </div>
-
-      <div className="bingo-card" style={{ marginBottom: 16, whiteSpace: 'pre-wrap', fontSize: 12.5, lineHeight: 1.6, maxHeight: 320, overflowY: 'auto' }}>
-        {contract.contractText}
+      {/* The full resolved contract text below already opens with its own COMPARECIENTES clause
+          (real names, RUC/cédula, domicilio) — a separate paraphrased summary card here would just
+          duplicate it, so this reads the actual document instead of a stand-in for it. */}
+      <div className="bingo-card" style={{ marginBottom: 16, maxHeight: 420, overflowY: 'auto' }}>
+        <ContractDocument text={contract.contractText} />
       </div>
 
       <div className="bingo-card" style={{ marginBottom: 16 }}>

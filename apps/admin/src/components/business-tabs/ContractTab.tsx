@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import ContractDocument from '@/components/ContractDocument';
 
 interface Contract {
   id: string;
@@ -62,8 +63,8 @@ function ContractDetail({ contract }: { contract: Contract }) {
         )}
       </div>
 
-      <div className="bingo-card" style={{ gridColumn: '1 / -1', whiteSpace: 'pre-wrap', fontSize: 12.5, lineHeight: 1.6, maxHeight: 320, overflowY: 'auto' }}>
-        {contract.contractText}
+      <div className="bingo-card" style={{ gridColumn: '1 / -1', maxHeight: 480, overflowY: 'auto' }}>
+        <ContractDocument text={contract.contractText} />
       </div>
     </div>
   );

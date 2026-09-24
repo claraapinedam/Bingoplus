@@ -1,11 +1,20 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { ContractsService } from './contracts.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { StorageProvider } from '../uploads/providers/storage-provider.interface';
 import { BusinessCapabilitiesService } from '../business-capabilities/business-capabilities.service';
 import { ContractTemplateService, DEFAULT_BUSINESS_CONTRACT_TEMPLATE } from './contract-template.service';
+import { LegalInfoService, LegalInfoValues } from './legal-info.service';
+
+const VALID_LEGAL_INFO: LegalInfoValues = {
+  legalName: 'BINGO+ S.A.S.',
+  taxId: '1792345678001',
+  addressLine: 'Av. Siempre Viva 123, Quito',
+  latitude: null,
+  longitude: null,
+  legalRepresentativeName: 'María Dolores Pérez',
+};
 
 // A real, minimal 1x1 transparent PNG — pdfkit's doc.image() needs actual valid PNG bytes to not throw.
 const VALID_PNG_DATA_URL =
@@ -31,17 +40,17 @@ describe('ContractsService', () => {
       getMap: jest.fn().mockResolvedValue({ SELLS_PRODUCTS: false, DIRECTORY_LISTING: false }),
       set: jest.fn().mockResolvedValue({ id: 'cap1' }),
     };
-    const config = { get: jest.fn((_key: string, fallback?: unknown) => fallback) } as unknown as ConfigService;
     const storage = { upload: jest.fn().mockResolvedValue({ url: 'http://localhost:3001/api/v1/uploads/test.pdf' }) } as unknown as StorageProvider;
     const templates = { get: jest.fn().mockResolvedValue(DEFAULT_BUSINESS_CONTRACT_TEMPLATE), set: jest.fn() };
+    const legalInfo = { get: jest.fn().mockResolvedValue(VALID_LEGAL_INFO), set: jest.fn() };
 
     service = new ContractsService(
       prisma as unknown as PrismaService,
-      config,
       email as unknown as EmailService,
       storage,
       capabilities as unknown as BusinessCapabilitiesService,
       templates as unknown as ContractTemplateService,
+      legalInfo as unknown as LegalInfoService,
     );
   });
 
@@ -63,6 +72,22 @@ describe('ContractsService', () => {
         representativeName: null,
         legalName: 'Acme SA',
         taxId: '123',
+      });
+
+      await expect(service.createForApprovedBusiness('b1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.businessContract.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects when BINGO+ legal info has not been configured yet', async () => {
+      const legalInfo = (service as unknown as { legalInfo: { get: jest.Mock } }).legalInfo;
+      legalInfo.get.mockResolvedValueOnce({ legalName: '', taxId: '', addressLine: '', latitude: null, longitude: null, legalRepresentativeName: '' });
+      prisma.businessContract.findFirst.mockResolvedValue(null);
+      prisma.business.findUniqueOrThrow.mockResolvedValue({
+        id: 'b1',
+        idType: 'CEDULA',
+        representativeName: null,
+        legalName: 'Juan Pérez',
+        taxId: '0102030405',
       });
 
       await expect(service.createForApprovedBusiness('b1')).rejects.toBeInstanceOf(BadRequestException);

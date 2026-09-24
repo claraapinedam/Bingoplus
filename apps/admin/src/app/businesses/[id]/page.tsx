@@ -55,6 +55,10 @@ interface Business {
   phone: string;
   city: string;
   status: string;
+  bankName: string | null;
+  bankAccountType: 'SAVINGS' | 'CHECKING' | null;
+  bankAccountNumber: string | null;
+  bankAccountHolderName: string | null;
   categories?: { name: string }[];
   species: { id: string; name: string }[];
   capabilities: Record<CapabilityType, boolean>;
@@ -326,6 +330,29 @@ export default function BusinessDetailPage() {
             {business.description && <div style={{ fontSize: 13, marginBottom: 6 }}>Descripción: {business.description}</div>}
             <div style={{ fontSize: 13 }}>
               Mascotas: {business.species.length > 0 ? business.species.map((s) => s.name).join(', ') : '—'}
+            </div>
+          </div>
+
+          <div className="bingo-card">
+            <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 10px' }}>Información bancaria</h2>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              Banco: <strong>{business.bankName ?? '—'}</strong>
+            </div>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              Tipo de cuenta:{' '}
+              <strong>
+                {business.bankAccountType === 'SAVINGS'
+                  ? 'Ahorros'
+                  : business.bankAccountType === 'CHECKING'
+                    ? 'Corriente'
+                    : '—'}
+              </strong>
+            </div>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              Número de cuenta: <strong>{business.bankAccountNumber ?? '—'}</strong>
+            </div>
+            <div style={{ fontSize: 13 }}>
+              Titular: <strong>{business.bankAccountHolderName ?? '—'}</strong>
             </div>
           </div>
 
