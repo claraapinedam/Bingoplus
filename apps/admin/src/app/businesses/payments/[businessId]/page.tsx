@@ -1,13 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AdminShell from '@/components/AdminShell';
 import BackButton from '@/components/BackButton';
 import { apiFetch, ApiError } from '@/lib/api';
 
 const currencyFormatter = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
-const percentFormatter = new Intl.NumberFormat('es-EC', { style: 'percent', minimumFractionDigits: 1 });
 const dateFormatter = new Intl.DateTimeFormat('es-EC', { dateStyle: 'medium', timeStyle: 'short' });
 
 interface BusinessHeader {
@@ -53,19 +52,40 @@ interface PaidBookingPayout {
   bookingsCount: number;
 }
 
+// A unified row shape so a single table can render both a Product order and a Service booking
+// side by side, distinguished only by a "Tipo" column — a business that's Tienda AND Directorio
+// (or only one of the two) sees exactly one Pendiente view and one Pagado view either way, instead
+// of separate tabs whose other pair sits permanently empty for a business that only does one.
+interface PendingRow {
+  id: string;
+  type: 'order' | 'booking';
+  label: string;
+  createdAt: string;
+  amount: number;
+  status: string;
+}
+
+interface PaidRow {
+  id: string;
+  type: 'order' | 'booking';
+  amount: number;
+  paidAt: string;
+  referenceNumber: string | null;
+  itemsCount: number;
+}
+
 export default function BusinessPaymentDetailPage() {
   const params = useParams<{ businessId: string }>();
   const router = useRouter();
   const [business, setBusiness] = useState<BusinessHeader | null>(null);
-  const [tab, setTab] = useState<'pending' | 'history' | 'bookings-pending' | 'bookings-history'>('pending');
+  const [tab, setTab] = useState<'pending' | 'history'>('pending');
   const [pending, setPending] = useState<{ total: number; hasCommissionRate: boolean; items: PendingOrder[] } | null>(null);
   const [history, setHistory] = useState<PaidPayout[] | null>(null);
   const [bookingsPending, setBookingsPending] = useState<{ total: number; items: PendingBooking[] } | null>(null);
   const [bookingsHistory, setBookingsHistory] = useState<PaidBookingPayout[] | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [selectedBookings, setSelectedBookings] = useState<Set<string>>(new Set());
   const [referenceNumber, setReferenceNumber] = useState('');
-  const [bookingReferenceNumber, setBookingReferenceNumber] = useState('');
   const [editingRef, setEditingRef] = useState<{ id: string; value: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -77,7 +97,7 @@ export default function BusinessPaymentDetailPage() {
         `/admin/payouts/businesses/${params.businessId}/pending`,
       );
       setPending(result);
-      setSelected(new Set());
+      setSelectedOrders(new Set());
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo cargar lo pendiente de pago.');
     }
@@ -121,32 +141,104 @@ export default function BusinessPaymentDetailPage() {
     loadBookingsHistory();
   }, [params.businessId, loadPending, loadHistory, loadBookingsPending, loadBookingsHistory]);
 
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const pendingRows = useMemo((): PendingRow[] => {
+    const orderRows: PendingRow[] = (pending?.items ?? []).map((o) => ({
+      id: o.id,
+      type: 'order',
+      label: o.orderNumber,
+      createdAt: o.createdAt,
+      amount: o.amount,
+      status: o.status,
+    }));
+    const bookingRows: PendingRow[] = (bookingsPending?.items ?? []).map((b) => ({
+      id: b.id,
+      type: 'booking',
+      label: b.serviceName,
+      createdAt: b.createdAt,
+      amount: b.amount,
+      status: b.status,
+    }));
+    return [...orderRows, ...bookingRows].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [pending, bookingsPending]);
+
+  const pendingTotal = (pending?.total ?? 0) + (bookingsPending?.total ?? 0);
+  const selectedCount = selectedOrders.size + selectedBookings.size;
+
+  const paidRows = useMemo((): PaidRow[] => {
+    const orderRows: PaidRow[] = (history ?? []).map((p) => ({
+      id: p.id,
+      type: 'order',
+      amount: p.amount,
+      paidAt: p.paidAt,
+      referenceNumber: p.referenceNumber,
+      itemsCount: p.ordersCount,
+    }));
+    const bookingRows: PaidRow[] = (bookingsHistory ?? []).map((p) => ({
+      id: p.id,
+      type: 'booking',
+      amount: p.amount,
+      paidAt: p.paidAt,
+      referenceNumber: p.referenceNumber,
+      itemsCount: p.bookingsCount,
+    }));
+    return [...orderRows, ...bookingRows].sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
+  }, [history, bookingsHistory]);
+
+  function toggleRow(row: PendingRow) {
+    if (row.type === 'order') {
+      setSelectedOrders((prev) => {
+        const next = new Set(prev);
+        if (next.has(row.id)) next.delete(row.id);
+        else next.add(row.id);
+        return next;
+      });
+    } else {
+      setSelectedBookings((prev) => {
+        const next = new Set(prev);
+        if (next.has(row.id)) next.delete(row.id);
+        else next.add(row.id);
+        return next;
+      });
+    }
   }
 
   function toggleAll() {
-    if (!pending) return;
-    setSelected((prev) => (prev.size === pending.items.length ? new Set() : new Set(pending.items.map((i) => i.id))));
+    const allSelected = selectedCount === pendingRows.length && pendingRows.length > 0;
+    if (allSelected) {
+      setSelectedOrders(new Set());
+      setSelectedBookings(new Set());
+    } else {
+      setSelectedOrders(new Set(pendingRows.filter((r) => r.type === 'order').map((r) => r.id)));
+      setSelectedBookings(new Set(pendingRows.filter((r) => r.type === 'booking').map((r) => r.id)));
+    }
   }
 
+  // Orders and Bookings settle through separate backend actions (each stamps payoutId on its own
+  // row type only — see PayoutsService) even though this page now presents them as one selection.
+  // A mixed selection simply fires both calls with the same reference number.
   async function markSelectedPaid() {
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      const result = await apiFetch<{ amount: number }>(`/admin/payouts/businesses/${params.businessId}/mark-paid`, {
-        method: 'POST',
-        body: JSON.stringify({ ids: Array.from(selected), referenceNumber: referenceNumber || undefined }),
-      });
-      setNotice(`Se marcaron ${currencyFormatter.format(result.amount)} como pagados.`);
+      const [orderResult, bookingResult] = await Promise.all([
+        selectedOrders.size > 0
+          ? apiFetch<{ amount: number }>(`/admin/payouts/businesses/${params.businessId}/mark-paid`, {
+              method: 'POST',
+              body: JSON.stringify({ ids: Array.from(selectedOrders), referenceNumber: referenceNumber || undefined }),
+            })
+          : null,
+        selectedBookings.size > 0
+          ? apiFetch<{ amount: number }>(`/admin/payouts/business-bookings/${params.businessId}/mark-paid`, {
+              method: 'POST',
+              body: JSON.stringify({ ids: Array.from(selectedBookings), referenceNumber: referenceNumber || undefined }),
+            })
+          : null,
+      ]);
+      const totalPaid = (orderResult?.amount ?? 0) + (bookingResult?.amount ?? 0);
+      setNotice(`Se marcaron ${currencyFormatter.format(totalPaid)} como pagados.`);
       setReferenceNumber('');
-      await Promise.all([loadPending(), loadHistory()]);
+      await Promise.all([loadPending(), loadHistory(), loadBookingsPending(), loadBookingsHistory()]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo marcar los pagos seleccionados como pagados.');
     } finally {
@@ -165,8 +257,8 @@ export default function BusinessPaymentDetailPage() {
       });
       setEditingRef(null);
       // Both histories share the same reference-update endpoint (a Payout id is a Payout id
-      // regardless of whether it covers orders or bookings) — refresh whichever tab's list could
-      // contain it rather than tracking which one this edit came from.
+      // regardless of whether it covers orders or bookings) — refresh both rather than tracking
+      // which one this edit came from.
       await Promise.all([loadHistory(), loadBookingsHistory()]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo guardar el número de referencia.');
@@ -175,40 +267,8 @@ export default function BusinessPaymentDetailPage() {
     }
   }
 
-  function toggleBooking(id: string) {
-    setSelectedBookings((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleAllBookings() {
-    if (!bookingsPending) return;
-    setSelectedBookings((prev) =>
-      prev.size === bookingsPending.items.length ? new Set() : new Set(bookingsPending.items.map((i) => i.id)),
-    );
-  }
-
-  async function markSelectedBookingsPaid() {
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await apiFetch<{ amount: number }>(`/admin/payouts/business-bookings/${params.businessId}/mark-paid`, {
-        method: 'POST',
-        body: JSON.stringify({ ids: Array.from(selectedBookings), referenceNumber: bookingReferenceNumber || undefined }),
-      });
-      setNotice(`Se marcaron ${currencyFormatter.format(result.amount)} de reservas como pagados.`);
-      setBookingReferenceNumber('');
-      await Promise.all([loadBookingsPending(), loadBookingsHistory()]);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo marcar las reservas seleccionadas como pagadas.');
-    } finally {
-      setSaving(false);
-    }
-  }
+  const hasSelectedOrders = selectedOrders.size > 0;
+  const blockedByMissingRate = hasSelectedOrders && pending != null && !pending.hasCommissionRate;
 
   return (
     <AdminShell>
@@ -220,47 +280,25 @@ export default function BusinessPaymentDetailPage() {
 
       {pending && !pending.hasCommissionRate && pending.items.length > 0 && (
         <div className="bingo-card" style={{ marginBottom: 16, color: 'var(--bingo-error)' }}>
-          Este negocio no tiene una tasa de comisión vigente configurada — no se puede calcular ni pagar su monto hasta que se le asigne una.
+          Este negocio no tiene una tasa de comisión vigente configurada — no se puede calcular ni pagar sus pedidos
+          de productos hasta que se le asigne una. Las reservas de servicios no requieren comisión y pueden pagarse
+          igual.
         </div>
       )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <button
-          className={`bingo-button ${tab === 'pending' ? '' : 'secondary'}`}
-          style={{ width: 'auto' }}
-          onClick={() => setTab('pending')}
-        >
-          Pedidos: Pendiente {pending ? `(${currencyFormatter.format(pending.total)})` : ''}
+        <button className={`bingo-button ${tab === 'pending' ? '' : 'secondary'}`} style={{ width: 'auto' }} onClick={() => setTab('pending')}>
+          Pendiente {pendingRows.length > 0 ? `(${currencyFormatter.format(pendingTotal)})` : ''}
         </button>
-        <button
-          className={`bingo-button ${tab === 'history' ? '' : 'secondary'}`}
-          style={{ width: 'auto' }}
-          onClick={() => setTab('history')}
-        >
-          Pedidos: Pagado
-        </button>
-        <button
-          className={`bingo-button ${tab === 'bookings-pending' ? '' : 'secondary'}`}
-          style={{ width: 'auto' }}
-          onClick={() => setTab('bookings-pending')}
-        >
-          Reservas: Pendiente {bookingsPending ? `(${currencyFormatter.format(bookingsPending.total)})` : ''}
-        </button>
-        <button
-          className={`bingo-button ${tab === 'bookings-history' ? '' : 'secondary'}`}
-          style={{ width: 'auto' }}
-          onClick={() => setTab('bookings-history')}
-        >
-          Reservas: Pagado
+        <button className={`bingo-button ${tab === 'history' ? '' : 'secondary'}`} style={{ width: 'auto' }} onClick={() => setTab('history')}>
+          Pagado
         </button>
       </div>
 
       {tab === 'pending' && (
         <div className="bingo-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>
-              Pendiente de pago — {pending ? currencyFormatter.format(pending.total) : '—'}
-            </h2>
+            <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Pendiente de pago — {currencyFormatter.format(pendingTotal)}</h2>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 className="bingo-input"
@@ -269,50 +307,49 @@ export default function BusinessPaymentDetailPage() {
                 onChange={(e) => setReferenceNumber(e.target.value)}
                 style={{ width: 220 }}
               />
-              <button
-                className="bingo-button"
-                disabled={selected.size === 0 || saving || !pending?.hasCommissionRate}
-                onClick={markSelectedPaid}
-              >
-                {saving ? 'Guardando…' : `Marcar como pagado (${selected.size})`}
+              <button className="bingo-button" disabled={selectedCount === 0 || saving || blockedByMissingRate} onClick={markSelectedPaid}>
+                {saving ? 'Guardando…' : `Marcar como pagado (${selectedCount})`}
               </button>
             </div>
           </div>
 
-          {pending === null ? (
+          {pending === null || bookingsPending === null ? (
             <p>Cargando…</p>
-          ) : pending.items.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#7f8ea3' }}>Sin pedidos pendientes de pago.</p>
+          ) : pendingRows.length === 0 ? (
+            <p style={{ fontSize: 13, color: '#7f8ea3' }}>Sin pedidos ni reservas pendientes de pago.</p>
           ) : (
             <table className="bingo-table">
               <thead>
                 <tr>
                   <th style={{ width: 32 }}>
-                    <input type="checkbox" checked={selected.size === pending.items.length} onChange={toggleAll} />
+                    <input type="checkbox" checked={selectedCount === pendingRows.length} onChange={toggleAll} />
                   </th>
-                  <th>N.º de pedido</th>
+                  <th>Tipo</th>
+                  <th>Referencia</th>
                   <th>Fecha</th>
-                  <th>GMV</th>
-                  <th>Comisión</th>
                   <th>Monto a pagar</th>
                   <th>Estado</th>
                 </tr>
               </thead>
               <tbody>
-                {pending.items.map((item) => (
-                  <tr key={item.id}>
+                {pendingRows.map((row) => (
+                  <tr key={`${row.type}-${row.id}`}>
                     <td>
-                      <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} />
+                      <input
+                        type="checkbox"
+                        checked={row.type === 'order' ? selectedOrders.has(row.id) : selectedBookings.has(row.id)}
+                        onChange={() => toggleRow(row)}
+                      />
                     </td>
-                    <td>{item.orderNumber}</td>
-                    <td>{dateFormatter.format(new Date(item.createdAt))}</td>
-                    <td>{currencyFormatter.format(item.gmv)}</td>
                     <td>
-                      {item.commissionRate != null ? `${percentFormatter.format(item.commissionRate)} · ` : ''}
-                      {currencyFormatter.format(item.commissionAmount)}
+                      <span className="bingo-badge" style={{ background: row.type === 'order' ? '#e8f7f2' : '#fff3ea' }}>
+                        {row.type === 'order' ? 'Producto' : 'Reserva'}
+                      </span>
                     </td>
-                    <td style={{ fontWeight: 700 }}>{currencyFormatter.format(item.amount)}</td>
-                    <td>{item.status}</td>
+                    <td>{row.label}</td>
+                    <td>{dateFormatter.format(new Date(row.createdAt))}</td>
+                    <td style={{ fontWeight: 700 }}>{currencyFormatter.format(row.amount)}</td>
+                    <td>{row.status}</td>
                   </tr>
                 ))}
               </tbody>
@@ -324,151 +361,32 @@ export default function BusinessPaymentDetailPage() {
       {tab === 'history' && (
         <div className="bingo-card">
           <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Historial de pagos</h2>
-          {history === null ? (
+          {history === null || bookingsHistory === null ? (
             <p>Cargando…</p>
-          ) : history.length === 0 ? (
+          ) : paidRows.length === 0 ? (
             <p style={{ fontSize: 13, color: '#7f8ea3' }}>Todavía no se le ha pagado a este negocio.</p>
           ) : (
             <table className="bingo-table">
               <thead>
                 <tr>
+                  <th>Tipo</th>
                   <th>Fecha de pago</th>
-                  <th>Pedidos cubiertos</th>
+                  <th>Elementos cubiertos</th>
                   <th>Monto</th>
                   <th>N.º de referencia</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {history.map((p) => (
-                  <tr key={p.id}>
+                {paidRows.map((p) => (
+                  <tr key={`${p.type}-${p.id}`}>
+                    <td>
+                      <span className="bingo-badge" style={{ background: p.type === 'order' ? '#e8f7f2' : '#fff3ea' }}>
+                        {p.type === 'order' ? 'Producto' : 'Reserva'}
+                      </span>
+                    </td>
                     <td>{dateFormatter.format(new Date(p.paidAt))}</td>
-                    <td>{p.ordersCount}</td>
-                    <td>{currencyFormatter.format(p.amount)}</td>
-                    <td>
-                      {editingRef?.id === p.id ? (
-                        <input
-                          className="bingo-input"
-                          autoFocus
-                          value={editingRef.value}
-                          onChange={(e) => setEditingRef({ id: p.id, value: e.target.value })}
-                          style={{ width: 160 }}
-                        />
-                      ) : (
-                        p.referenceNumber ?? <span style={{ color: '#9aa5b1' }}>—</span>
-                      )}
-                    </td>
-                    <td>
-                      {editingRef?.id === p.id ? (
-                        <button className="bingo-button secondary small" disabled={saving} onClick={() => saveReference(p.id)}>
-                          Guardar
-                        </button>
-                      ) : (
-                        <button
-                          className="bingo-button secondary small"
-                          onClick={() => setEditingRef({ id: p.id, value: p.referenceNumber ?? '' })}
-                        >
-                          {p.referenceNumber ? 'Editar' : 'Añadir referencia'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {tab === 'bookings-pending' && (
-        <div className="bingo-card">
-          <p style={{ fontSize: 13, color: '#7f8ea3', marginBottom: 12 }}>
-            Reservas de servicios pagadas con tarjeta, todavía no liquidadas. Sin comisión — el negocio se queda con
-            el valor del servicio y el impuesto; BINGO+ solo retiene la tarifa de servicio (nunca mostrada aquí como
-            parte del monto a pagar).
-          </p>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>
-              Pendiente de pago — {bookingsPending ? currencyFormatter.format(bookingsPending.total) : '—'}
-            </h2>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                className="bingo-input"
-                placeholder="N.º de referencia (opcional)"
-                value={bookingReferenceNumber}
-                onChange={(e) => setBookingReferenceNumber(e.target.value)}
-                style={{ width: 220 }}
-              />
-              <button className="bingo-button" disabled={selectedBookings.size === 0 || saving} onClick={markSelectedBookingsPaid}>
-                {saving ? 'Guardando…' : `Marcar como pagado (${selectedBookings.size})`}
-              </button>
-            </div>
-          </div>
-
-          {bookingsPending === null ? (
-            <p>Cargando…</p>
-          ) : bookingsPending.items.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#7f8ea3' }}>Sin reservas pendientes de pago.</p>
-          ) : (
-            <table className="bingo-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 32 }}>
-                    <input type="checkbox" checked={selectedBookings.size === bookingsPending.items.length} onChange={toggleAllBookings} />
-                  </th>
-                  <th>Servicio</th>
-                  <th>Fecha</th>
-                  <th>Valor</th>
-                  <th>Impuesto</th>
-                  <th>Tarifa de servicio (BINGO+)</th>
-                  <th>Monto a pagar</th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bookingsPending.items.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <input type="checkbox" checked={selectedBookings.has(item.id)} onChange={() => toggleBooking(item.id)} />
-                    </td>
-                    <td>{item.serviceName}</td>
-                    <td>{dateFormatter.format(new Date(item.createdAt))}</td>
-                    <td>{currencyFormatter.format(item.price)}</td>
-                    <td>{currencyFormatter.format(item.tax)}</td>
-                    <td style={{ color: '#9aa5b1' }}>{currencyFormatter.format(item.serviceFee)}</td>
-                    <td style={{ fontWeight: 700 }}>{currencyFormatter.format(item.amount)}</td>
-                    <td>{item.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {tab === 'bookings-history' && (
-        <div className="bingo-card">
-          <h2 style={{ fontSize: 16, fontWeight: 800, margin: '0 0 12px' }}>Historial de pagos de reservas</h2>
-          {bookingsHistory === null ? (
-            <p>Cargando…</p>
-          ) : bookingsHistory.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#7f8ea3' }}>Todavía no se le ha pagado a este negocio por reservas.</p>
-          ) : (
-            <table className="bingo-table">
-              <thead>
-                <tr>
-                  <th>Fecha de pago</th>
-                  <th>Reservas cubiertas</th>
-                  <th>Monto</th>
-                  <th>N.º de referencia</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {bookingsHistory.map((p) => (
-                  <tr key={p.id}>
-                    <td>{dateFormatter.format(new Date(p.paidAt))}</td>
-                    <td>{p.bookingsCount}</td>
+                    <td>{p.itemsCount}</td>
                     <td>{currencyFormatter.format(p.amount)}</td>
                     <td>
                       {editingRef?.id === p.id ? (
