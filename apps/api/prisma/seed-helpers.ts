@@ -113,14 +113,14 @@ export async function seedMarketplaceRankingConfig(prisma: PrismaClient) {
 
 export async function seedPetSpecies(prisma: PrismaClient) {
   const species = [
-    { name: 'Perro', slug: 'dog', icon: 'dog' },
-    { name: 'Gato', slug: 'cat', icon: 'cat' },
-    { name: 'Ave', slug: 'bird', icon: 'bird' },
-    { name: 'Pez', slug: 'fish', icon: 'fish' },
-    { name: 'Conejo', slug: 'rabbit', icon: 'rabbit' },
-    { name: 'Roedor', slug: 'rodent', icon: 'rodent' },
-    { name: 'Reptil', slug: 'reptile', icon: 'reptile' },
-    { name: 'Otro', slug: 'other', icon: 'paw' },
+    { name: 'Perro', slug: 'dog', icon: '🐶' },
+    { name: 'Gato', slug: 'cat', icon: '🐱' },
+    { name: 'Ave', slug: 'bird', icon: '🐦' },
+    { name: 'Pez', slug: 'fish', icon: '🐠' },
+    { name: 'Conejo', slug: 'rabbit', icon: '🐰' },
+    { name: 'Roedor', slug: 'rodent', icon: '🐹' },
+    { name: 'Reptil', slug: 'reptile', icon: '🦎' },
+    { name: 'Otro', slug: 'other', icon: '🐾' },
   ];
   for (const s of species) {
     await prisma.petSpecies.upsert({ where: { slug: s.slug }, update: {}, create: s });

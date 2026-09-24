@@ -26,6 +26,15 @@ interface ServiceDetail {
 const DAY_RANGE_TYPES = ['DAYCARE', 'BOARDING'];
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
+/** Defensive guard against bad `PetSpecies.icon` data (e.g. a plain English word like "dog"
+ * instead of an emoji — this has happened before, see seed-helpers.ts history). Emoji don't
+ * consist solely of plain ASCII letters, so a value that's only [A-Za-z] is almost certainly not
+ * an emoji and shouldn't be rendered — better to show nothing than leak English text in the UI. */
+function isRenderableSpeciesIcon(icon: string | null | undefined): icon is string {
+  if (!icon) return false;
+  return !/^[A-Za-z]+$/.test(icon.trim());
+}
+
 /** Client-side estimate only, shown before submitting — the backend recomputes and freezes the
  * authoritative count/price at booking time (see BookingsService.create). */
 function countBillableDays(checkIn: string, checkOut: string, operatingDays: string[]): number {
@@ -197,7 +206,7 @@ export default function BookServicePage() {
                     onClick={() => setPetId(p.id)}
                   >
                     <div style={{ fontWeight: 700 }}>
-                      {p.species.icon ? `${p.species.icon} ` : ''}
+                      {isRenderableSpeciesIcon(p.species.icon) ? `${p.species.icon} ` : ''}
                       {p.name}
                     </div>
                     <div style={{ fontSize: 12, color: '#7f8ea3' }}>{p.species.name}</div>
