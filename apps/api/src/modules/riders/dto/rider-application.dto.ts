@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BusinessIdType, RiderBankAccountType, RiderPayoutMethodType, VehicleType } from '@prisma/client';
+import { RiderBankAccountType, RiderIdType, VehicleType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { Equals, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
 
@@ -9,12 +9,12 @@ export class RegisterRiderApplicationDto {
   @IsDateString()
   birthDate!: string;
 
-  // Reuses Business's RUC/CEDULA distinction — see the schema comment on Rider.idType. The
-  // 18+ minimum-age check on birthDate lives in RiderProfileService.applyAsRider, not here,
-  // for the same reason plate/payout cross-field checks do: it can't be expressed per-field.
-  @ApiProperty({ enum: BusinessIdType })
-  @IsEnum(BusinessIdType)
-  idType!: BusinessIdType;
+  // See the schema comment on Rider.idType/RiderIdType — RUC/CEDULA/PASAPORTE. The 18+
+  // minimum-age check on birthDate lives in RiderProfileService.applyAsRider, not here, for the
+  // same reason plate/vehicle/license cross-field checks do: it can't be expressed per-field.
+  @ApiProperty({ enum: RiderIdType })
+  @IsEnum(RiderIdType)
+  idType!: RiderIdType;
 
   // Required only when idType is RUC (the "razón social") — enforced in
   // RiderProfileService.applyAsRider, not here, since the rule depends on the sibling idType field.
@@ -43,14 +43,11 @@ export class RegisterRiderApplicationDto {
   @IsString()
   city!: string;
 
-  // ── ID document — front and back, uploaded separately via POST /uploads first ─────────────
+  // ── ID document — a single photo (RUC/cédula/pasaporte, whichever applies), uploaded
+  // separately via POST /uploads first. No front/back distinction — just the one document. ──────
   @ApiProperty()
   @IsUrl({ require_tld: false })
-  idPhotoFrontUrl!: string;
-
-  @ApiProperty()
-  @IsUrl({ require_tld: false })
-  idPhotoBackUrl!: string;
+  idPhotoUrl!: string;
 
   @ApiProperty({ description: 'Selfie photo, white background' })
   @IsUrl({ require_tld: false })
@@ -61,8 +58,11 @@ export class RegisterRiderApplicationDto {
   @IsEnum(VehicleType)
   vehicleType!: VehicleType;
 
-  // Required only for MOTORCYCLE/CAR — enforced in RiderProfileService.applyAsRider, not here,
-  // since the rule depends on the sibling vehicleType field.
+  // plate/vehicleBrand/vehicleModel/vehicleYear/licenseNumber/licensePhotoUrl/
+  // vehicleRegistrationPhotoUrl are required only for MOTORCYCLE/CAR; vehicleColor is required
+  // for every vehicle type (including BIKE, where it's the only vehicle field asked at all) —
+  // enforced in RiderProfileService.applyAsRider, not here, since the rules depend on the sibling
+  // vehicleType field.
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -89,35 +89,33 @@ export class RegisterRiderApplicationDto {
   @IsInt()
   vehicleYear?: number;
 
-  // ── Payout info ─────────────────────────────────────────────────────────
-  @ApiProperty({ enum: RiderPayoutMethodType })
-  @IsEnum(RiderPayoutMethodType)
-  payoutMethod!: RiderPayoutMethodType;
-
-  @ApiPropertyOptional({ description: 'Required when payoutMethod is BANK_ACCOUNT' })
+  @ApiPropertyOptional({ description: 'Required for MOTORCYCLE/CAR' })
   @IsOptional()
   @IsString()
-  bankName?: string;
+  licenseNumber?: string;
 
-  @ApiPropertyOptional({ enum: RiderBankAccountType, description: 'Required when payoutMethod is BANK_ACCOUNT' })
+  @ApiPropertyOptional({ description: 'Driver\'s license photo — required for MOTORCYCLE/CAR' })
   @IsOptional()
+  @IsUrl({ require_tld: false })
+  licensePhotoUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Vehicle registration ("matrícula") photo — required for MOTORCYCLE/CAR' })
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  vehicleRegistrationPhotoUrl?: string;
+
+  // ── Payout info — bank account only; there is no mobile-wallet option in the apply flow. ──────
+  @ApiProperty()
+  @IsString()
+  bankName!: string;
+
+  @ApiProperty({ enum: RiderBankAccountType })
   @IsEnum(RiderBankAccountType)
-  accountType?: RiderBankAccountType;
+  accountType!: RiderBankAccountType;
 
-  @ApiPropertyOptional({ description: 'Required when payoutMethod is BANK_ACCOUNT' })
-  @IsOptional()
+  @ApiProperty()
   @IsString()
-  accountNumber?: string;
-
-  @ApiPropertyOptional({ description: 'Required when payoutMethod is MOBILE_WALLET' })
-  @IsOptional()
-  @IsString()
-  walletProvider?: string;
-
-  @ApiPropertyOptional({ description: 'Required when payoutMethod is MOBILE_WALLET' })
-  @IsOptional()
-  @IsString()
-  walletNumber?: string;
+  accountNumber!: string;
 
   @ApiProperty()
   @IsString()

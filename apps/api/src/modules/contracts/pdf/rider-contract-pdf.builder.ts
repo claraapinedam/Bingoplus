@@ -2,7 +2,7 @@ import PDFDocument from 'pdfkit';
 
 export interface RiderContractPdfInput {
   contractId: string;
-  idType: 'RUC' | 'CEDULA';
+  idType: 'RUC' | 'CEDULA' | 'PASAPORTE';
   legalName: string;
   taxId: string;
   contractBodyText: string;
@@ -40,6 +40,8 @@ export function buildRiderContractPdf(input: RiderContractPdfInput): Promise<Buf
     doc.moveDown(0.3);
     if (input.idType === 'RUC') {
       doc.text(`${input.legalName}, RUC ${input.taxId} (en adelante, "el Rider").`);
+    } else if (input.idType === 'PASAPORTE') {
+      doc.text(`${input.legalName}, pasaporte ${input.taxId} (en adelante, "el Rider").`);
     } else {
       doc.text(`${input.legalName}, cédula de identidad ${input.taxId} (en adelante, "el Rider").`);
     }

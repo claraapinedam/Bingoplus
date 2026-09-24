@@ -1,4 +1,4 @@
-import { BusinessIdType, RiderAccountStatus, RiderPayoutMethodType, RoleName, VehicleType } from '@prisma/client';
+import { RiderAccountStatus, RiderIdType, RoleName, VehicleType } from '@prisma/client';
 import { ConflictException } from '@nestjs/common';
 import { RiderProfileService } from './rider-profile.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -8,17 +8,22 @@ import { RegisterRiderApplicationDto } from './dto/rider-application.dto';
 function baseApplicationDto(overrides: Partial<RegisterRiderApplicationDto> = {}): RegisterRiderApplicationDto {
   return {
     birthDate: '1995-01-01',
-    idType: BusinessIdType.CEDULA,
+    idType: RiderIdType.CEDULA,
     nationalIdNumber: '0102030405',
     phone: '0991234567',
     address: 'Av. Siempre Viva 123',
     city: 'Quito',
-    idPhotoFrontUrl: 'http://localhost:3001/uploads/front.jpg',
-    idPhotoBackUrl: 'http://localhost:3001/uploads/back.jpg',
+    idPhotoUrl: 'http://localhost:3001/uploads/id.jpg',
     selfiePhotoUrl: 'http://localhost:3001/uploads/selfie.jpg',
     vehicleType: VehicleType.MOTORCYCLE,
     plate: 'ABC-1234',
-    payoutMethod: RiderPayoutMethodType.BANK_ACCOUNT,
+    vehicleBrand: 'Honda',
+    vehicleModel: 'CB1',
+    vehicleColor: 'Rojo',
+    vehicleYear: 2022,
+    licenseNumber: 'LIC-001',
+    licensePhotoUrl: 'http://localhost:3001/uploads/license.jpg',
+    vehicleRegistrationPhotoUrl: 'http://localhost:3001/uploads/registration.jpg',
     bankName: 'Banco Pichincha',
     accountType: 'SAVINGS' as any,
     accountNumber: '1234567890',
@@ -82,9 +87,10 @@ describe('RiderProfileService', () => {
       expect(prisma.riderDocument.createMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: [
-            expect.objectContaining({ side: 'FRONT', fileUrl: 'http://localhost:3001/uploads/front.jpg' }),
-            expect.objectContaining({ side: 'BACK', fileUrl: 'http://localhost:3001/uploads/back.jpg' }),
+            expect.objectContaining({ type: 'ID', fileUrl: 'http://localhost:3001/uploads/id.jpg' }),
             expect.objectContaining({ type: 'SELFIE', fileUrl: 'http://localhost:3001/uploads/selfie.jpg' }),
+            expect.objectContaining({ type: 'LICENSE', fileUrl: 'http://localhost:3001/uploads/license.jpg' }),
+            expect.objectContaining({ type: 'VEHICLE_REGISTRATION', fileUrl: 'http://localhost:3001/uploads/registration.jpg' }),
           ],
         }),
       );
@@ -118,34 +124,50 @@ describe('RiderProfileService', () => {
       prisma.rider.findUnique.mockResolvedValue(null);
       await expect(
         service.applyAsRider('u1', baseApplicationDto({ vehicleType: VehicleType.CAR, plate: undefined })),
-      ).rejects.toThrow('A license plate is required for motorcycles and cars');
+      ).rejects.toThrow('plate, vehicleBrand, vehicleModel and vehicleYear are required for motorcycles and cars');
     });
 
-    it('does not require a plate for a bicycle', async () => {
+    it('rejects a motorcycle/car application with no license number/photo or vehicle registration photo', async () => {
+      prisma.rider.findUnique.mockResolvedValue(null);
+      await expect(
+        service.applyAsRider('u1', baseApplicationDto({ licenseNumber: undefined, licensePhotoUrl: undefined, vehicleRegistrationPhotoUrl: undefined })),
+      ).rejects.toThrow('licenseNumber, licensePhotoUrl and vehicleRegistrationPhotoUrl are required for motorcycles and cars');
+    });
+
+    it('does not require plate/brand/model/year/license for a bicycle, only color', async () => {
       prisma.rider.findUnique
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
       prisma.rider.create.mockResolvedValue({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
       await expect(
-        service.applyAsRider('u1', baseApplicationDto({ vehicleType: VehicleType.BIKE, plate: undefined })),
+        service.applyAsRider(
+          'u1',
+          baseApplicationDto({
+            vehicleType: VehicleType.BIKE,
+            plate: undefined,
+            vehicleBrand: undefined,
+            vehicleModel: undefined,
+            vehicleYear: undefined,
+            licenseNumber: undefined,
+            licensePhotoUrl: undefined,
+            vehicleRegistrationPhotoUrl: undefined,
+          }),
+        ),
       ).resolves.toBeDefined();
     });
 
-    it('rejects a BANK_ACCOUNT payout missing its required fields', async () => {
+    it('rejects an application with no vehicleColor, even for a bicycle', async () => {
+      prisma.rider.findUnique.mockResolvedValue(null);
+      await expect(
+        service.applyAsRider('u1', baseApplicationDto({ vehicleType: VehicleType.BIKE, vehicleColor: undefined })),
+      ).rejects.toThrow('vehicleColor is required');
+    });
+
+    it('rejects an application missing its required bank fields', async () => {
       prisma.rider.findUnique.mockResolvedValue(null);
       await expect(
         service.applyAsRider('u1', baseApplicationDto({ bankName: undefined, accountType: undefined, accountNumber: undefined })),
-      ).rejects.toThrow('bankName, accountType and accountNumber are required for a bank account payout');
-    });
-
-    it('rejects a MOBILE_WALLET payout missing its required fields', async () => {
-      prisma.rider.findUnique.mockResolvedValue(null);
-      await expect(
-        service.applyAsRider(
-          'u1',
-          baseApplicationDto({ payoutMethod: RiderPayoutMethodType.MOBILE_WALLET, bankName: undefined, accountType: undefined, accountNumber: undefined }),
-        ),
-      ).rejects.toThrow('walletProvider and walletNumber are required for a mobile wallet payout');
+      ).rejects.toThrow('bankName, accountType and accountNumber are required');
     });
 
     it('rejects an applicant under 18', async () => {
@@ -172,7 +194,7 @@ describe('RiderProfileService', () => {
     it('rejects a RUC application with no legalName (razón social)', async () => {
       prisma.rider.findUnique.mockResolvedValue(null);
       await expect(
-        service.applyAsRider('u1', baseApplicationDto({ idType: BusinessIdType.RUC, legalName: undefined })),
+        service.applyAsRider('u1', baseApplicationDto({ idType: RiderIdType.RUC, legalName: undefined })),
       ).rejects.toThrow('legalName (razón social) is required when idType is RUC');
     });
 
@@ -182,7 +204,7 @@ describe('RiderProfileService', () => {
         .mockResolvedValueOnce({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
       prisma.rider.create.mockResolvedValue({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
 
-      await service.applyAsRider('u1', baseApplicationDto({ idType: BusinessIdType.RUC, legalName: 'Juan Pérez Cía. Ltda.' }));
+      await service.applyAsRider('u1', baseApplicationDto({ idType: RiderIdType.RUC, legalName: 'Juan Pérez Cía. Ltda.' }));
       expect(prisma.rider.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ idType: 'RUC', legalName: 'Juan Pérez Cía. Ltda.' }) }),
       );
@@ -194,9 +216,21 @@ describe('RiderProfileService', () => {
         .mockResolvedValueOnce({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
       prisma.rider.create.mockResolvedValue({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
 
-      await service.applyAsRider('u1', baseApplicationDto({ idType: BusinessIdType.CEDULA, legalName: 'Should be ignored' }));
+      await service.applyAsRider('u1', baseApplicationDto({ idType: RiderIdType.CEDULA, legalName: 'Should be ignored' }));
       expect(prisma.rider.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ idType: 'CEDULA', legalName: null }) }),
+      );
+    });
+
+    it('never stores legalName for a PASAPORTE application', async () => {
+      prisma.rider.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
+      prisma.rider.create.mockResolvedValue({ id: 'r1', userId: 'u1', accountStatus: 'PENDING_APPROVAL' });
+
+      await service.applyAsRider('u1', baseApplicationDto({ idType: RiderIdType.PASAPORTE, legalName: 'Should be ignored' }));
+      expect(prisma.rider.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ idType: 'PASAPORTE', legalName: null }) }),
       );
     });
   });

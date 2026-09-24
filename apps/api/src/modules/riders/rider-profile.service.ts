@@ -1,11 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
-  BusinessIdType,
   Prisma,
   RiderAccountStatus,
   RiderAvailabilityStatus,
-  RiderDocumentSide,
   RiderDocumentType,
+  RiderIdType,
   RiderPayoutMethodType,
   RoleName,
   VehicleType,
@@ -16,7 +15,10 @@ import { RegisterRiderApplicationDto } from './dto/rider-application.dto';
 
 const PROFILE_INCLUDE = { user: true, vehicles: true, documents: true, payoutMethod: true } as const;
 
-const PLATE_REQUIRED_VEHICLE_TYPES: VehicleType[] = [VehicleType.MOTORCYCLE, VehicleType.CAR];
+// A motorized vehicle needs a plate, full vehicle details, a driver's license, and the vehicle's
+// own registration ("matrícula") — a bicycle needs none of that, just its color (see
+// applyAsRider's validation block and the RiderApplyForm UI this mirrors).
+const MOTORIZED_VEHICLE_TYPES: VehicleType[] = [VehicleType.MOTORCYCLE, VehicleType.CAR];
 const MINIMUM_RIDER_AGE = 18;
 
 function calculateAge(birthDate: Date, now: Date): number {
@@ -49,8 +51,8 @@ export class RiderProfileService {
 
   /**
    * The one and only way a plain CUSTOMER-role user becomes a Rider — a single atomic submission
-   * carrying everything the admin approval flow needs to review (basic info, contact, ID photo
-   * front+back, vehicle, payout destination, consent), not the empty-body role-flip this used to
+   * carrying everything the admin approval flow needs to review (basic info, contact, ID photo,
+   * vehicle, payout destination, consent), not the empty-body role-flip this used to
    * be. Attaches the RIDER role (idempotent) and leaves the Rider row PENDING_APPROVAL either way
    * — approval itself stays exclusively RidersService's job (admin-riders.controller.ts), never
    * decided here. The caller's *current* access token still won't carry RIDER until they
@@ -62,16 +64,21 @@ export class RiderProfileService {
    * calling this again is rejected outright: this is an application flow, not a profile editor.
    */
   async applyAsRider(userId: string, dto: RegisterRiderApplicationDto) {
-    if (PLATE_REQUIRED_VEHICLE_TYPES.includes(dto.vehicleType) && !dto.plate?.trim()) {
-      throw new BadRequestException('A license plate is required for motorcycles and cars');
+    if (!dto.vehicleColor?.trim()) {
+      throw new BadRequestException('vehicleColor is required');
     }
-    if (dto.payoutMethod === RiderPayoutMethodType.BANK_ACCOUNT && (!dto.bankName || !dto.accountType || !dto.accountNumber)) {
-      throw new BadRequestException('bankName, accountType and accountNumber are required for a bank account payout');
+    if (MOTORIZED_VEHICLE_TYPES.includes(dto.vehicleType)) {
+      if (!dto.plate?.trim() || !dto.vehicleBrand?.trim() || !dto.vehicleModel?.trim() || !dto.vehicleYear) {
+        throw new BadRequestException('plate, vehicleBrand, vehicleModel and vehicleYear are required for motorcycles and cars');
+      }
+      if (!dto.licenseNumber?.trim() || !dto.licensePhotoUrl || !dto.vehicleRegistrationPhotoUrl) {
+        throw new BadRequestException('licenseNumber, licensePhotoUrl and vehicleRegistrationPhotoUrl are required for motorcycles and cars');
+      }
     }
-    if (dto.payoutMethod === RiderPayoutMethodType.MOBILE_WALLET && (!dto.walletProvider || !dto.walletNumber)) {
-      throw new BadRequestException('walletProvider and walletNumber are required for a mobile wallet payout');
+    if (!dto.bankName || !dto.accountType || !dto.accountNumber) {
+      throw new BadRequestException('bankName, accountType and accountNumber are required');
     }
-    if (dto.idType === BusinessIdType.RUC && !dto.legalName?.trim()) {
+    if (dto.idType === RiderIdType.RUC && !dto.legalName?.trim()) {
       throw new BadRequestException('legalName (razón social) is required when idType is RUC');
     }
     if (calculateAge(new Date(dto.birthDate), new Date()) < MINIMUM_RIDER_AGE) {
@@ -101,7 +108,7 @@ export class RiderProfileService {
         const riderData = {
           city: dto.city,
           idType: dto.idType,
-          legalName: dto.idType === BusinessIdType.RUC ? dto.legalName : null,
+          legalName: dto.idType === RiderIdType.RUC ? dto.legalName : null,
           birthDate,
           nationalIdNumber: dto.nationalIdNumber,
           address: dto.address,
@@ -128,30 +135,44 @@ export class RiderProfileService {
           },
         });
 
+        // Exactly one ID photo now (no front/back split), plus LICENSE/VEHICLE_REGISTRATION when
+        // the vehicle is motorized — deleteMany covers all four document types so switching from
+        // a motorized vehicle to a bike on resubmission correctly drops the now-irrelevant
+        // license/registration rows instead of leaving stale ones behind.
         await tx.riderDocument.deleteMany({
-          where: { riderId: rider.id, type: { in: [RiderDocumentType.ID, RiderDocumentType.SELFIE] } },
+          where: {
+            riderId: rider.id,
+            type: { in: [RiderDocumentType.ID, RiderDocumentType.SELFIE, RiderDocumentType.LICENSE, RiderDocumentType.VEHICLE_REGISTRATION] },
+          },
         });
         await tx.riderDocument.createMany({
           data: [
             {
               riderId: rider.id,
               type: RiderDocumentType.ID,
-              side: RiderDocumentSide.FRONT,
               documentNumber: dto.nationalIdNumber,
-              fileUrl: dto.idPhotoFrontUrl,
-            },
-            {
-              riderId: rider.id,
-              type: RiderDocumentType.ID,
-              side: RiderDocumentSide.BACK,
-              documentNumber: dto.nationalIdNumber,
-              fileUrl: dto.idPhotoBackUrl,
+              fileUrl: dto.idPhotoUrl,
             },
             {
               riderId: rider.id,
               type: RiderDocumentType.SELFIE,
               fileUrl: dto.selfiePhotoUrl,
             },
+            ...(MOTORIZED_VEHICLE_TYPES.includes(dto.vehicleType)
+              ? [
+                  {
+                    riderId: rider.id,
+                    type: RiderDocumentType.LICENSE,
+                    documentNumber: dto.licenseNumber,
+                    fileUrl: dto.licensePhotoUrl!,
+                  },
+                  {
+                    riderId: rider.id,
+                    type: RiderDocumentType.VEHICLE_REGISTRATION,
+                    fileUrl: dto.vehicleRegistrationPhotoUrl!,
+                  },
+                ]
+              : []),
           ],
         });
 
@@ -159,22 +180,18 @@ export class RiderProfileService {
           where: { riderId: rider.id },
           create: {
             riderId: rider.id,
-            method: dto.payoutMethod,
+            method: RiderPayoutMethodType.BANK_ACCOUNT,
             bankName: dto.bankName,
             accountType: dto.accountType,
             accountNumber: dto.accountNumber,
-            walletProvider: dto.walletProvider,
-            walletNumber: dto.walletNumber,
             accountHolderName: dto.accountHolderName,
             holderDocumentNumber: dto.holderDocumentNumber,
           },
           update: {
-            method: dto.payoutMethod,
+            method: RiderPayoutMethodType.BANK_ACCOUNT,
             bankName: dto.bankName,
             accountType: dto.accountType,
             accountNumber: dto.accountNumber,
-            walletProvider: dto.walletProvider,
-            walletNumber: dto.walletNumber,
             accountHolderName: dto.accountHolderName,
             holderDocumentNumber: dto.holderDocumentNumber,
           },

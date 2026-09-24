@@ -47,7 +47,7 @@ interface RiderDetail {
   accountStatus: string;
   availabilityStatus: string;
   city: string | null;
-  idType: 'RUC' | 'CEDULA' | null;
+  idType: 'RUC' | 'CEDULA' | 'PASAPORTE' | null;
   legalName: string | null;
   birthDate: string | null;
   nationalIdNumber: string | null;
@@ -67,7 +67,7 @@ interface RiderDetail {
 interface RiderContract {
   id: string;
   status: 'PENDING_SIGNATURE' | 'SIGNED' | 'SUPERSEDED';
-  idType: 'RUC' | 'CEDULA';
+  idType: 'RUC' | 'CEDULA' | 'PASAPORTE';
   legalName: string;
   taxId: string;
   bingoCommissionPercent: string | number;
@@ -76,6 +76,32 @@ interface RiderContract {
   signedIp: string | null;
   pdfUrl: string | null;
   createdAt: string;
+}
+
+const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  ID: 'Identificación',
+  SELFIE: 'Selfie',
+  LICENSE: 'Licencia de conducir',
+  INSURANCE: 'Seguro',
+  VEHICLE_REGISTRATION: 'Matrícula del vehículo',
+  CONTRACT: 'Contrato',
+};
+
+function documentTypeLabel(type: string): string {
+  return DOCUMENT_TYPE_LABELS[type] ?? type;
+}
+
+function idTypeLabel(idType: 'RUC' | 'CEDULA' | 'PASAPORTE' | null | undefined): string {
+  switch (idType) {
+    case 'RUC':
+      return 'RUC';
+    case 'CEDULA':
+      return 'Cédula';
+    case 'PASAPORTE':
+      return 'Pasaporte';
+    default:
+      return 'Identificación';
+  }
 }
 
 const TABS = [
@@ -264,7 +290,9 @@ export default function AdminRiderDetailPage() {
             <div style={{ fontSize: 13, marginBottom: 6 }}>
               Fecha de nacimiento: {rider.birthDate ? new Date(rider.birthDate).toLocaleDateString('es-EC') : '—'}
             </div>
-            <div style={{ fontSize: 13, marginBottom: 6 }}>Cédula / identificación: {rider.nationalIdNumber ?? '—'}</div>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              {idTypeLabel(rider.idType)}: {rider.nationalIdNumber ?? '—'}
+            </div>
             <div style={{ fontSize: 13, marginBottom: 6 }}>Dirección: {rider.address ?? '—'}</div>
             <div style={{ fontSize: 13, marginBottom: 6 }}>
               Rating: {rider.ratingAvg.toFixed(1)} ({rider.reviewCount} reseñas)
@@ -313,7 +341,7 @@ export default function AdminRiderDetailPage() {
                 Estado: <span className={`bingo-badge badge-${contract.status.toLowerCase()}`}>{contract.status}</span>
               </div>
               <div style={{ fontSize: 13, marginBottom: 6 }}>
-                {contract.idType === 'RUC' ? `${contract.legalName} — RUC ${contract.taxId}` : `${contract.legalName} — Cédula ${contract.taxId}`}
+                {contract.legalName} — {idTypeLabel(contract.idType)} {contract.taxId}
               </div>
               <div style={{ fontSize: 13, marginBottom: 6 }}>
                 Comisión BINGO+: <strong>{Number(contract.bingoCommissionPercent).toFixed(2)}%</strong> · Retención de impuesto:{' '}
@@ -381,6 +409,7 @@ export default function AdminRiderDetailPage() {
                 <thead>
                   <tr>
                     <th>Tipo</th>
+                    <th>N.º de documento</th>
                     <th>Estado</th>
                     <th>Archivo</th>
                     <th>Acciones</th>
@@ -389,7 +418,8 @@ export default function AdminRiderDetailPage() {
                 <tbody>
                   {rider.documents.map((d) => (
                     <tr key={d.id}>
-                      <td>{d.type}{d.side === 'FRONT' ? ' — Delantera' : d.side === 'BACK' ? ' — Trasera' : ''}</td>
+                      <td>{documentTypeLabel(d.type)}{d.side === 'FRONT' ? ' — Delantera' : d.side === 'BACK' ? ' — Trasera' : ''}</td>
+                      <td>{d.documentNumber ?? '—'}</td>
                       <td>
                         <span className={`bingo-badge badge-${d.status.toLowerCase()}`}>{d.status}</span>
                       </td>

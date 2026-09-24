@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BusinessIdType, ContractStatus, ContractTemplateType, RiderAccountStatus, RiderDocumentType } from '@prisma/client';
+import { ContractStatus, ContractTemplateType, RiderAccountStatus, RiderDocumentType, RiderIdType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { STORAGE_PROVIDER_TOKEN, StorageProvider } from '../uploads/providers/storage-provider.interface';
@@ -36,11 +36,11 @@ export class RiderContractsService {
     if (!rider.idType || !rider.nationalIdNumber) {
       throw new BadRequestException('This rider is missing identification info — cannot generate a contract');
     }
-    if (rider.idType === BusinessIdType.RUC && !rider.legalName) {
+    if (rider.idType === RiderIdType.RUC && !rider.legalName) {
       throw new BadRequestException('This rider is missing a razón social — cannot generate a contract');
     }
 
-    const legalName = rider.idType === BusinessIdType.RUC ? rider.legalName! : `${rider.user.firstName} ${rider.user.lastName}`;
+    const legalName = rider.idType === RiderIdType.RUC ? rider.legalName! : `${rider.user.firstName} ${rider.user.lastName}`;
     const fare = await this.fareConfig.get();
     const bingoCommissionPercent = Math.round(fare.bingoCommissionPercent * 10000) / 100;
     const riderTaxWithholdingPercent = Math.round(fare.riderTaxWithholdingPercent * 10000) / 100;

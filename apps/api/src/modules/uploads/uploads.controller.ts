@@ -37,7 +37,7 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
  * Generic authenticated file upload used by the Rider application form (ID photos) today — any
  * logged-in user can upload (mirrors how POST /rider/apply itself has no role restriction, since
  * a plain CUSTOMER applying as a rider is the exact case this exists for). Returns a URL the
- * caller then passes back as a plain string field (e.g. RegisterRiderApplicationDto.idPhotoFrontUrl),
+ * caller then passes back as a plain string field (e.g. RegisterRiderApplicationDto.idPhotoUrl),
  * same convention every other `fileUrl` in this schema already uses. Where the bytes actually land
  * is decided by UploadsModule's StorageProvider factory (Supabase Storage in production, local
  * disk only for dev — see that module for why).

@@ -1047,6 +1047,17 @@ enum RiderAvailabilityStatus {
   BUSY
 }
 
+// Unlike Business (always RUC or a local cédula, never a passport — a registered company/person
+// filing local taxes), a Rider applicant can be a foreign national without an Ecuadorian cédula,
+// so this is its own enum rather than reusing BusinessIdType. PASAPORTE is treated exactly like
+// CEDULA everywhere legalName/"razón social" logic branches on RUC vs. not-RUC (RiderProfileService
+// .applyAsRider, RiderContractsService) — both are a natural person acting on their own behalf.
+enum RiderIdType {
+  RUC
+  CEDULA
+  PASAPORTE
+}
+
 model Rider {
   id                    String                                 @id @default(cuid())
   userId                String                                 @unique
@@ -1056,10 +1067,9 @@ model Rider {
   // later refinement; proximity itself is computed from currentLocation, not from this string.
   city                  String?
   // Application basics — collected once, at apply time (see RiderProfileService.applyAsRider).
-  // Reuses Business's RUC/CEDULA distinction (BusinessIdType) — same two identification types,
-  // no reason for a parallel enum. legalName is the "razón social" and is only ever collected
-  // (or shown) for RUC; a CEDULA rider's name is just their own User.firstName/lastName, read-only.
-  idType                BusinessIdType?
+  // legalName is the "razón social" and is only ever collected (or shown) for RUC; a CEDULA/
+  // PASAPORTE rider's name is just their own User.firstName/lastName, read-only.
+  idType                RiderIdType?
   legalName             String?
   birthDate             DateTime?
   nationalIdNumber      String?
@@ -1104,7 +1114,7 @@ model RiderContract {
   id                         String         @id @default(cuid())
   riderId                    String
   status                     ContractStatus @default(PENDING_SIGNATURE)
-  idType                     BusinessIdType
+  idType                     RiderIdType
   // Razón social for RUC, or the rider's own User.firstName+lastName for CEDULA — always
   // populated, exactly like BusinessContract.legalName, since the PDF signer line needs it either way.
   legalName                  String

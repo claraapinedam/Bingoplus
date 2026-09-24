@@ -12,14 +12,13 @@ const MINIMUM_RIDER_AGE = 18;
 
 export interface RiderApplyValues {
   birthDate: string;
-  idType: 'RUC' | 'CEDULA';
+  idType: 'RUC' | 'CEDULA' | 'PASAPORTE';
   legalName?: string;
   nationalIdNumber: string;
   phone: string;
   address: string;
   city: string;
-  idPhotoFrontUrl: string;
-  idPhotoBackUrl: string;
+  idPhotoUrl: string;
   selfiePhotoUrl: string;
   vehicleType: 'BIKE' | 'MOTORCYCLE' | 'CAR';
   plate?: string;
@@ -27,12 +26,12 @@ export interface RiderApplyValues {
   vehicleModel?: string;
   vehicleColor?: string;
   vehicleYear?: number;
-  payoutMethod: 'BANK_ACCOUNT' | 'MOBILE_WALLET';
-  bankName?: string;
-  accountType?: 'SAVINGS' | 'CHECKING';
-  accountNumber?: string;
-  walletProvider?: string;
-  walletNumber?: string;
+  licenseNumber?: string;
+  licensePhotoUrl?: string;
+  vehicleRegistrationPhotoUrl?: string;
+  bankName: string;
+  accountType: 'SAVINGS' | 'CHECKING';
+  accountNumber: string;
   accountHolderName: string;
   holderDocumentNumber: string;
   termsAccepted: boolean;
@@ -45,12 +44,9 @@ const VEHICLE_OPTIONS: { value: RiderApplyValues['vehicleType']; label: string; 
   { value: 'CAR', label: 'Auto', icon: '🚗' },
 ];
 
-const PLATE_REQUIRED: RiderApplyValues['vehicleType'][] = ['MOTORCYCLE', 'CAR'];
-
-const PAYOUT_OPTIONS: { value: RiderApplyValues['payoutMethod']; label: string }[] = [
-  { value: 'BANK_ACCOUNT', label: 'Cuenta bancaria' },
-  { value: 'MOBILE_WALLET', label: 'Billetera móvil' },
-];
+// Motorcycles and cars require the full set of vehicle details (plate, brand, model, year,
+// license + photos); a bicycle only ever requires color (handled unconditionally below).
+const VEHICLE_DETAILS_REQUIRED: RiderApplyValues['vehicleType'][] = ['MOTORCYCLE', 'CAR'];
 
 const ACCOUNT_TYPE_OPTIONS: { value: NonNullable<RiderApplyValues['accountType']>; label: string }[] = [
   { value: 'SAVINGS', label: 'Ahorros' },
@@ -140,15 +136,14 @@ export default function RiderApplyForm({
   submitting: boolean;
   onSubmit: (values: RiderApplyValues) => void;
 }) {
-  const [idType, setIdType] = useState<'RUC' | 'CEDULA' | null>(null);
+  const [idType, setIdType] = useState<'RUC' | 'CEDULA' | 'PASAPORTE' | null>(null);
   // The caller's own account name — read-only everywhere in this form, never an editable field,
   // regardless of idType. Only RUC additionally asks for a separate, editable razón social.
   const [meName, setMeName] = useState('');
   const [legalName, setLegalName] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [nationalIdNumber, setNationalIdNumber] = useState('');
-  const [idPhotoFrontUrl, setIdPhotoFrontUrl] = useState('');
-  const [idPhotoBackUrl, setIdPhotoBackUrl] = useState('');
+  const [idPhotoUrl, setIdPhotoUrl] = useState('');
   const [selfiePhotoUrl, setSelfiePhotoUrl] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -162,12 +157,12 @@ export default function RiderApplyForm({
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
   const [vehicleYear, setVehicleYear] = useState('');
-  const [payoutMethod, setPayoutMethod] = useState<RiderApplyValues['payoutMethod'] | null>(null);
+  const [licenseNumber, setLicenseNumber] = useState('');
+  const [licensePhotoUrl, setLicensePhotoUrl] = useState('');
+  const [vehicleRegistrationPhotoUrl, setVehicleRegistrationPhotoUrl] = useState('');
   const [bankName, setBankName] = useState('');
   const [accountType, setAccountType] = useState<RiderApplyValues['accountType'] | null>(null);
   const [accountNumber, setAccountNumber] = useState('');
-  const [walletProvider, setWalletProvider] = useState('');
-  const [walletNumber, setWalletNumber] = useState('');
   const [accountHolderName, setAccountHolderName] = useState('');
   const [holderDocumentNumber, setHolderDocumentNumber] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -206,30 +201,33 @@ export default function RiderApplyForm({
   const age = birthDate ? calculateAge(new Date(birthDate), new Date()) : null;
   const ageValid = age === null || age >= MINIMUM_RIDER_AGE;
 
-  const plateRequired = vehicleType != null && PLATE_REQUIRED.includes(vehicleType);
-  const payoutValid =
-    payoutMethod === 'BANK_ACCOUNT'
-      ? bankName.trim() !== '' && accountType != null && accountNumber.trim() !== ''
-      : payoutMethod === 'MOBILE_WALLET'
-        ? walletProvider.trim() !== '' && walletNumber.trim() !== ''
-        : false;
+  const vehicleDetailsRequired = vehicleType != null && VEHICLE_DETAILS_REQUIRED.includes(vehicleType);
+  const vehicleValid =
+    vehicleType != null &&
+    vehicleColor.trim() !== '' &&
+    (!vehicleDetailsRequired ||
+      (plate.trim() !== '' &&
+        vehicleBrand.trim() !== '' &&
+        vehicleModel.trim() !== '' &&
+        vehicleYear.trim() !== '' &&
+        licenseNumber.trim() !== '' &&
+        licensePhotoUrl !== '' &&
+        vehicleRegistrationPhotoUrl !== ''));
+  const bankValid = bankName.trim() !== '' && accountType != null && accountNumber.trim() !== '';
 
   const isValid =
+    vehicleValid &&
     idType !== null &&
     (idType !== 'RUC' || legalName.trim() !== '') &&
     birthDate !== '' &&
     ageValid &&
     nationalIdNumber.trim() !== '' &&
-    idPhotoFrontUrl !== '' &&
-    idPhotoBackUrl !== '' &&
+    idPhotoUrl !== '' &&
     selfiePhotoUrl !== '' &&
     phone.trim() !== '' &&
     address.trim() !== '' &&
     city.trim() !== '' &&
-    vehicleType != null &&
-    (!plateRequired || plate.trim() !== '') &&
-    payoutMethod != null &&
-    payoutValid &&
+    bankValid &&
     accountHolderName.trim() !== '' &&
     holderDocumentNumber.trim() !== '' &&
     termsAccepted &&
@@ -237,7 +235,7 @@ export default function RiderApplyForm({
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!isValid || !idType || !vehicleType || !payoutMethod) return;
+    if (!isValid || !idType || !vehicleType || !accountType) return;
     onSubmit({
       birthDate,
       idType,
@@ -246,21 +244,20 @@ export default function RiderApplyForm({
       phone,
       address,
       city,
-      idPhotoFrontUrl,
-      idPhotoBackUrl,
+      idPhotoUrl,
       selfiePhotoUrl,
       vehicleType,
-      plate: plateRequired ? plate : undefined,
-      vehicleBrand: vehicleBrand || undefined,
-      vehicleModel: vehicleModel || undefined,
-      vehicleColor: vehicleColor || undefined,
-      vehicleYear: vehicleYear ? Number(vehicleYear) : undefined,
-      payoutMethod,
-      bankName: payoutMethod === 'BANK_ACCOUNT' ? bankName : undefined,
-      accountType: payoutMethod === 'BANK_ACCOUNT' ? accountType ?? undefined : undefined,
-      accountNumber: payoutMethod === 'BANK_ACCOUNT' ? accountNumber : undefined,
-      walletProvider: payoutMethod === 'MOBILE_WALLET' ? walletProvider : undefined,
-      walletNumber: payoutMethod === 'MOBILE_WALLET' ? walletNumber : undefined,
+      plate: vehicleDetailsRequired ? plate : undefined,
+      vehicleBrand: vehicleDetailsRequired ? vehicleBrand : undefined,
+      vehicleModel: vehicleDetailsRequired ? vehicleModel : undefined,
+      vehicleColor,
+      vehicleYear: vehicleDetailsRequired && vehicleYear ? Number(vehicleYear) : undefined,
+      licenseNumber: vehicleDetailsRequired ? licenseNumber : undefined,
+      licensePhotoUrl: vehicleDetailsRequired ? licensePhotoUrl : undefined,
+      vehicleRegistrationPhotoUrl: vehicleDetailsRequired ? vehicleRegistrationPhotoUrl : undefined,
+      bankName,
+      accountType,
+      accountNumber,
       accountHolderName,
       holderDocumentNumber,
       termsAccepted,
@@ -270,6 +267,72 @@ export default function RiderApplyForm({
 
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <section>
+        <h3 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 10px' }}>Vehículo</h3>
+        <div className="bingo-chip-row" style={{ marginBottom: 10 }}>
+          {VEHICLE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`bingo-chip${vehicleType === opt.value ? ' active' : ''}`}
+              onClick={() => setVehicleType(opt.value)}
+            >
+              {opt.icon} {opt.label}
+            </button>
+          ))}
+        </div>
+        {vehicleType && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {vehicleDetailsRequired && (
+              <>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Placa *</label>
+                  <input className="bingo-input" required value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} />
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Marca *</label>
+                    <input className="bingo-input" required value={vehicleBrand} onChange={(e) => setVehicleBrand(e.target.value)} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Modelo *</label>
+                    <input className="bingo-input" required value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value)} />
+                  </div>
+                </div>
+              </>
+            )}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Color *</label>
+                <input className="bingo-input" required value={vehicleColor} onChange={(e) => setVehicleColor(e.target.value)} />
+              </div>
+              {vehicleDetailsRequired && (
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Año *</label>
+                  <input
+                    className="bingo-input"
+                    type="number"
+                    required
+                    value={vehicleYear}
+                    onChange={(e) => setVehicleYear(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+            {vehicleDetailsRequired && (
+              <>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Número de licencia *</label>
+                  <input className="bingo-input" required value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} />
+                </div>
+                <PhotoField label="Foto de licencia" value={licensePhotoUrl} onUploaded={setLicensePhotoUrl} />
+                <PhotoField label="Foto de matrícula" value={vehicleRegistrationPhotoUrl} onUploaded={setVehicleRegistrationPhotoUrl} />
+              </>
+            )}
+          </div>
+        )}
+      </section>
+
       <section>
         <h3 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 10px' }}>Identificación</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -281,6 +344,9 @@ export default function RiderApplyForm({
               </button>
               <button type="button" className={`bingo-chip${idType === 'CEDULA' ? ' active' : ''}`} onClick={() => setIdType('CEDULA')}>
                 Cédula
+              </button>
+              <button type="button" className={`bingo-chip${idType === 'PASAPORTE' ? ' active' : ''}`} onClick={() => setIdType('PASAPORTE')}>
+                Pasaporte
               </button>
             </div>
           </div>
@@ -301,15 +367,14 @@ export default function RiderApplyForm({
 
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>
-                  {idType === 'RUC' ? 'RUC *' : 'Cédula *'}
+                  {idType === 'RUC' ? 'RUC *' : idType === 'CEDULA' ? 'Cédula *' : 'Pasaporte *'}
                 </label>
                 <input className="bingo-input" required value={nationalIdNumber} onChange={(e) => setNationalIdNumber(e.target.value)} />
               </div>
             </>
           )}
 
-          <PhotoField label="Foto de identificación — parte delantera" value={idPhotoFrontUrl} onUploaded={setIdPhotoFrontUrl} />
-          <PhotoField label="Foto de identificación — parte trasera" value={idPhotoBackUrl} onUploaded={setIdPhotoBackUrl} />
+          <PhotoField label="Foto de identificación" value={idPhotoUrl} onUploaded={setIdPhotoUrl} />
           <PhotoField
             label="Selfie"
             hint="Tómate una foto tipo selfie con fondo blanco, sin gorra ni lentes de sol."
@@ -372,122 +437,43 @@ export default function RiderApplyForm({
       </section>
 
       <section>
-        <h3 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 10px' }}>Vehículo</h3>
-        <div className="bingo-chip-row" style={{ marginBottom: 10 }}>
-          {VEHICLE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`bingo-chip${vehicleType === opt.value ? ' active' : ''}`}
-              onClick={() => setVehicleType(opt.value)}
-            >
-              {opt.icon} {opt.label}
-            </button>
-          ))}
-        </div>
-        {vehicleType && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {plateRequired && (
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4 }}>Placa *</label>
-                <input className="bingo-input" required value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} />
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <input className="bingo-input" placeholder="Marca (opcional)" value={vehicleBrand} onChange={(e) => setVehicleBrand(e.target.value)} />
-              <input className="bingo-input" placeholder="Modelo (opcional)" value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value)} />
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <input className="bingo-input" placeholder="Color (opcional)" value={vehicleColor} onChange={(e) => setVehicleColor(e.target.value)} />
-              <input
-                className="bingo-input"
-                type="number"
-                placeholder="Año (opcional)"
-                value={vehicleYear}
-                onChange={(e) => setVehicleYear(e.target.value)}
-              />
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section>
         <h3 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 10px' }}>Información de pago</h3>
-        <div className="bingo-chip-row" style={{ marginBottom: 10 }}>
-          {PAYOUT_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`bingo-chip${payoutMethod === opt.value ? ' active' : ''}`}
-              onClick={() => setPayoutMethod(opt.value)}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input className="bingo-input" placeholder="Banco *" required value={bankName} onChange={(e) => setBankName(e.target.value)} />
+          <div className="bingo-chip-row">
+            {ACCOUNT_TYPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`bingo-chip${accountType === opt.value ? ' active' : ''}`}
+                onClick={() => setAccountType(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <input
+            className="bingo-input"
+            placeholder="Número de cuenta *"
+            required
+            value={accountNumber}
+            onChange={(e) => setAccountNumber(e.target.value)}
+          />
+          <input
+            className="bingo-input"
+            placeholder="Nombre del titular de la cuenta *"
+            required
+            value={accountHolderName}
+            onChange={(e) => setAccountHolderName(e.target.value)}
+          />
+          <input
+            className="bingo-input"
+            placeholder="Cédula del titular *"
+            required
+            value={holderDocumentNumber}
+            onChange={(e) => setHolderDocumentNumber(e.target.value)}
+          />
         </div>
-
-        {payoutMethod === 'BANK_ACCOUNT' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10 }}>
-            <input className="bingo-input" placeholder="Banco *" required value={bankName} onChange={(e) => setBankName(e.target.value)} />
-            <div className="bingo-chip-row">
-              {ACCOUNT_TYPE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={`bingo-chip${accountType === opt.value ? ' active' : ''}`}
-                  onClick={() => setAccountType(opt.value)}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <input
-              className="bingo-input"
-              placeholder="Número de cuenta *"
-              required
-              value={accountNumber}
-              onChange={(e) => setAccountNumber(e.target.value)}
-            />
-          </div>
-        )}
-
-        {payoutMethod === 'MOBILE_WALLET' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10 }}>
-            <input
-              className="bingo-input"
-              placeholder="Proveedor de billetera (ej. Payphone) *"
-              required
-              value={walletProvider}
-              onChange={(e) => setWalletProvider(e.target.value)}
-            />
-            <input
-              className="bingo-input"
-              placeholder="Número de billetera *"
-              required
-              value={walletNumber}
-              onChange={(e) => setWalletNumber(e.target.value)}
-            />
-          </div>
-        )}
-
-        {payoutMethod && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <input
-              className="bingo-input"
-              placeholder="Nombre del titular de la cuenta *"
-              required
-              value={accountHolderName}
-              onChange={(e) => setAccountHolderName(e.target.value)}
-            />
-            <input
-              className="bingo-input"
-              placeholder="Cédula del titular *"
-              required
-              value={holderDocumentNumber}
-              onChange={(e) => setHolderDocumentNumber(e.target.value)}
-            />
-          </div>
-        )}
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
