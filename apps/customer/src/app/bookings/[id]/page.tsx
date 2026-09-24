@@ -134,6 +134,13 @@ export default function BookingDetailPage() {
 
   const canCancel = booking.status === 'PENDING' || booking.status === 'CONFIRMED';
 
+  // The service fee is a card-only surcharge (see BookingsService.create() on the API — price/tax/
+  // serviceFee/total are snapshotted at creation, but the fee is never actually charged for a cash
+  // payment). So the headline total should mirror the business side: only include it once the
+  // customer has actually chosen/paid by card. No payment yet (or cash chosen/paid) → price + tax.
+  const isCardPayment = booking.payment != null && booking.payment.provider !== CASH_PROVIDER;
+  const headlineTotal = isCardPayment ? Number(booking.total) : Number(booking.price) + Number(booking.tax);
+
   return (
     <CustomerShell>
       <header className="bingo-header">
@@ -183,7 +190,7 @@ export default function BookingDetailPage() {
               <strong>Precio del servicio:</strong> {currencyFormatter.format(Number(booking.price))}
             </div>
             <div>
-              <strong>Total a pagar:</strong> {currencyFormatter.format(Number(booking.total))}
+              <strong>Total a pagar:</strong> {currencyFormatter.format(headlineTotal)}
             </div>
             {booking.notes && (
               <div>
