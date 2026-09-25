@@ -300,9 +300,12 @@ export class ContractsService {
       .replaceAll('{{domicilio_negocio}}', domicilioNegocio)
       .replaceAll('{{representante_negocio}}', representanteNegocio)
       .replaceAll('{{calidad_representante_negocio}}', calidadRepresentante)
-      .replaceAll('{{check_tienda}}', sellsProducts && !directoryListing ? '☒' : '☐')
-      .replaceAll('{{check_directorio}}', directoryListing && !sellsProducts ? '☒' : '☐')
-      .replaceAll('{{check_tienda_directorio}}', sellsProducts && directoryListing ? '☒' : '☐')
+      // pdfkit's standard Helvetica font has no glyph for ☒/☐ (WinAnsiEncoding doesn't cover
+      // them) — they'd render as a missing-glyph placeholder in the signed PDF. "[X]"/"[ ]" reads
+      // the same way on screen and in the PDF, with no font-dependent risk.
+      .replaceAll('{{check_tienda}}', sellsProducts && !directoryListing ? '[X]' : '[ ]')
+      .replaceAll('{{check_directorio}}', directoryListing && !sellsProducts ? '[X]' : '[ ]')
+      .replaceAll('{{check_tienda_directorio}}', sellsProducts && directoryListing ? '[X]' : '[ ]')
       .replaceAll('{{comision_marketplace}}', commissionRatePercent !== null ? commissionRatePercent.toFixed(2) : '0.00')
       .replaceAll('{{plan_directorio}}', planDirectorio)
       .replaceAll('{{banco}}', business.bankName ?? '')
