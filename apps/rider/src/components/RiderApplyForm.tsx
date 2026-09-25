@@ -6,7 +6,8 @@ import { ApiError, apiFetch, uploadFile } from '@/lib/api';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_LOADER_ID } from '@/lib/googleMaps';
 import { ECUADOR_CITIES } from '@/lib/ecuadorProvinces';
 import SearchableSelect from './SearchableSelect';
-import TermsModal, { RIDER_PRIVACY_SECTIONS, RIDER_TERMS_SECTIONS } from './TermsModal';
+import RiderTermsModal from './RiderTermsModal';
+import RiderPrivacyModal from './RiderPrivacyModal';
 
 const MINIMUM_RIDER_AGE = 18;
 
@@ -480,13 +481,12 @@ export default function RiderApplyForm({
         <label style={{ fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
           <input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} style={{ marginTop: 2 }} />
           <span>
-            He leído y acepto los{' '}
             <button
               type="button"
               onClick={() => setShowTerms(true)}
-              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
+              style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
             >
-              Términos y Condiciones
+              Acepto los Términos y Condiciones de Uso de la Plataforma BINGO+ para Riders
             </button>
             {' *'}
           </span>
@@ -499,21 +499,20 @@ export default function RiderApplyForm({
             style={{ marginTop: 2 }}
           />
           <span>
-            He aceptado el{' '}
             <button
               type="button"
               onClick={() => setShowPrivacy(true)}
-              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
+              style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
             >
-              tratamiento de mis datos personales
+              He leído y acepto la Política de Privacidad y Tratamiento de Datos Personales de BINGO+ para Riders.
             </button>
             {' *'}
           </span>
         </label>
       </section>
 
-      {showTerms && <TermsModal title="Términos y Condiciones" sections={RIDER_TERMS_SECTIONS} onClose={() => setShowTerms(false)} />}
-      {showPrivacy && <TermsModal title="Tratamiento de Datos Personales" sections={RIDER_PRIVACY_SECTIONS} onClose={() => setShowPrivacy(false)} />}
+      {showTerms && <RiderTermsModal onClose={() => setShowTerms(false)} />}
+      {showPrivacy && <RiderPrivacyModal onClose={() => setShowPrivacy(false)} />}
 
       <button className="bingo-button" type="submit" disabled={submitting || !isValid}>
         {submitting ? 'Enviando solicitud…' : 'Enviar solicitud'}
