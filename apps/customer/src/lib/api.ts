@@ -148,6 +148,9 @@ export async function register(input: {
   password: string;
   firstName: string;
   lastName: string;
+  termsAccepted: boolean;
+  privacyNoticeAccepted: boolean;
+  marketingConsentAccepted?: boolean;
 }) {
   const data = await apiFetch<AuthResult>('/auth/register', {
     method: 'POST',

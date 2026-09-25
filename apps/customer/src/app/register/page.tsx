@@ -7,6 +7,8 @@ import { ApiError, register } from '@/lib/api';
 import PasswordField, { passwordMeetsPolicy } from '@/components/PasswordField';
 import EmailField, { isValidEmail } from '@/components/EmailField';
 import GoogleLoginButton from '@/components/GoogleLoginButton';
+import CustomerTermsModal from '@/components/CustomerTermsModal';
+import CustomerPrivacyModal from '@/components/CustomerPrivacyModal';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -17,8 +19,18 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [privacyNoticeAccepted, setPrivacyNoticeAccepted] = useState(false);
+  const [marketingConsentAccepted, setMarketingConsentAccepted] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
-  const canSubmit = isValidEmail(email) && passwordMeetsPolicy(password) && password === confirmPassword;
+  const canSubmit =
+    isValidEmail(email) &&
+    passwordMeetsPolicy(password) &&
+    password === confirmPassword &&
+    termsAccepted &&
+    privacyNoticeAccepted;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -26,7 +38,15 @@ export default function RegisterPage() {
     setError(null);
     setLoading(true);
     try {
-      await register({ firstName, lastName, email, password });
+      await register({
+        firstName,
+        lastName,
+        email,
+        password,
+        termsAccepted,
+        privacyNoticeAccepted,
+        marketingConsentAccepted,
+      });
       router.push('/verify-email');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo crear la cuenta.');
@@ -70,6 +90,58 @@ export default function RegisterPage() {
           onConfirmPasswordChange={setConfirmPassword}
         />
 
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              Acepto los{' '}
+              <button
+                type="button"
+                onClick={() => setShowTerms(true)}
+                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
+              >
+                Términos y Condiciones de BINGO+.
+              </button>
+            </span>
+          </label>
+
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={privacyNoticeAccepted}
+              onChange={(e) => setPrivacyNoticeAccepted(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              He sido informado sobre la{' '}
+              <button
+                type="button"
+                onClick={() => setShowPrivacy(true)}
+                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--bingo-teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
+              >
+                Política de Privacidad y Tratamiento de Datos Personales.
+              </button>
+            </span>
+          </label>
+
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={marketingConsentAccepted}
+              onChange={(e) => setMarketingConsentAccepted(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              Autorizo el tratamiento de mis datos para recibir promociones, descuentos y comunicaciones comerciales de BINGO+.
+            </span>
+          </label>
+        </div>
+
         {error && <div className="bingo-error-banner">{error}</div>}
 
         <button className="bingo-button" type="submit" disabled={loading || !canSubmit}>
@@ -82,6 +154,9 @@ export default function RegisterPage() {
           ¿Ya tienes cuenta? <a href="/login" style={{ color: 'var(--bingo-teal)', fontWeight: 700 }}>Inicia sesión</a>
         </p>
       </form>
+
+      {showTerms && <CustomerTermsModal onClose={() => setShowTerms(false)} />}
+      {showPrivacy && <CustomerPrivacyModal onClose={() => setShowPrivacy(false)} />}
     </div>
   );
 }

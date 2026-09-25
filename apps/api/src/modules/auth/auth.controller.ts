@@ -25,8 +25,8 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  async register(@Body() dto: RegisterDto) {
-    const { user, tokens } = await this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() req: Request) {
+    const { user, tokens } = await this.authService.register(dto, req.ip ?? 'unknown');
     return { user: toUserDto(user, ['CUSTOMER']), ...tokens };
   }
 

@@ -59,6 +59,8 @@ describe('AuthService', () => {
           password: 'password123',
           firstName: 'A',
           lastName: 'B',
+          termsAccepted: true,
+          privacyNoticeAccepted: true,
         }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
@@ -74,6 +76,8 @@ describe('AuthService', () => {
         password: 'password123',
         firstName: 'A',
         lastName: 'B',
+        termsAccepted: true,
+        privacyNoticeAccepted: true,
       });
 
       expect(prisma.user.create).toHaveBeenCalled();

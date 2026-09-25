@@ -23,6 +23,10 @@ interface CustomerDetail {
   purchasesCount: number;
   purchasesTotal: number;
   createdAt: string;
+  termsAcceptedAt: string | null;
+  privacyNoticeAcceptedAt: string | null;
+  marketingConsentAt: string | null;
+  registrationIp: string | null;
 }
 
 const TABS = [
@@ -143,6 +147,35 @@ export default function AdminCustomerDetailPage() {
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Cuenta</div>
             <div style={{ fontSize: 12, color: '#9aa5b1', marginBottom: 10 }}>
               Cliente desde {new Date(customer.createdAt).toLocaleDateString('es-EC')}
+            </div>
+            <div style={{ fontSize: 12, color: '#54617a', marginBottom: 4 }}>
+              Términos y Condiciones:{' '}
+              {customer.termsAcceptedAt ? (
+                <span style={{ color: 'var(--bingo-success)' }}>Aceptados el {new Date(customer.termsAcceptedAt).toLocaleString('es-EC')}</span>
+              ) : (
+                <span style={{ color: 'var(--bingo-error)' }}>No registrado</span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: '#54617a', marginBottom: 4 }}>
+              Política de Privacidad:{' '}
+              {customer.privacyNoticeAcceptedAt ? (
+                <span style={{ color: 'var(--bingo-success)' }}>
+                  Informado el {new Date(customer.privacyNoticeAcceptedAt).toLocaleString('es-EC')}
+                </span>
+              ) : (
+                <span style={{ color: 'var(--bingo-error)' }}>No registrado</span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: '#54617a', marginBottom: 4 }}>
+              Comunicaciones comerciales:{' '}
+              {customer.marketingConsentAt ? (
+                <span style={{ color: 'var(--bingo-success)' }}>Autorizadas el {new Date(customer.marketingConsentAt).toLocaleString('es-EC')}</span>
+              ) : (
+                <span style={{ color: '#9aa5b1' }}>No autorizadas</span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: '#54617a', marginBottom: 10 }}>
+              IP de registro: <strong>{customer.registrationIp ?? '—'}</strong>
             </div>
             <button className={`bingo-button ${customer.isActive ? 'danger' : ''}`} disabled={busy} onClick={toggleActive}>
               {customer.isActive ? 'Suspender' : 'Activar'}

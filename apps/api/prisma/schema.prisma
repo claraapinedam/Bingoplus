@@ -36,23 +36,37 @@ enum RoleName {
 }
 
 model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  phone           String?   @unique
-  passwordHash    String?
-  firstName       String
-  lastName        String
-  avatarUrl       String?
-  isEmailVerified Boolean   @default(false)
-  isPhoneVerified Boolean   @default(false)
-  isActive        Boolean   @default(true)
+  id                      String    @id @default(cuid())
+  email                   String    @unique
+  phone                   String?   @unique
+  passwordHash            String?
+  firstName               String
+  lastName                String
+  avatarUrl               String?
+  isEmailVerified         Boolean   @default(false)
+  isPhoneVerified         Boolean   @default(false)
+  isActive                Boolean   @default(true)
+  // Set only once each checkbox is actually ticked at registration — never defaulted or
+  // backfilled silently, so their presence is real proof of consent (same "set only once ticked"
+  // rule Rider.termsAcceptedAt/dataConsentAcceptedAt already follow). termsAcceptedAt and
+  // privacyNoticeAcceptedAt are both required to register (see RegisterDto); marketingConsentAt
+  // is the one optional, separate opt-in for promotional communications and stays null unless the
+  // customer explicitly checks it — never implied by accepting the other two.
+  termsAcceptedAt         DateTime?
+  privacyNoticeAcceptedAt DateTime?
+  marketingConsentAt      DateTime?
+  // Captured once, at registration — the "dirección IP" evidence the Términos/Política documents
+  // themselves say BINGO+ will keep alongside the acceptance timestamps above. Never updated after
+  // registration (not a "last seen IP" — that's a different, unrelated concept this app doesn't
+  // track today).
+  registrationIp          String?
   // Populated once Phase 8's reviews module lets a business/rider rate a customer after an
   // order (ReviewTargetType.CUSTOMER below) — honestly 0 until then, never a fabricated number.
-  ratingAvg       Float     @default(0)
-  reviewCount     Int       @default(0)
-  deletedAt       DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  ratingAvg               Float     @default(0)
+  reviewCount             Int       @default(0)
+  deletedAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   roles                      UserRole[]
   addresses                  Address[]

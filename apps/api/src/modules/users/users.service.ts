@@ -182,6 +182,12 @@ export class UsersService {
       ...toUserDto(user, user.roles.map((r) => r.role.name)),
       purchasesCount: stats._count._all,
       purchasesTotal: Number(stats._sum.total ?? 0),
+      // Registration consent evidence — admin-only (never part of the shared UserDto every
+      // login/register response returns to the user themselves or to other contexts).
+      termsAcceptedAt: user.termsAcceptedAt,
+      privacyNoticeAcceptedAt: user.privacyNoticeAcceptedAt,
+      marketingConsentAt: user.marketingConsentAt,
+      registrationIp: user.registrationIp,
     };
   }
 

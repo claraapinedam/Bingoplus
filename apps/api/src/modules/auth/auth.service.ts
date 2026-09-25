@@ -36,7 +36,7 @@ export class AuthService {
     private readonly email: EmailService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, registrationIp?: string) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) {
       throw new ConflictException('Ya existe una cuenta con este correo electrónico.');
@@ -50,6 +50,7 @@ export class AuthService {
       throw new Error('CUSTOMER role is not seeded — run prisma db seed');
     }
 
+    const now = new Date();
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
@@ -57,6 +58,10 @@ export class AuthService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         phone: dto.phone,
+        termsAcceptedAt: now,
+        privacyNoticeAcceptedAt: now,
+        marketingConsentAt: dto.marketingConsentAccepted ? now : null,
+        registrationIp: registrationIp ?? null,
         roles: { create: { roleId: customerRole.id } },
       },
     });
